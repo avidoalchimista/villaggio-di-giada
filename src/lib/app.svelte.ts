@@ -4,7 +4,7 @@ import { analizza, preparaDizionario, type VoceDizionario } from './analisi';
 import { creaCopia, migra, type FileCopia } from './copia';
 import { aggiungiGiorni, oggi } from './date';
 import { chiediSpazioPersistente, db, leggiMeta, scriviMeta } from './db';
-import { applicaVoce, nuovoStato, riassunto, simula } from './gioco';
+import { applicaVoce, costruisci, normalizzaStato, nuovoStato, riassunto, simula } from './gioco';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
 export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni';
@@ -49,7 +49,7 @@ export async function avvia() {
     app.schermata = 'intro';
     return;
   }
-  app.stato = riga.dati;
+  app.stato = normalizzaStato(riga.dati);
   app.voci = await db.voci.orderBy('data').reverse().toArray();
   aggiornaTempo();
   app.schermata = 'villaggio';
@@ -93,6 +93,13 @@ export async function salvaVoce(testo: string, forze: Punteggi<Forza>, emozioni:
   app.voci = [voce, ...app.voci];
   await salvaStato();
   return { voce, eventi };
+}
+
+export async function costruisciQui(id: string): Promise<Evento | null> {
+  if (!app.stato) return null;
+  const ev = costruisci(app.stato, id, dataDiOggi());
+  if (ev) await salvaStato();
+  return ev;
 }
 
 export async function rinominaAnimale(id: string, nome: string) {

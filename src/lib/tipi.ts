@@ -82,7 +82,7 @@ export interface Edificio {
 
 export interface Evento {
   data: string;
-  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia';
+  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione';
   testo: string;
 }
 
@@ -99,6 +99,8 @@ export interface StatoGioco {
   eventi: Evento[];
   capitoli: string[]; // id dei capitoli di storia sbloccati
   numeroVoci: number;
+  ghiande: number; // la "moneta" del villaggio: si guadagna scrivendo, si spende per costruire
+  costruzioni: { id: string; data: string }[];
   ultimaVoce: string | null; // data dell'ultima pagina di diario
   seme: number; // per la casualità deterministica
   contatore: number; // per gli id

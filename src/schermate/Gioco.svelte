@@ -5,7 +5,8 @@
   import frasi from '../dati/frasi.json';
   import { app, chiudiMentreEriVia, dataDiOggi, rinominaAnimale, segnaBackupFatto, vai, type RigaDialogo } from '../lib/app.svelte';
   import { giorniTra } from '../lib/date';
-  import { accorda, conArticolo, nomeAnimale, REGOLE, STORIA } from '../lib/gioco';
+  import { accorda, conArticolo, nomeAnimale, REGOLE, statoCostruzione, STORIA } from '../lib/gioco';
+  import MenuCostruisci from '../componenti/MenuCostruisci.svelte';
   import type { Animale } from '../lib/tipi';
   import { Scena, type Bersaglio } from '../scena/scena';
 
@@ -18,6 +19,9 @@
   let chiediNome = $state<Animale | null>(null);
   let nome = $state('');
   let erroreGrafica = $state(false);
+  let menu = $state(false);
+  let puoCostruire = $derived(REGOLE.costruzioni.some((c) => statoCostruzione(s, c) === 'pronta'));
+  const simbolo = (a: Animale) => (a.sesso === 'f' ? '♀' : '♂');
 
   const C = frasi.corvo as Record<string, string>;
   const corvo = (id: string, testo?: string): RigaDialogo => ({ chi: 'Corvo', testo: testo ?? C[id], voce: 'corvo', audioId: testo ? undefined : id });
@@ -102,7 +106,7 @@
     if (a.addormentato) testo = accorda(frasi.animali.addormentato[0], a);
     else if (a.ricordi.length && n % 2 === 0) testo = scegli(frasi.animali.ricordo, n).replace('{ricordo}', scegli(a.ricordi, n).frase);
     else testo = scegli(a.umore < 45 ? frasi.animali.richiesta : frasi.animali.saluto, n);
-    dialogo = { righe: [{ chi: a.nome, voce: 'animale', testo }], animale: a, tipo: 'animale' };
+    dialogo = { righe: [{ chi: `${a.nome} ${simbolo(a)}`, voce: 'animale', testo }], animale: a, tipo: 'animale' };
   }
 
   async function confermaNome() {
@@ -125,13 +129,16 @@
 
   <header class="hud-alto">
     <div class="pillola nome-villaggio">{s.nomeVillaggio}</div>
-    <div class="pillola data">{dataTesto}</div>
+    <div class="destra">
+      <div class="pillola data">{dataTesto}</div>
+      <div class="pillola ghiande">🌰 {s.ghiande ?? 0}</div>
+    </div>
   </header>
 
   <div class="sotto">
     {#if chiediNome}
       <div class="pannello nome-box">
-        <div class="titoletto">Come si chiama {conArticolo(chiediNome)}?</div>
+        <div class="titoletto">Come si chiama {conArticolo(chiediNome)}? <span class="sesso">{chiediNome.sesso === 'f' ? '♀ è una femmina' : '♂ è un maschio'}</span></div>
         <input type="text" bind:value={nome} maxlength="24" placeholder="Scrivi un nome" />
         <div class="riga">
           <button class="tondo grigio" onclick={() => (chiediNome = null)}>Dopo</button>
@@ -153,10 +160,24 @@
           {/if}
         {/snippet}
       </Dialogo>
+    {:else if menu}
+      <MenuCostruisci
+        onchiudi={() => (menu = false)}
+        oncostruito={(ev) => {
+          menu = false;
+          scena?.festeggia();
+          dialogo = { righe: [{ chi: 'Corvo', voce: 'corvo', testo: ev.testo }] };
+        }}
+      />
     {:else}
-      <button class="bottone-diario" onclick={() => vai('diario')}>
-        <span class="icona">📖</span> Scrivi nel diario
-      </button>
+      <div class="azioni-basso">
+        <button class="bottone-diario" onclick={() => vai('diario')}>
+          <span class="icona">📖</span> Scrivi nel diario
+        </button>
+        <button class="bottone-costruisci" onclick={() => (menu = true)} aria-label="Costruisci">
+          🔨<span class="punto" class:visibile={puoCostruire}></span>
+        </button>
+      </div>
       <p class="suggerimento">Tocca chi vuoi · trascina per girare · pizzica per lo zoom</p>
     {/if}
   </div>
@@ -166,7 +187,7 @@
   .gioco { position: fixed; inset: 0; max-width: 560px; margin: 0 auto; overflow: hidden; background: #bfe3f2; }
   .mondo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
   .errore { position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; background: var(--panna); padding: 16px; border-radius: 18px; }
-  .hud-alto { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; }
+  .hud-alto { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; pointer-events: none; }
   .pillola {
     background: var(--panna); border: 3px solid var(--legno); border-radius: 999px; padding: 5px 14px;
     font-weight: 800; color: var(--inchiostro); box-shadow: 0 4px 0 var(--legno-scuro); font-size: 0.95rem;
@@ -176,8 +197,18 @@
   .data { text-transform: capitalize; }
   @keyframes cade { from { transform: translateY(-40px); opacity: 0; } to { transform: none; opacity: 1; } }
   .sotto { position: absolute; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .destra { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .ghiande { color: #7a4a1a; }
+  .sesso { display: block; font-size: 0.85rem; color: var(--testo-tenue); }
+  .azioni-basso { display: flex; gap: 10px; align-items: center; }
+  .bottone-costruisci {
+    position: relative; width: 62px; height: 62px; flex: none; border-radius: 50%; padding: 0; font-size: 1.6rem;
+    background: var(--notte-blu); border: 4px solid var(--legno); box-shadow: 0 6px 0 var(--legno-scuro);
+  }
+  .punto { position: absolute; top: -2px; right: -2px; width: 18px; height: 18px; border-radius: 50%; background: #ffd166; border: 3px solid var(--legno); transform: scale(0); transition: transform 0.2s; }
+  .punto.visibile { transform: scale(1); animation: respira 1.2s infinite; }
   .bottone-diario {
-    width: 100%; font-size: 1.2rem; padding: 14px; border-radius: 999px;
+    flex: 1; font-size: 1.2rem; padding: 14px; border-radius: 999px;
     background: var(--brace); border: 4px solid var(--legno); box-shadow: 0 6px 0 var(--legno-scuro);
     animation: respira 2.4s ease-in-out infinite;
   }

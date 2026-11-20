@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aggiungiGiorni } from './date';
-import { applicaVoce, nuovoStato, REGOLE, riassunto, simula, speciePrimoUovo } from './gioco';
+import { applicaVoce, costruisci, normalizzaStato, nuovoStato, REGOLE, riassunto, simula, speciePrimoUovo } from './gioco';
 import { zeriForze, type Forza, type Punteggi, type StatoGioco, type VoceDiario } from './tipi';
 
 const INIZIO = '2026-12-25';
@@ -99,6 +99,42 @@ describe('principi', () => {
     const ev2 = applicaVoce(s, voce(aggiungiGiorni(INIZIO, 365), { amore: 1 }));
     expect(s.animali.every((a) => !a.addormentato)).toBe(true);
     expect(ev2.some((e) => e.tipo === 'risveglio')).toBe(true);
+  });
+});
+
+describe('ghiande e costruzioni', () => {
+  it('si parte senza niente e ogni pagina dà ghiande, anche le giornate difficili', () => {
+    const s = partita();
+    expect(s.ghiande).toBe(0);
+    expect(s.costruzioni).toEqual([]);
+    applicaVoce(s, voce(INIZIO, {}, true));
+    expect(s.ghiande).toBe(REGOLE.ghiande.perPagina);
+    applicaVoce(s, voce(INIZIO, { coraggio: 30 }));
+    expect(s.ghiande).toBe(REGOLE.ghiande.perPagina + REGOLE.ghiande.massimoPerPagina);
+  });
+
+  it('si costruisce solo con abbastanza ghiande e con i requisiti', () => {
+    const s = partita();
+    expect(costruisci(s, 'sentiero', INIZIO)).toBeNull();
+    s.ghiande = 100;
+    expect(costruisci(s, 'lanterne', INIZIO)).toBeNull(); // serve prima il sentiero
+    expect(costruisci(s, 'sentiero', INIZIO)?.tipo).toBe('costruzione');
+    expect(s.ghiande).toBe(100 - 6);
+    expect(costruisci(s, 'sentiero', INIZIO)).toBeNull(); // già fatto
+    expect(costruisci(s, 'lanterne', INIZIO)).not.toBeNull();
+    expect(costruisci(s, 'mulino', INIZIO)).toBeNull(); // servono 45 pagine
+  });
+
+  it('uno stato salvato con la versione 1 viene aggiornato senza perdere niente', () => {
+    const s = partita() as unknown as Record<string, unknown>;
+    delete s.ghiande;
+    delete s.costruzioni;
+    s.versioneSchema = 1;
+    s.numeroVoci = 4;
+    const n = normalizzaStato(s as unknown as StatoGioco);
+    expect(n.ghiande).toBe(4 * REGOLE.ghiande.perPagina);
+    expect(n.costruzioni).toEqual([]);
+    expect(n.versioneSchema).toBe(2);
   });
 });
 

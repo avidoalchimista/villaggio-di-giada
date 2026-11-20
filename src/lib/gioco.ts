@@ -13,7 +13,9 @@ import {
   type Punteggi, type Specie, type StatoGioco, type Virtu, type VoceDiario,
 } from './tipi';
 
-export const SCHEMA = 1;
+export const SCHEMA = 2;
+
+export interface DefCostruzione { id: string; nome: string; descrizione: string; costo: number; richiede?: string; pagine?: number }
 
 interface DefEdificio { tipo: string; nome: string; gestore: string; virtu: Virtu; utentiMinimi: number; dopoNatale?: boolean }
 interface Regole {
@@ -32,6 +34,8 @@ interface Regole {
   mestieri: Record<Virtu, string[]>;
   mestieriAttivi: string[];
   edifici: DefEdificio[];
+  ghiande: { perPagina: number; perPuntoForza: number; massimoPerPagina: number };
+  costruzioni: DefCostruzione[];
 }
 export const REGOLE = regoleJson as unknown as Regole;
 
@@ -134,6 +138,8 @@ export function nuovoStato(data: string, profilo: Record<Forza, number>, nomeVil
     capitoli: [],
     numeroVoci: 0,
     ultimaVoce: null,
+    ghiande: 0,
+    costruzioni: [],
     seme: seme >>> 0,
     contatore: 0,
     ultimoBackupRicordato: null,
@@ -170,6 +176,9 @@ export function applicaVoce(s: StatoGioco, voce: VoceDiario): Evento[] {
   const prima = { ...s.totaleVirtu };
   s.numeroVoci += 1;
   if (!s.ultimaVoce || data > s.ultimaVoce) s.ultimaVoce = data;
+  const g = ghiandeDaVoce(voce.forze);
+  s.ghiande += g;
+  evento(s, data, 'ghiande', `Gli animali hanno raccolto ${g} ghiande.`, out);
 
   for (const v of VIRTU) {
     s.totaleVirtu[v] += nutr[v];
@@ -345,6 +354,45 @@ export function simula(s: StatoGioco, fino: string): Evento[] {
   }
   s.ultimoAccesso = fino;
   return out;
+}
+
+// ---------- ghiande e costruzioni ----------
+
+/** Ogni pagina dà ghiande; un po' di più se ci sono punti di forza. Mai meno per una giornata difficile. */
+export function ghiandeDaVoce(forze: Punteggi<Forza>): number {
+  const r = REGOLE.ghiande;
+  const punti = Object.values(forze).reduce((a, b) => a + (b ?? 0), 0);
+  return Math.min(r.massimoPerPagina, r.perPagina + Math.floor(punti * r.perPuntoForza));
+}
+
+export type StatoCostruzione = 'fatta' | 'pronta' | 'poche_ghiande' | 'bloccata';
+
+export function statoCostruzione(s: StatoGioco, c: DefCostruzione): StatoCostruzione {
+  if (s.costruzioni.some((x) => x.id === c.id)) return 'fatta';
+  if (c.richiede && !s.costruzioni.some((x) => x.id === c.richiede)) return 'bloccata';
+  if (c.pagine && s.numeroVoci < c.pagine) return 'bloccata';
+  return s.ghiande >= c.costo ? 'pronta' : 'poche_ghiande';
+}
+
+/** Costruisce se ci sono le ghiande e i requisiti. Restituisce l'evento, o null. */
+export function costruisci(s: StatoGioco, id: string, data: string): Evento | null {
+  const c = REGOLE.costruzioni.find((x) => x.id === id);
+  if (!c || statoCostruzione(s, c) !== 'pronta') return null;
+  s.ghiande -= c.costo;
+  s.costruzioni.push({ id, data });
+  const out: Evento[] = [];
+  evento(s, data, 'costruzione', `Gli animali hanno costruito ${c.nome.charAt(0).toLowerCase() + c.nome.slice(1)}!`, out);
+  return out[0];
+}
+
+/** Porta uno stato salvato con una versione vecchia dell'app alla versione attuale. */
+export function normalizzaStato(s: StatoGioco): StatoGioco {
+  if ((s.versioneSchema ?? 1) < 2) {
+    s.ghiande ??= s.numeroVoci * REGOLE.ghiande.perPagina;
+    s.costruzioni ??= [];
+  }
+  s.versioneSchema = SCHEMA;
+  return s;
 }
 
 // ---------- coppie e cuccioli (dopo Natale, logica già pronta) ----------

@@ -62,7 +62,7 @@ matContorno.onBeforeCompile = (shader) => {
   shader.uniforms.uCurva = { get value() { return CURVA.valore; } } as THREE.IUniform;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nuniform float uCurva;')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normal * 0.028;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normal * 0.018;')
     .replace('#include <project_vertex>', '#include <project_vertex>\n' + CURVA_GLSL);
 };
 
@@ -158,6 +158,167 @@ export function spriteTesto(testo: string, colore = '#ffffff', taglia = 64): THR
     c.fillText(testo, l / 2, l / 2 + 2);
   });
   return new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
+}
+
+// ---------- terreno ----------
+
+function rumoreValore(lato: number, celle: number, seme: number): Float32Array {
+  // rumore "a valori" interpolato, ripetibile ai bordi (si può piastrellare senza cuciture)
+  const r = casuale(seme);
+  const g = Array.from({ length: celle * celle }, () => r());
+  const out = new Float32Array(lato * lato);
+  const liscio = (t: number) => t * t * (3 - 2 * t);
+  for (let y = 0; y < lato; y++) for (let x = 0; x < lato; x++) {
+    const fx = (x / lato) * celle, fy = (y / lato) * celle;
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = liscio(fx - x0), ty = liscio(fy - y0);
+    const v = (i: number, j: number) => g[((j % celle) * celle + (i % celle))];
+    const a = v(x0, y0) + (v(x0 + 1, y0) - v(x0, y0)) * tx;
+    const b = v(x0, y0 + 1) + (v(x0 + 1, y0 + 1) - v(x0, y0 + 1)) * tx;
+    out[y * lato + x] = a + (b - a) * ty;
+  }
+  return out;
+}
+
+function frattale(lato: number, seme: number, ottave = 5): Float32Array {
+  const out = new Float32Array(lato * lato);
+  let amp = 1, tot = 0;
+  for (let o = 0; o < ottave; o++) {
+    const n = rumoreValore(lato, 4 << o, seme + o * 101);
+    for (let i = 0; i < out.length; i++) out[i] += n[i] * amp;
+    tot += amp;
+    amp *= 0.5;
+  }
+  for (let i = 0; i < out.length; i++) out[i] /= tot;
+  return out;
+}
+
+function texDaFunzione(lato: number, f: (x: number, y: number, i: number) => [number, number, number], ripeti = true): THREE.DataTexture {
+  const data = new Uint8Array(lato * lato * 4);
+  for (let y = 0; y < lato; y++) for (let x = 0; x < lato; x++) {
+    const i = y * lato + x;
+    const [r, g, b] = f(x, y, i);
+    data.set([r, g, b, 255], i * 4);
+  }
+  const t = new THREE.DataTexture(data, lato, lato, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = ripeti ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  t.needsUpdate = true;
+  return t;
+}
+
+function mescola(a: number[], b: number[], t: number): [number, number, number] {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+/** Erba: base frattale, toni caldi e freddi, fili d'erba e trifoglio. */
+function texErba(): THREE.DataTexture {
+  const L = 512;
+  const n = frattale(L, 7, 6), m = frattale(L, 33, 3);
+  const scuro = [52, 96, 40], medio = [88, 142, 58], chiaro = [138, 176, 78], secco = [150, 150, 82];
+  const tex = texDaFunzione(L, (_x, _y, i) => {
+    const v = n[i];
+    let c = v < 0.5 ? mescola(scuro, medio, v * 2) : mescola(medio, chiaro, (v - 0.5) * 2);
+    c = mescola(c, secco, Math.max(0, m[i] - 0.55) * 1.6);
+    return c;
+  });
+  // fili d'erba disegnati sopra
+  const data = tex.image.data as Uint8Array;
+  const r = casuale(5);
+  for (let k = 0; k < 26000; k++) {
+    const x = Math.floor(r() * L), y = Math.floor(r() * L), h = 2 + Math.floor(r() * 5);
+    const chiarezza = r() > 0.5 ? 1.18 : 0.8;
+    for (let j = 0; j < h; j++) {
+      const yy = (y - j + L) % L, xx = (x + Math.round((j * (r() - 0.5)) / 2) + L) % L;
+      const p = (yy * L + xx) * 4;
+      for (let c = 0; c < 3; c++) data[p + c] = Math.min(255, data[p + c] * chiarezza);
+    }
+  }
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** Terra battuta con sassolini. */
+function texTerra(): THREE.DataTexture {
+  const L = 256;
+  const n = frattale(L, 71, 5);
+  const tex = texDaFunzione(L, (_x, _y, i) => mescola([118, 88, 58], [176, 140, 98], n[i]));
+  const data = tex.image.data as Uint8Array;
+  const r = casuale(17);
+  for (let k = 0; k < 700; k++) {
+    const cx = r() * L, cy = r() * L, rad = 0.8 + r() * 2.2, luce = 0.75 + r() * 0.6;
+    for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) {
+      const d = Math.hypot(x, y) / rad;
+      if (d > 1) continue;
+      const p = ((((Math.floor(cy) + y) % L + L) % L) * L + (((Math.floor(cx) + x) % L + L) % L)) * 4;
+      const ombra = y > 0 ? 0.8 : 1.1;
+      for (let c = 0; c < 3; c++) data[p + c] = Math.min(255, 150 * luce * ombra + (c === 2 ? -10 : 0));
+    }
+  }
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** Maschera a macchie larghe per variare il prato senza che si veda la ripetizione. */
+function texMacchie(): THREE.DataTexture {
+  const L = 128;
+  const n = frattale(L, 99, 4);
+  return texDaFunzione(L, (_x, _y, i) => { const v = Math.round(n[i] * 255); return [v, v, v]; });
+}
+
+/**
+ * Materiale del suolo: erba a due scale (vicino e lontano) + terra battuta che compare
+ * dove si cammina (al centro e lungo i sentieri) e a chiazze. Coordinate del mondo: niente cuciture.
+ */
+export function materialeTerreno(): THREE.MeshLambertMaterial {
+  const erba = texErba(), terra = texTerra(), macchie = texMacchie();
+  const m = new THREE.MeshLambertMaterial({ color: '#ffffff' });
+  const uniform = {
+    tErba: { value: erba }, tTerra: { value: terra }, tMacchie: { value: macchie },
+    uConsumato: { value: 2.2 }, // raggio della zona calpestata al centro
+    uSentiero: { value: 0 }, // 1 quando c'è il sentiero
+  };
+  m.userData.uniform = uniform;
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniform);
+    shader.uniforms.uCurva = { get value() { return CURVA.valore; } } as THREE.IUniform;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uCurva;\nvarying vec2 vMondo;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMondo = (modelMatrix * vec4(position, 1.0)).xz;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n' + CURVA_GLSL);
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform sampler2D tErba; uniform sampler2D tTerra; uniform sampler2D tMacchie;
+        uniform float uConsumato; uniform float uSentiero;
+        varying vec2 vMondo;`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        `
+        vec3 eVicina = texture2D(tErba, vMondo * 0.32).rgb;
+        vec3 eLontana = texture2D(tErba, vMondo * 0.061 + 0.37).rgb;
+        float mac = texture2D(tMacchie, vMondo * 0.025).r;
+        vec3 erbaCol = mix(eVicina, eLontana, 0.45) * (0.82 + mac * 0.36);
+        vec3 terraCol = texture2D(tTerra, vMondo * 0.45).rgb;
+        float d = length(vMondo);
+        // calpestato al centro, più netto quando c'è il sentiero ad anello
+        float centro = 1.0 - smoothstep(uConsumato * 0.5, uConsumato, d);
+        float anello = uSentiero * (1.0 - smoothstep(0.32, 0.55, abs(d - 1.95)));
+        float viale = uSentiero * (1.0 - smoothstep(0.42, 0.62, abs(vMondo.x))) * step(1.9, vMondo.y) * (1.0 - smoothstep(9.0, 11.0, vMondo.y));
+        float chiazze = smoothstep(0.66, 0.74, texture2D(tMacchie, vMondo * 0.07 + 0.5).r) * 0.85;
+        float rumore = texture2D(tMacchie, vMondo * 0.6).r;
+        float t = clamp(max(max(centro * 0.55, anello), max(viale, chiazze)) + (rumore - 0.5) * 0.35, 0.0, 1.0);
+        diffuseColor.rgb *= mix(erbaCol, terraCol, smoothstep(0.35, 0.65, t));
+        `,
+      );
+  };
+  m.customProgramCacheKey = () => 'terreno';
+  return m;
 }
 
 /** Ombra morbida rotonda sotto gli oggetti (come nei giochi cozy). */

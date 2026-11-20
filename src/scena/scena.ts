@@ -5,10 +5,11 @@ import { COLORE_VIRTU } from '../lib/etichette';
 import { REGOLE } from '../lib/gioco';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
-  aggiornaMestiere, creaAlbero, creaAnimale, creaBottegaMestiere, creaChiosco, creaCorvo, creaFiore, creaLanterna,
-  creaNido, creaPiazzaMusica, creaPino, creaQuaderno, creaSasso, creaUovo, mat, type ModelloAnimale,
+  aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaBottegaMestiere, creaCartello, creaChiosco, creaCorvo, creaFalo,
+  creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
+  creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
 } from './modelli';
-import { CURVA, macchie, materiale, spriteTesto, texture } from './ps1';
+import { CURVA, materialeTerreno, spriteTesto } from './ps1';
 
 export type Bersaglio =
   | { tipo: 'animale'; id: string }
@@ -29,12 +30,26 @@ interface Abitante {
   z: THREE.Sprite[];
 }
 
-/** Grandezza della radura: cresce con gli abitanti e con i mestieri. */
+/** Grandezza della radura: cresce con gli abitanti, i mestieri e le costruzioni. */
 export function raggioVillaggio(s: StatoGioco): number {
   const nati = s.animali.filter((a) => a.fase !== 'uovo').length;
   const mestieri = s.animali.filter((a) => a.mestiere).length;
-  return Math.min(16, 5.5 + nati * 0.7 + mestieri * 1.0 + s.edifici.length * 1.2);
+  return Math.min(16, 5.5 + nati * 0.6 + mestieri * 0.9 + s.edifici.length * 1.0 + (s.costruzioni?.length ?? 0) * 0.35);
 }
+
+/** Dove va ogni costruzione: [x, z, rotazione]. */
+const POSTI_COSTRUZIONI: Record<string, [number, number, number]> = {
+  cartello: [1.8, 8.2, -0.25],
+  aiuola: [-1.6, 0.9, 0],
+  staccionata: [-2.8, 1.6, 0],
+  panchina: [2.9, 0.6, -1.3],
+  laghetto: [4.4, 2.6, 0],
+  falo: [0, 0, 0],
+  ponticello: [4.4, 2.6, 0.2],
+  pozzo: [-4.6, -1.6, 0.6],
+  torretta: [-5.6, 4.4, 0.4],
+  mulino: [5.8, -3.6, -0.8],
+};
 
 export class Scena {
   private renderer: THREE.WebGLRenderer;
@@ -54,6 +69,11 @@ export class Scena {
   private quaderno = creaQuaderno();
   private nido = creaNido();
   private prato!: THREE.Mesh;
+  private matTerreno!: THREE.MeshLambertMaterial;
+  private strutture = new Map<string, THREE.Object3D>();
+  private giaAggiornata = false;
+  private fiamma: THREE.Mesh | null = null;
+  private pale: THREE.Group | null = null;
   private raggio = 0;
   private raggioMostrato = 5.5;
   private angolo = 0.0;
@@ -72,10 +92,10 @@ export class Scena {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    // niente tone mapping: così nebbia e cielo hanno esattamente lo stesso colore (prima gli alberi lontani sembravano fantasmi)
+    this.renderer.toneMapping = THREE.NoToneMapping;
 
-    this.scene.fog = new THREE.Fog('#cde9f5', 22, 60);
+    this.scene.fog = new THREE.Fog('#a9cfe4', 24, 62);
     this.scene.add(this.ambiente, this.sole);
     this.sole.position.set(6, 12, 8);
 
@@ -96,33 +116,17 @@ export class Scena {
   // ---------- mondo ----------
 
   private costruisciFissi() {
-    const erba = texture(256, macchie(['#86cc6e', '#77c062', '#97d67c', '#6cb35a', '#a6dd88'], 2.2, 3), 14);
-    this.prato = new THREE.Mesh(new THREE.CircleGeometry(60, 48), materiale({ color: '#ffffff', map: erba, rim: 0 }));
+    // suolo: erba e terra mescolate in coordinate del mondo (niente piastrelle che si ripetono)
+    this.matTerreno = materialeTerreno();
+    this.prato = new THREE.Mesh(new THREE.PlaneGeometry(130, 130, 64, 64), this.matTerreno);
     this.prato.rotation.x = -Math.PI / 2;
     this.scene.add(this.prato);
 
-    const terra = texture(128, macchie(['#e2c394', '#d4b282', '#ecd2a6', '#c9a676'], 1.5, 9), 2);
-    const matTerra = materiale({ color: '#ffffff', map: terra, rim: 0, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
-    const sentiero = new THREE.Mesh(new THREE.RingGeometry(1.5, 2.4, 40, 1), matTerra);
-    sentiero.rotation.x = -Math.PI / 2;
-    sentiero.position.y = 0.02;
-    this.scene.add(sentiero);
-    const viale = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 9), matTerra);
-    viale.rotation.x = -Math.PI / 2;
-    viale.position.set(0, 0.02, 6.6);
-    this.scene.add(viale);
-
-    // laghetto
-    const acqua = new THREE.Mesh(new THREE.CircleGeometry(1.3, 28), materiale({ color: '#6cc0ec', emissive: '#2a7fb0', emissiveIntensity: 0.25, rim: 0.6, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-    acqua.rotation.x = -Math.PI / 2;
-    acqua.position.set(4.2, 0.03, 2.2);
-    acqua.scale.set(1.3, 0.9, 1);
-    this.scene.add(acqua);
-    for (let i = 0; i < 8; i++) {
-      const s = creaSasso(0.45 + (i % 3) * 0.12);
-      const a = (i / 8) * Math.PI * 2;
-      s.position.set(4.2 + Math.cos(a) * 1.75, s.position.y, 2.2 + Math.sin(a) * 1.25);
-      this.scene.add(s);
+    // all'inizio la radura è selvatica: qualche sasso e un tronco caduto
+    for (const [x, z, s] of [[3.4, -1.2, 0.6], [-2.2, -3.0, 0.45], [2.4, 3.6, 0.5], [-4.6, 3.2, 0.7]]) {
+      const sasso = creaSasso(s);
+      sasso.position.set(x, sasso.position.y, z);
+      this.scene.add(sasso);
     }
 
     const grande = creaAlbero(1.5, 2);
@@ -131,13 +135,6 @@ export class Scena {
     this.nido.scale.setScalar(1.3);
     this.nido.position.set(-2.8, 0, 1.6);
     this.scene.add(this.nido);
-
-    for (const [x, z] of [[-0.95, 3.4], [0.95, 3.4], [-2.6, -0.6], [2.6, -0.6]]) {
-      const l = creaLanterna();
-      l.gruppo.position.set(x, 0, z);
-      this.scene.add(l.gruppo);
-      this.lanterne.push(l.luce);
-    }
 
     this.corvo.gruppo.position.set(-1.7, 0, 3.5);
     this.corvo.gruppo.rotation.y = 0.4;
@@ -178,7 +175,7 @@ export class Scena {
     }
     // fiori sparsi in tutta la radura
     const colori = ['#ff8fb1', '#ffd166', '#ffffff', '#b39ddb', '#ff7b6b', '#8fd3ff'];
-    const nFiori = Math.round(r * r * 0.45);
+    const nFiori = Math.round(r * r * 0.25);
     for (let i = 0; i < nFiori; i++) {
       const a = i * 2.39996, d = 2.7 + ((i * 37) % 100) / 100 * (r - 1);
       const f = creaFiore(colori[i % colori.length]);
@@ -202,8 +199,57 @@ export class Scena {
 
   // ---------- stato del gioco → scena ----------
 
+  /** Mette nella radura una costruzione comprata con le ghiande. */
+  private metti(id: string, s: StatoGioco, nuova: boolean) {
+    if (this.strutture.has(id)) return;
+    let g: THREE.Object3D | null = null;
+    const pos = POSTI_COSTRUZIONI[id];
+    switch (id) {
+      case 'sentiero':
+        (this.matTerreno.userData.uniform as { uSentiero: { value: number } }).uSentiero.value = 1;
+        g = new THREE.Group();
+        break;
+      case 'cartello': g = creaCartello(s.nomeVillaggio); break;
+      case 'aiuola': g = creaAiuola(); break;
+      case 'staccionata': g = creaStaccionata(1.55); break;
+      case 'lanterne': {
+        g = new THREE.Group();
+        for (const [x, z] of [[-0.95, 3.4], [0.95, 3.4], [-2.6, -0.6], [2.6, -0.6], [-0.95, 6.5], [0.95, 6.5]]) {
+          const l = creaLanterna();
+          l.gruppo.position.set(x, 0, z);
+          g.add(l.gruppo);
+          this.lanterne.push(l.luce);
+        }
+        this.luceDelGiorno();
+        break;
+      }
+      case 'panchina': g = creaPanchina(); break;
+      case 'laghetto': g = creaLaghetto(); break;
+      case 'falo': { const f = creaFalo(); g = f.gruppo; this.fiamma = f.fiamma; break; }
+      case 'ponticello': g = creaPonticello(); break;
+      case 'pozzo': g = creaPozzo(); break;
+      case 'torretta': g = creaTorretta(); break;
+      case 'mulino': { const m = creaMulino(); g = m.gruppo; this.pale = m.pale; break; }
+    }
+    if (!g) return;
+    if (pos) {
+      g.position.set(pos[0], 0, pos[1]);
+      g.rotation.y = pos[2];
+    }
+    this.strutture.set(id, g);
+    this.scene.add(g);
+    if (nuova && id !== 'sentiero') {
+      g.scale.setScalar(0.01);
+      g.userData.cresce = 0;
+      this.coriandoli(g.position.clone().setY(1), ['#f2c94c', '#ffffff', '#8fd3ff']);
+    }
+  }
+
   aggiorna(s: StatoGioco) {
     this.allarga(raggioVillaggio(s));
+    const primaVolta = this.strutture.size === 0 && !this.giaAggiornata;
+    for (const c of s.costruzioni) this.metti(c.id, s, !primaVolta);
+    this.giaAggiornata = true;
     const visti = new Set<string>();
     s.animali.forEach((a, i) => {
       visti.add(a.id);
@@ -238,7 +284,7 @@ export class Scena {
       ab.dati = a;
       // i cuccioli sono piccoli e con la testa enorme; crescendo il corpo si allunga
       const scala = ({ cucciolo: 1.15, giovane: 1.35, adulto: 1.55, maestro: 1.65, uovo: 1 } as const)[a.fase];
-      ab.m.gruppo.scale.setScalar(scala);
+      ab.m.gruppo.scale.setScalar(scala * ((ab.m.gruppo.userData.taglia as number) ?? 1));
       const proporzione = ({ cucciolo: 1.12, giovane: 1.0, adulto: 0.9, maestro: 0.9, uovo: 1 } as const)[a.fase];
       ab.m.testa.scale.setScalar(proporzione);
       aggiornaMestiere(ab.m, a.mestiere);
@@ -444,15 +490,18 @@ export class Scena {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Solo per le prove: forza un'ora del giorno (null = ora vera). */
+  oraFinta: number | null = null;
+
   private luceDelGiorno() {
     const ora = new Date();
-    const h = ora.getHours() + ora.getMinutes() / 60;
+    const h = this.oraFinta ?? ora.getHours() + ora.getMinutes() / 60;
     const giorno = Math.max(0, Math.min(1, Math.sin(((h - 6) / 14) * Math.PI) * 1.4));
     const tramonto = h > 16.5 && h < 20.5 ? 1 - Math.abs(h - 18.5) / 2 : h > 5.5 && h < 8 ? 1 - Math.abs(h - 6.7) / 1.3 : 0;
-    const cielo = new THREE.Color('#26306a').lerp(new THREE.Color('#cde9f5'), giorno).lerp(new THREE.Color('#ffc09a'), Math.max(0, tramonto) * 0.55);
+    const cielo = new THREE.Color('#1f2a5c').lerp(new THREE.Color('#a9cfe4'), giorno).lerp(new THREE.Color('#ffc09a'), Math.max(0, tramonto) * 0.55);
     this.scene.background = cielo;
     (this.scene.fog as THREE.Fog).color = cielo;
-    this.sole.intensity = 0.5 + giorno * 1.9;
+    this.sole.intensity = 0.45 + giorno * 1.6;
     this.sole.color.set(tramonto > 0.2 ? '#ffc08a' : '#fff1d6');
     this.ambiente.intensity = 0.7 + giorno * 0.65;
     this.ambiente.color.set(giorno > 0.3 ? '#bfe0ff' : '#7c88d8'); // notte: ombre blu-violette
@@ -470,8 +519,10 @@ export class Scena {
     this.raggioMostrato += (this.raggio - this.raggioMostrato) * Math.min(1, dt * 1.5);
     const verticale = this.camera.aspect < 0.8;
     // inquadratura bassa (circa 30°) come nei giochi cozy: si vedono i musi e l'orizzonte curvo
-    const dist = (verticale ? 2.2 : 1.8) * this.raggioMostrato * this.zoom + 2.5;
-    const alt = (verticale ? 1.15 : 0.85) * this.raggioMostrato * this.zoom + 1.2;
+    // la telecamera si allontana con il villaggio, ma meno che in proporzione: il centro resta protagonista
+    const r = 4 + Math.sqrt(this.raggioMostrato) * 2.2;
+    const dist = (verticale ? 1.75 : 1.45) * r * this.zoom + 1.5;
+    const alt = (verticale ? 1.2 : 0.8) * r * this.zoom + 1;
     CURVA.valore = 0.0035 * (6 / this.raggioMostrato);
 
     if (!this.trascina) {
@@ -499,6 +550,21 @@ export class Scena {
     const battito = parla ? Math.sin(t * 16) * 0.6 : Math.sin(t * 9) * 0.5 * (Math.sin(t * 0.5) > 0.95 ? 1 : 0);
     this.corvo.ali[0].rotation.z = battito;
     this.corvo.ali[1].rotation.z = -battito;
+
+    // costruzioni nuove che spuntano con un rimbalzo
+    for (const g of this.strutture.values()) {
+      const c = g.userData.cresce as number | undefined;
+      if (c === undefined) continue;
+      const k = Math.min(1, c + dt * 1.6);
+      g.userData.cresce = k < 1 ? k : undefined;
+      const rimbalzo = 1 + Math.sin(k * Math.PI) * 0.25 * (1 - k);
+      g.scale.setScalar(Math.max(0.01, (1 - Math.pow(1 - k, 3)) * rimbalzo));
+    }
+    if (this.fiamma) {
+      this.fiamma.scale.set(1 + Math.sin(t * 13) * 0.08, 1 + Math.sin(t * 9.3) * 0.15, 1 + Math.cos(t * 11) * 0.08);
+      (this.fiamma.material as THREE.MeshToonMaterial).emissiveIntensity = 1.4 + Math.sin(t * 17) * 0.3;
+    }
+    if (this.pale) this.pale.rotation.z += dt * 0.6;
 
     const brilla = this.quaderno.getObjectByName('brilla');
     if (brilla) brilla.position.y = 1.4 + Math.sin(t * 3) * 0.08;

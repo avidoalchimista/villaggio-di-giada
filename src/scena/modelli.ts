@@ -2,6 +2,7 @@
 // Cuccioli secondo lo schema infantile (Lorenz): testa più grande del corpo, fronte alta,
 // occhi grandi e bassi, guance piene, naso e bocca piccoli, zampe corte e tozze.
 import * as THREE from 'three';
+import { hash, rng } from '../lib/caso';
 import type { Animale, Specie } from '../lib/tipi';
 import { contorno, macchie, materiale, ombra, strisce, texture } from './ps1';
 
@@ -63,8 +64,28 @@ export interface ModelloAnimale {
   mestiere: string | null;
 }
 
+/** Segno particolare di ogni animale, sempre lo stesso per lo stesso animale. */
+export const SEGNI = ['nessuno', 'macchia sull\'occhio', 'stellina in fronte', 'lentiggini', 'calzini chiari', 'punta della coda scura'] as const;
+
+export function tratti(a: Pick<Animale, 'id' | 'sesso'>) {
+  const r = rng(hash(a.id));
+  return {
+    tinta: (r() - 0.5) * 0.05,
+    luce: (r() - 0.5) * 0.16,
+    taglia: (0.94 + r() * 0.12) * (a.sesso === 'm' ? 1.04 : 0.96),
+    segno: SEGNI[Math.floor(r() * SEGNI.length)],
+    lato: r() < 0.5 ? -1 : 1,
+  };
+}
+
+function varia(colore: string, tinta: number, luce: number) {
+  return '#' + new THREE.Color(colore).offsetHSL(tinta, 0, luce).getHexString();
+}
+
 export function creaAnimale(a: Animale): ModelloAnimale {
-  const p = MANTELLO[a.specie];
+  const base = MANTELLO[a.specie];
+  const t = tratti(a);
+  const p = { ...base, corpo: varia(base.corpo, t.tinta, t.luce), zampe: t.segno === 'calzini chiari' ? base.pancia : varia(base.zampe, t.tinta, t.luce * 0.5) };
   const gruppo = new THREE.Group();
   const corpo = new THREE.Group();
   gruppo.add(corpo);
@@ -119,6 +140,20 @@ export function creaAnimale(a: Animale): ModelloAnimale {
     g.add(bulbo);
     g.add(mesh(geo.palla(0.038, 10), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.8, rim: 0 }), 0.03, 0.05, 0.05));
     g.add(mesh(geo.palla(0.018, 8), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.8, rim: 0 }), -0.035, -0.04, 0.05));
+    // femmine: ciglia lunghe all'insù
+    if (a.sesso === 'f') for (let k = 0; k < 3; k++) {
+      const ciglio = mesh(geo.capsula(0.012, 0.05), mat('#1e140e', { rim: 0 }), Math.sign(x) * (0.05 + k * 0.03), 0.1 + (1 - k) * 0.01, 0.02);
+      ciglio.rotation.z = -Math.sign(x) * (0.5 + k * 0.35);
+      ciglio.userData.senzaContorno = true;
+      g.add(ciglio);
+    }
+    // segno particolare: macchia intorno a un occhio
+    if (t.segno === 'macchia sull\'occhio' && Math.sign(x) === t.lato) {
+      const macchia = mesh(geo.palla(0.15), mat(a.specie === 'tasso' ? '#ffffff' : varia(base.corpo, 0, -0.18), { rim: 0 }), x * 1.05, 0.0, 0.3);
+      macchia.scale.set(1, 1.05, 0.45);
+      macchia.userData.senzaContorno = true;
+      testa.add(macchia);
+    }
     testa.add(g);
     occhi.push(g);
     // guance piene e rosate
@@ -263,7 +298,34 @@ export function creaAnimale(a: Animale): ModelloAnimale {
     }
   }
 
+  // maschi: ciuffo di pelo in testa (e bozzetti delle corna per i daini piccoli)
+  if (a.sesso === 'm') {
+    for (const [x, rz] of [[-0.06, 0.4], [0.02, 0], [0.09, -0.4]]) {
+      const ciuffo = mesh(geo.cono(0.05, 0.16, 6), pelo(p.corpo), x, 0.46, 0.06);
+      ciuffo.rotation.z = rz;
+      testa.add(ciuffo);
+    }
+    if (a.specie === 'daino' && a.fase === 'cucciolo') for (const x of [-0.13, 0.13]) testa.add(mesh(geo.palla(0.05), mat('#8a5a36'), x, 0.42, -0.04));
+  }
+  // altri segni particolari
+  if (t.segno === 'stellina in fronte') {
+    const stella = mesh(geo.palla(0.07), mat('#fffaf0', { rim: 0 }), 0, 0.22, 0.4);
+    stella.scale.set(1, 1.2, 0.35);
+    stella.userData.senzaContorno = true;
+    testa.add(stella);
+  }
+  if (t.segno === 'lentiggini') for (const x of [-1, 1]) for (let k = 0; k < 3; k++) {
+    const l = mesh(geo.palla(0.014, 6), mat('#7a4a30', { rim: 0 }), x * (0.22 + k * 0.035), -0.1 + (k % 2) * 0.03, 0.39 - k * 0.02);
+    l.userData.senzaContorno = true;
+    testa.add(l);
+  }
+  if (t.segno === 'punta della coda scura' && coda) {
+    const punta = mesh(geo.palla(0.09), mat('#3a2418'), 0, 0.2, -0.5);
+    coda.add(punta);
+  }
+
   contorno(corpo);
+  gruppo.userData.taglia = t.taglia;
   const m: ModelloAnimale = { gruppo, corpo, testa, zampe, coda, occhi, accessorio: null, mestiere: null };
   aggiornaMestiere(m, a.mestiere);
   gruppo.userData.id = a.id;
@@ -393,7 +455,8 @@ export function creaCorvo(): ModelloCorvo {
 
 // ---------- ambiente ----------
 
-const VERDI = ['#7cc46a', '#69b85e', '#8fcf72', '#74bd66'];
+// verdi più naturali e profondi (meno pastello): atmosfera più da avventura che da cartolina
+const VERDI = ['#5d9a4a', '#4e8a40', '#6ba552', '#58924a'];
 const cacheChioma = new Map<number, THREE.MeshToonMaterial>();
 function chioma(i: number) {
   const k = i % VERDI.length;
@@ -420,7 +483,7 @@ export function creaAlbero(scala = 1, tinta = 0, conContorno = true): THREE.Grou
 export function creaPino(scala = 1, conContorno = true): THREE.Group {
   const g = new THREE.Group();
   g.add(mesh(geo.cil(0.12, 0.16, 0.6, 8), corteccia(), 0, 0.3, 0));
-  for (const [y, r, h] of [[0.9, 0.85, 1.1], [1.5, 0.65, 0.95], [2.0, 0.42, 0.8]]) g.add(mesh(geo.cono(r, h, 10), mat('#4f9a68', { rim: 0.25 }), 0, y, 0));
+  for (const [y, r, h] of [[0.9, 0.85, 1.1], [1.5, 0.65, 0.95], [2.0, 0.42, 0.8]]) g.add(mesh(geo.cono(r, h, 10), mat('#3d7550', { rim: 0.2 }), 0, y, 0));
   g.add(ombra(0.8));
   g.scale.setScalar(scala);
   return conContorno ? contorno(g) : g;
@@ -475,6 +538,200 @@ export function creaQuaderno(): THREE.Group {
   segnalibro.rotation.x = 0.4;
   g.add(segnalibro);
   return contorno(g);
+}
+
+// ---------- costruzioni che Giada sblocca con le ghiande ----------
+
+const pietra = () => mat('#ffffff', { map: texture(64, macchie(['#9c968c', '#857f76', '#b2aca2', '#6f6a62'], 1.2, 41)), rim: 0.15 });
+const assi = () => mat('#ffffff', { map: texture(64, macchie(['#9a6c44', '#83592f', '#b08050'], 1, 23)), rim: 0.1 });
+
+export function creaCartello(nome: string): THREE.Group {
+  const g = new THREE.Group();
+  g.add(ombra(0.6));
+  for (const x of [-0.55, 0.55]) g.add(mesh(geo.cil(0.06, 0.07, 1.4, 8), assi(), x, 0.7, 0));
+  const tavola = mesh(geo.scatola(1.5, 0.55, 0.08), mat('#ffffff', { map: texture(256, (c, l) => {
+    c.fillStyle = '#b08050'; c.fillRect(0, 0, l, l);
+    c.fillStyle = '#9a6c44'; for (let y = 0; y < l; y += 22) c.fillRect(0, y, l, 3);
+    c.fillStyle = '#fff3d6'; c.font = `900 ${l * 0.17}px 'Nunito Variable', sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.lineWidth = 6; c.strokeStyle = '#4a3020';
+    const testo = nome.length > 16 ? nome.slice(0, 15) + '…' : nome;
+    c.strokeText(testo, l / 2, l / 2); c.fillText(testo, l / 2, l / 2);
+  }), rim: 0 }), 0, 1.15, 0.02);
+  tavola.scale.y = 1;
+  g.add(tavola);
+  return contorno(g);
+}
+
+export function creaAiuola(): THREE.Group {
+  const g = new THREE.Group();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const s = mesh(geo.palla(0.13, 8), pietra(), Math.cos(a) * 0.75, 0.06, Math.sin(a) * 0.55);
+    s.scale.y = 0.6;
+    g.add(s);
+  }
+  const terriccio = mesh(geo.cil(0.72, 0.72, 0.06, 18), mat('#6b4a30'), 0, 0.03, 0);
+  terriccio.scale.z = 0.75;
+  g.add(terriccio);
+  const colori = ['#ff6f91', '#ffd166', '#ffffff', '#b39ddb', '#ff7b54', '#7fc8f8'];
+  for (let i = 0; i < 16; i++) {
+    const f = creaFiore(colori[i % colori.length]);
+    const a = i * 2.4, d = 0.15 + (i % 4) * 0.13;
+    f.position.set(Math.cos(a) * d, 0.04, Math.sin(a) * d * 0.75);
+    f.scale.setScalar(1.3);
+    g.add(f);
+  }
+  return g;
+}
+
+export function creaStaccionata(raggio = 1.5): THREE.Group {
+  const g = new THREE.Group();
+  const n = 12;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    if (i === 3) continue; // il cancelletto aperto
+    const paletto = mesh(geo.scatola(0.1, 0.6, 0.06), assi(), Math.cos(a) * raggio, 0.3, Math.sin(a) * raggio);
+    paletto.rotation.y = -a + Math.PI / 2;
+    g.add(paletto);
+    const b = (i + 0.5) / n * Math.PI * 2;
+    const trave = mesh(geo.scatola(0.06, 0.07, raggio * 0.52), assi(), Math.cos(b) * raggio * 0.98, 0.42, Math.sin(b) * raggio * 0.98);
+    trave.rotation.y = -b;
+    g.add(trave);
+  }
+  return contorno(g);
+}
+
+export function creaPanchina(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(ombra(0.7));
+  g.add(mesh(geo.scatola(1.2, 0.08, 0.38), assi(), 0, 0.42, 0));
+  const schienale = mesh(geo.scatola(1.2, 0.3, 0.06), assi(), 0, 0.68, -0.18);
+  schienale.rotation.x = -0.15;
+  g.add(schienale);
+  for (const x of [-0.5, 0.5]) for (const z of [-0.14, 0.14]) g.add(mesh(geo.cil(0.04, 0.04, 0.42, 6), mat('#4a3a2c'), x, 0.21, z));
+  return contorno(g);
+}
+
+export function creaFalo(): { gruppo: THREE.Group; fiamma: THREE.Mesh } {
+  const g = new THREE.Group();
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    const s = mesh(geo.palla(0.14, 8), pietra(), Math.cos(a) * 0.5, 0.07, Math.sin(a) * 0.5);
+    s.scale.y = 0.7;
+    g.add(s);
+  }
+  for (let i = 0; i < 4; i++) {
+    const l = mesh(geo.cil(0.06, 0.07, 0.7, 6), assi(), 0, 0.18, 0);
+    l.rotation.set(1.15, (i / 4) * Math.PI * 2, 0);
+    l.position.set(Math.sin((i / 4) * Math.PI * 2) * 0.12, 0.2, Math.cos((i / 4) * Math.PI * 2) * 0.12);
+    g.add(l);
+  }
+  const fiamma = mesh(geo.cono(0.22, 0.6, 8), mat('#ffb347', { emissive: '#ff7a1a', emissiveIntensity: 1.6, rim: 0 }), 0, 0.5, 0);
+  fiamma.userData.senzaContorno = true;
+  g.add(fiamma);
+  const cuore = mesh(geo.cono(0.12, 0.38, 8), mat('#fff0a0', { emissive: '#ffd060', emissiveIntensity: 2, rim: 0 }), 0, 0.42, 0);
+  cuore.userData.senzaContorno = true;
+  g.add(cuore);
+  return { gruppo: g, fiamma };
+}
+
+export function creaLaghetto(): THREE.Group {
+  const g = new THREE.Group();
+  const acqua = mesh(new THREE.CircleGeometry(1.3, 28), materiale({ color: '#5aa8d8', emissive: '#2a6f9a', emissiveIntensity: 0.25, rim: 0.6, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  acqua.rotation.x = -Math.PI / 2;
+  acqua.position.y = 0.03;
+  acqua.scale.set(1.3, 0.9, 1);
+  acqua.name = 'acqua';
+  g.add(acqua);
+  for (let i = 0; i < 11; i++) {
+    const s = creaSasso(0.4 + (i % 3) * 0.12);
+    const a = (i / 11) * Math.PI * 2;
+    s.position.set(Math.cos(a) * 1.75, s.position.y, Math.sin(a) * 1.25);
+    g.add(s);
+  }
+  // ninfee
+  for (const [x, z] of [[0.4, 0.2], [-0.5, -0.3], [0.1, -0.5]]) {
+    const n = mesh(geo.cil(0.18, 0.18, 0.02, 10), mat('#4f9a50'), x, 0.05, z);
+    g.add(n);
+    g.add(mesh(geo.palla(0.06, 8), mat('#ff9ab8'), x + 0.05, 0.1, z));
+  }
+  return g;
+}
+
+export function creaPonticello(): THREE.Group {
+  const g = new THREE.Group();
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1) - 0.5;
+    const asse = mesh(geo.scatola(0.3, 0.06, 0.8), assi(), t * 2.6, 0.3 + Math.cos(t * Math.PI) * 0.35, 0);
+    asse.rotation.z = -Math.sin(t * Math.PI) * 0.45;
+    g.add(asse);
+  }
+  for (const z of [-0.42, 0.42]) for (let i = 0; i <= 4; i++) {
+    const t = i / 4 - 0.5;
+    g.add(mesh(geo.cil(0.04, 0.04, 0.5, 6), assi(), t * 2.4, 0.55 + Math.cos(t * Math.PI) * 0.35, z));
+  }
+  return contorno(g);
+}
+
+export function creaPozzo(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(ombra(1));
+  const muro = mesh(geo.cil(0.6, 0.65, 0.7, 16), pietra(), 0, 0.35, 0);
+  g.add(muro);
+  g.add(mesh(geo.cil(0.48, 0.48, 0.05, 16), mat('#20303a'), 0, 0.68, 0));
+  for (const x of [-0.55, 0.55]) g.add(mesh(geo.cil(0.06, 0.06, 1.3, 6), assi(), x, 1.2, 0));
+  const tetto = mesh(geo.cono(0.95, 0.55, 4), mat('#a0503a', { rim: 0.3 }), 0, 2.05, 0);
+  tetto.rotation.y = Math.PI / 4;
+  g.add(tetto);
+  const rullo = mesh(geo.cil(0.07, 0.07, 1.1, 8), assi(), 0, 1.5, 0);
+  rullo.rotation.z = Math.PI / 2;
+  g.add(rullo);
+  g.add(mesh(geo.cil(0.12, 0.1, 0.18, 10), mat('#7a6a5a'), 0, 1.15, 0));
+  return contorno(g);
+}
+
+export function creaTorretta(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(ombra(1.1));
+  for (const [x, z] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
+    const p = mesh(geo.cil(0.07, 0.09, 3, 6), assi(), x * 0.85, 1.5, z * 0.85);
+    p.rotation.set(z * 0.08, 0, -x * 0.08);
+    g.add(p);
+  }
+  g.add(mesh(geo.scatola(1.3, 0.1, 1.3), assi(), 0, 3.0, 0));
+  for (const s of [-1, 1]) {
+    g.add(mesh(geo.scatola(1.3, 0.3, 0.06), assi(), 0, 3.2, s * 0.62));
+    g.add(mesh(geo.scatola(0.06, 0.3, 1.3), assi(), s * 0.62, 3.2, 0));
+  }
+  const tetto = mesh(geo.cono(1.1, 0.8, 4), mat('#3b4a7a', { rim: 0.3 }), 0, 3.8, 0);
+  tetto.rotation.y = Math.PI / 4;
+  g.add(tetto);
+  const bandiera = mesh(geo.scatola(0.4, 0.25, 0.02), mat('#e2683a'), 0.22, 4.45, 0);
+  g.add(bandiera);
+  g.add(mesh(geo.cil(0.02, 0.02, 0.5, 5), mat('#4a3a2c'), 0, 4.35, 0));
+  return contorno(g);
+}
+
+export function creaMulino(): { gruppo: THREE.Group; pale: THREE.Group } {
+  const g = new THREE.Group();
+  g.add(ombra(1.5));
+  g.add(mesh(geo.cil(0.8, 1.1, 2.6, 12), mat('#ece0c8', { map: texture(64, macchie(['#ece0c8', '#ddd0b4', '#f6eedc'], 0.6, 61)) }), 0, 1.3, 0));
+  g.add(mesh(geo.cono(1.0, 1.0, 12), mat('#8a4a34', { rim: 0.3 }), 0, 3.1, 0));
+  g.add(mesh(geo.scatola(0.4, 0.7, 0.05), mat('#6a4a2e'), 0, 0.35, 1.02));
+  const pale = new THREE.Group();
+  pale.position.set(0, 2.4, 0.95);
+  for (let i = 0; i < 4; i++) {
+    const braccio = new THREE.Group();
+    braccio.rotation.z = (i / 4) * Math.PI * 2;
+    braccio.add(mesh(geo.scatola(0.08, 1.6, 0.05), assi(), 0, 0.8, 0));
+    braccio.add(mesh(geo.scatola(0.4, 1.2, 0.02), mat('#f6eedc'), 0.22, 0.95, 0.03));
+    pale.add(braccio);
+  }
+  pale.add(mesh(geo.palla(0.14, 10), mat('#6a4a2e'), 0, 0, 0.05));
+  g.add(pale);
+  contorno(g);
+  return { gruppo: g, pale };
 }
 
 // ---------- edifici ----------

@@ -1,5 +1,5 @@
 // Copia di sicurezza: un file JSON con tutto, diario incluso.
-import { SCHEMA } from './gioco';
+import { normalizzaStato, SCHEMA } from './gioco';
 import type { StatoGioco, VoceDiario } from './tipi';
 
 export interface FileCopia {
@@ -22,8 +22,7 @@ export function migra(f: FileCopia): FileCopia {
   if (f.versioneSchema > SCHEMA) {
     throw new Error("Questa copia viene da una versione più nuova dell'app: aggiorna prima l'app.");
   }
-  // qui andranno le migrazioni: if (f.versioneSchema < 2) { ... }
-  return { ...f, versioneSchema: SCHEMA, stato: { ...f.stato, versioneSchema: SCHEMA } };
+  return { ...f, versioneSchema: SCHEMA, stato: normalizzaStato({ ...f.stato }) };
 }
 
 export function scaricaFile(nome: string, contenuto: string) {
