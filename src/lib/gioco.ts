@@ -10,10 +10,26 @@ import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './
 import {
   FASI, VIRTU, virtuDi, zeriVirtu,
   type Animale, type Edificio, type Emozione, type Evento, type Fase, type Forza,
-  type Punteggi, type Richiesta, type Specie, type StatoGioco, type Virtu, type VoceDiario,
+  type Aspetto, type Punteggi, type Richiesta, type Specie, type StatoGioco, type Virtu, type VoceDiario,
 } from './tipi';
 
-export const SCHEMA = 3;
+export const SCHEMA = 4;
+
+/** Segni particolari: nel villaggio non ce ne sono mai due uguali. */
+export const TRATTI = [
+  'orecchio piegato', 'occhi di due colori', 'ciuffo ribelle', 'macchia a cuore', 'lentiggini', 'stellina in fronte',
+  'calzini bianchi', 'coda extra folta', 'fiocco rosso', 'bandana blu', 'occhiali tondi', 'collana di bacche',
+  'cappellino di foglia', 'campanellino', 'macchia sull\'occhio', 'punta della coda scura',
+] as const;
+export const NUMERO_MANTI = 4;
+export const NOME_MANTO: Record<Specie, string[]> = {
+  volpe: ['rossa', 'dorata', 'argentata', 'bruciata'],
+  daino: ['nocciola', 'fulvo', 'chiaro', 'cioccolato'],
+  tasso: ['grigio', 'miele', 'scuro', 'quasi bianco'],
+  riccio: ['sabbia', 'castano', 'biondo', 'scuro'],
+  scoiattolo: ['rosso', 'grigio', 'nero', 'dorato'],
+  lepre: ['grigia', 'sabbia', 'bianca', 'bruna'],
+};
 
 export interface DefAbilita { id: string; nome: string; giorni: number; simbolo: string; frase: string; richiede?: string; luogo?: string }
 
@@ -107,12 +123,36 @@ export function speciePrimoUovo(profilo: Record<Forza, number>): Specie {
   return ordinate[0];
 }
 
+/**
+ * Aspetto di un nuovo animale: mantello diverso dagli altri della sua specie,
+ * segno particolare diverso da quello di tutti gli altri abitanti, corporatura, occhi e orecchie suoi.
+ */
+export function nuovoAspetto(s: StatoGioco, specie: Specie, sesso: 'f' | 'm', escludi?: Animale): Aspetto {
+  const altri = s.animali.filter((x) => x !== escludi && x.aspetto);
+  const mantiUsati = altri.filter((x) => x.specie === specie).map((x) => x.aspetto.manto);
+  const mantiLiberi = Array.from({ length: NUMERO_MANTI }, (_, i) => i).filter((i) => !mantiUsati.includes(i));
+  const trattiUsati = altri.map((x) => x.aspetto.tratto);
+  const trattiLiberi = TRATTI.filter((t) => !trattiUsati.includes(t));
+  const pesca = <T,>(l: readonly T[], tutti: readonly T[]) => (l.length ? l : tutti)[Math.floor(casuale(s) * (l.length || tutti.length))];
+  return {
+    manto: pesca(mantiLiberi, [0, 1, 2, 3]),
+    tratto: pesca(trattiLiberi, TRATTI),
+    forma: casuale(s) * 2 - 1,
+    occhi: casuale(s),
+    orecchie: casuale(s),
+    taglia: (0.92 + casuale(s) * 0.16) * (sesso === 'm' ? 1.04 : 0.96),
+    lato: casuale(s) < 0.5 ? -1 : 1,
+  };
+}
+
 function nuovoUovo(s: StatoGioco, specie: Specie, data: string, voci: number): Animale {
+  const sesso = casuale(s) < 0.5 ? 'f' : 'm';
   const a: Animale = {
     id: nuovoId(s, 'a'),
     nome: '',
     specie,
-    sesso: casuale(s) < 0.5 ? 'f' : 'm',
+    sesso,
+    aspetto: nuovoAspetto(s, specie, sesso),
     fase: 'uovo',
     xp: 0,
     nutrimento: zeriVirtu(),
@@ -541,6 +581,9 @@ export function normalizzaStato(s: StatoGioco): StatoGioco {
       a.abilita ??= [];
       a.studio ??= null;
     }
+  }
+  if ((s.versioneSchema ?? 1) < 4) {
+    for (const a of s.animali) if (!a.aspetto) a.aspetto = nuovoAspetto(s, a.specie, a.sesso, a);
   }
   s.versioneSchema = SCHEMA;
   return s;

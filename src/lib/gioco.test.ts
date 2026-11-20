@@ -88,6 +88,21 @@ describe('crescita', () => {
     expect(s.animali[0].fase).toBe('cucciolo');
   });
 
+  it('ogni abitante ha un segno particolare unico e un mantello diverso dagli altri della sua specie', () => {
+    const s = partita();
+    let d = INIZIO;
+    for (let i = 0; i < 400; i++) {
+      applicaVoce(s, voce(d, { coraggio: 3, curiosita: 3, bellezza: 3 }));
+      d = aggiungiGiorni(d, 1);
+    }
+    const tratti = s.animali.map((a) => a.aspetto.tratto);
+    expect(new Set(tratti).size).toBe(s.animali.length);
+    for (const specie of ['volpe', 'daino', 'tasso'] as const) {
+      const manti = s.animali.filter((a) => a.specie === specie).map((a) => a.aspetto.manto);
+      if (manti.length <= 4) expect(new Set(manti).size).toBe(manti.length);
+    }
+  });
+
   it('mai più di sette abitanti', () => {
     const s = partita();
     let d = INIZIO;

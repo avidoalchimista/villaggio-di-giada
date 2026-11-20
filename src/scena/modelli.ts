@@ -44,13 +44,44 @@ function mesh(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) {
 // ---------- animali ----------
 
 interface Mantello { corpo: string; pancia: string; muso: string; zampe: string; extra: string; occhi: string }
-const MANTELLO: Record<Specie, Mantello> = {
-  volpe: { corpo: '#e8803e', pancia: '#fff3e0', muso: '#fff3e0', zampe: '#6a3f2a', extra: '#fff3e0', occhi: '#3a2214' },
-  daino: { corpo: '#d29c64', pancia: '#f7ead6', muso: '#f7ead6', zampe: '#9a6a44', extra: '#fffaf0', occhi: '#2e1c12' },
-  tasso: { corpo: '#9ea3ab', pancia: '#ecebe8', muso: '#ffffff', zampe: '#45454f', extra: '#34343c', occhi: '#1e1e24' },
-  riccio: { corpo: '#d8b48c', pancia: '#f6e4cc', muso: '#f6e4cc', zampe: '#8a6644', extra: '#7a5a3c', occhi: '#2a1a10' },
-  scoiattolo: { corpo: '#cf7444', pancia: '#fbe8d2', muso: '#fbe8d2', zampe: '#8a4426', extra: '#d98452', occhi: '#2a160c' },
-  lepre: { corpo: '#d9c4a6', pancia: '#ffffff', muso: '#ffffff', zampe: '#b0916e', extra: '#f4b9b9', occhi: '#2a1c14' },
+// quattro mantelli per specie, ben diversi tra loro (come le varietà vere: volpe rossa, argentata...)
+const MANTI: Record<Specie, Mantello[]> = {
+  volpe: [
+    { corpo: '#e8803e', pancia: '#fff3e0', muso: '#fff3e0', zampe: '#6a3f2a', extra: '#fff3e0', occhi: '#3a2214' },
+    { corpo: '#e6b04e', pancia: '#fff8e6', muso: '#fff8e6', zampe: '#8a5a2a', extra: '#fffaf0', occhi: '#4a2c10' },
+    { corpo: '#9fa3b4', pancia: '#f4f4f8', muso: '#ffffff', zampe: '#3a3a48', extra: '#ffffff', occhi: '#1e2a3a' },
+    { corpo: '#a24f2a', pancia: '#f2dcc4', muso: '#f2dcc4', zampe: '#3a2016', extra: '#f6e6d6', occhi: '#2a140a' },
+  ],
+  daino: [
+    { corpo: '#d29c64', pancia: '#f7ead6', muso: '#f7ead6', zampe: '#9a6a44', extra: '#fffaf0', occhi: '#2e1c12' },
+    { corpo: '#c46a3a', pancia: '#f6dcc4', muso: '#f6dcc4', zampe: '#7a3e20', extra: '#fff4e8', occhi: '#2a140a' },
+    { corpo: '#ead7b2', pancia: '#ffffff', muso: '#ffffff', zampe: '#b89a74', extra: '#ffffff', occhi: '#3a2a1a' },
+    { corpo: '#7e5236', pancia: '#e8d2b8', muso: '#e8d2b8', zampe: '#4a2e1c', extra: '#f0e2cc', occhi: '#1e120a' },
+  ],
+  tasso: [
+    { corpo: '#9ea3ab', pancia: '#ecebe8', muso: '#ffffff', zampe: '#45454f', extra: '#34343c', occhi: '#1e1e24' },
+    { corpo: '#c9a46c', pancia: '#f4e6cc', muso: '#fffaf0', zampe: '#6a4a2a', extra: '#4a3420', occhi: '#2a1a0c' },
+    { corpo: '#5f6470', pancia: '#c4c6cc', muso: '#ffffff', zampe: '#2a2a32', extra: '#1e1e24', occhi: '#101014' },
+    { corpo: '#dcdcdc', pancia: '#ffffff', muso: '#ffffff', zampe: '#8a8a94', extra: '#6a6a74', occhi: '#2a2a34' },
+  ],
+  riccio: [
+    { corpo: '#d8b48c', pancia: '#f6e4cc', muso: '#f6e4cc', zampe: '#8a6644', extra: '#7a5a3c', occhi: '#2a1a10' },
+    { corpo: '#a8784e', pancia: '#efd6b8', muso: '#efd6b8', zampe: '#5a3c24', extra: '#4a3220', occhi: '#20120a' },
+    { corpo: '#ecd2a0', pancia: '#fff6e4', muso: '#fff6e4', zampe: '#a88a64', extra: '#b0946a', occhi: '#3a2a18' },
+    { corpo: '#7a6a5e', pancia: '#d8ccc0', muso: '#d8ccc0', zampe: '#3a302a', extra: '#2a2420', occhi: '#141010' },
+  ],
+  scoiattolo: [
+    { corpo: '#cf7444', pancia: '#fbe8d2', muso: '#fbe8d2', zampe: '#8a4426', extra: '#d98452', occhi: '#2a160c' },
+    { corpo: '#8e929c', pancia: '#f2f2f4', muso: '#f2f2f4', zampe: '#4a4c54', extra: '#a4a8b0', occhi: '#1a1c22' },
+    { corpo: '#3e3a3c', pancia: '#8a8284', muso: '#9a9294', zampe: '#1e1c1e', extra: '#4a4648', occhi: '#0a0a0a' },
+    { corpo: '#e0a04c', pancia: '#fff0d4', muso: '#fff0d4', zampe: '#9a6a2a', extra: '#eab060', occhi: '#3a2410' },
+  ],
+  lepre: [
+    { corpo: '#a8a4a0', pancia: '#ffffff', muso: '#ffffff', zampe: '#6a6662', extra: '#f4b9b9', occhi: '#2a1c14' },
+    { corpo: '#d9c4a6', pancia: '#ffffff', muso: '#ffffff', zampe: '#b0916e', extra: '#f4b9b9', occhi: '#2a1c14' },
+    { corpo: '#f4f2ee', pancia: '#ffffff', muso: '#ffffff', zampe: '#d4d0cc', extra: '#f4b9b9', occhi: '#a03040' },
+    { corpo: '#8a6446', pancia: '#e8d8c4', muso: '#e8d8c4', zampe: '#4a3020', extra: '#e4a8a8', occhi: '#1a100a' },
+  ],
 };
 
 export interface ModelloAnimale {
@@ -66,28 +97,22 @@ export interface ModelloAnimale {
   mestiere: string | null;
 }
 
-/** Segno particolare di ogni animale, sempre lo stesso per lo stesso animale. */
-export const SEGNI = ['nessuno', 'macchia sull\'occhio', 'stellina in fronte', 'lentiggini', 'calzini chiari', 'punta della coda scura'] as const;
-
-export function tratti(a: Pick<Animale, 'id' | 'sesso'>) {
-  const r = rng(hash(a.id));
-  return {
-    tinta: (r() - 0.5) * 0.05,
-    luce: (r() - 0.5) * 0.16,
-    taglia: (0.94 + r() * 0.12) * (a.sesso === 'm' ? 1.04 : 0.96),
-    segno: SEGNI[Math.floor(r() * SEGNI.length)],
-    lato: r() < 0.5 ? -1 : 1,
-  };
-}
-
 function varia(colore: string, tinta: number, luce: number) {
   return '#' + new THREE.Color(colore).offsetHSL(tinta, 0, luce).getHexString();
 }
 
+/** Per animali salvati prima che esistesse l'aspetto (non dovrebbe servire: lo aggiunge la migrazione). */
+function aspettoDiRiserva(a: Animale) {
+  const r = rng(hash(a.id));
+  return { manto: Math.floor(r() * 4), tratto: 'lentiggini', forma: r() * 2 - 1, occhi: r(), orecchie: r(), taglia: 1, lato: 1 };
+}
+
 export function creaAnimale(a: Animale): ModelloAnimale {
-  const base = MANTELLO[a.specie];
-  const t = tratti(a);
-  const p = { ...base, corpo: varia(base.corpo, t.tinta, t.luce), zampe: t.segno === 'calzini chiari' ? base.pancia : varia(base.zampe, t.tinta, t.luce * 0.5) };
+  const asp = a.aspetto ?? aspettoDiRiserva(a);
+  const base = MANTI[a.specie][asp.manto % MANTI[a.specie].length];
+  const t = { segno: asp.tratto, lato: asp.lato, taglia: asp.taglia };
+  const p = { ...base, zampe: t.segno === 'calzini bianchi' ? '#fbf8f2' : base.zampe };
+  const orecchieDi: THREE.Object3D[] = [];
   const gruppo = new THREE.Group();
   const corpo = new THREE.Group();
   gruppo.add(corpo);
@@ -95,7 +120,8 @@ export function creaAnimale(a: Animale): ModelloAnimale {
 
   // corpo piccolo e tondo (a pera)
   const busto = mesh(geo.palla(0.34), pelo(p.corpo), 0, 0.42, 0);
-  busto.scale.set(1, 0.95, 1.05);
+  // corporatura: rotondetto (forma < 0) o slanciato (forma > 0)
+  busto.scale.set(1 - asp.forma * 0.16, 0.95 * (1 + asp.forma * 0.1), 1.05 - asp.forma * 0.1);
   corpo.add(busto);
   const pancia = mesh(geo.palla(0.24), mat(p.pancia, { rim: 0.2 }), 0, 0.38, 0.14);
   pancia.scale.set(1, 1.05, 0.75);
@@ -137,9 +163,12 @@ export function creaAnimale(a: Animale): ModelloAnimale {
     const g = new THREE.Group();
     g.position.set(x, -0.02, 0.37);
     g.rotation.y = x * 1.4;
-    const bulbo = mesh(geo.palla(0.105), mat(p.occhi, { rim: 0 }));
+    // occhi di due colori: uno azzurro
+    const coloreOcchio = t.segno === 'occhi di due colori' && Math.sign(x) === t.lato ? '#3f86c8' : p.occhi;
+    const bulbo = mesh(geo.palla(0.105), mat(coloreOcchio, { rim: 0 }));
     bulbo.scale.set(0.95, 1.15, 0.55);
     g.add(bulbo);
+    g.scale.setScalar(0.82 + asp.occhi * 0.36);
     g.add(mesh(geo.palla(0.038, 10), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.8, rim: 0 }), 0.03, 0.05, 0.05));
     g.add(mesh(geo.palla(0.018, 8), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.8, rim: 0 }), -0.035, -0.04, 0.05));
     // femmine: ciglia lunghe all'insù
@@ -151,7 +180,7 @@ export function creaAnimale(a: Animale): ModelloAnimale {
     }
     // segno particolare: macchia intorno a un occhio
     if (t.segno === 'macchia sull\'occhio' && Math.sign(x) === t.lato) {
-      const macchia = mesh(geo.palla(0.15), mat(a.specie === 'tasso' ? '#ffffff' : varia(base.corpo, 0, -0.18), { rim: 0 }), x * 1.05, 0.0, 0.3);
+      const macchia = mesh(geo.palla(0.15), mat(a.specie === 'tasso' ? '#ffffff' : varia(base.corpo, 0, -0.2), { rim: 0 }), x * 1.05, 0.0, 0.3);
       macchia.scale.set(1, 1.05, 0.45);
       macchia.userData.senzaContorno = true;
       testa.add(macchia);
@@ -181,6 +210,7 @@ export function creaAnimale(a: Animale): ModelloAnimale {
       g.add(i);
     }
     testa.add(g);
+    orecchieDi.push(g);
     return g;
   };
   switch (a.specie) {
@@ -222,6 +252,7 @@ export function creaAnimale(a: Animale): ModelloAnimale {
         i.userData.senzaContorno = true;
         g.add(i);
         testa.add(g);
+        orecchieDi.push(g);
       }
       // macchie bianche sulla schiena e sulla fronte
       for (const [x, y, z, r] of [[-0.14, 0.7, -0.02, 0.055], [0.13, 0.72, 0.04, 0.05], [0.22, 0.6, -0.14, 0.045], [-0.03, 0.72, -0.18, 0.05], [-0.24, 0.58, -0.12, 0.045], [0.06, 0.66, -0.28, 0.04]]) {
@@ -260,7 +291,7 @@ export function creaAnimale(a: Animale): ModelloAnimale {
       fronte.scale.set(0.6, 1.5, 0.55);
       fronte.userData.senzaContorno = true;
       testa.add(fronte);
-      busto.scale.set(1.15, 0.9, 1.15);
+      busto.scale.set(1.15 - asp.forma * 0.16, 0.9 * (1 + asp.forma * 0.1), 1.15 - asp.forma * 0.1);
       const c = mesh(geo.palla(0.1), pelo(p.corpo), 0, 0.42, -0.36);
       c.scale.set(0.8, 0.8, 1.3);
       corpo.add(c);
@@ -289,9 +320,12 @@ export function creaAnimale(a: Animale): ModelloAnimale {
     }
     case 'lepre': {
       for (const x of [-0.12, 0.12]) {
-        const o = mesh(geo.capsula(0.08, 0.36), pelo(p.corpo), x, 0.52, -0.04);
-        o.rotation.z = -x;
-        testa.add(o);
+        const g = new THREE.Group();
+        g.position.set(x, 0.32, -0.04);
+        g.rotation.z = -x;
+        g.add(mesh(geo.capsula(0.08, 0.36), pelo(p.corpo), 0, 0.2, 0));
+        testa.add(g);
+        orecchieDi.push(g);
       }
       const c = mesh(geo.palla(0.11), mat('#ffffff'), 0, 0.42, -0.36);
       corpo.add(c);
@@ -309,21 +343,120 @@ export function creaAnimale(a: Animale): ModelloAnimale {
     }
     if (a.specie === 'daino' && a.fase === 'cucciolo') for (const x of [-0.13, 0.13]) testa.add(mesh(geo.palla(0.05), mat('#8a5a36'), x, 0.42, -0.04));
   }
-  // altri segni particolari
-  if (t.segno === 'stellina in fronte') {
-    const stella = mesh(geo.palla(0.07), mat('#fffaf0', { rim: 0 }), 0, 0.22, 0.4);
-    stella.scale.set(1, 1.2, 0.35);
-    stella.userData.senzaContorno = true;
-    testa.add(stella);
-  }
-  if (t.segno === 'lentiggini') for (const x of [-1, 1]) for (let k = 0; k < 3; k++) {
-    const l = mesh(geo.palla(0.014, 6), mat('#7a4a30', { rim: 0 }), x * (0.22 + k * 0.035), -0.1 + (k % 2) * 0.03, 0.39 - k * 0.02);
-    l.userData.senzaContorno = true;
-    testa.add(l);
-  }
-  if (t.segno === 'punta della coda scura' && coda) {
-    const punta = mesh(geo.palla(0.09), mat('#3a2418'), 0, 0.2, -0.5);
-    coda.add(punta);
+  // orecchie più piccole o più grandi
+  for (const o of orecchieDi) o.scale.setScalar(0.78 + asp.orecchie * 0.5);
+
+  // ---- segno particolare: unico nel villaggio ----
+  const collo = (oggetto: THREE.Object3D) => {
+    oggetto.position.y -= 0.42;
+    testa.add(oggetto);
+  };
+  switch (t.segno) {
+    case 'orecchio piegato': {
+      const o = orecchieDi.find((e) => Math.sign(e.position.x) === t.lato) ?? orecchieDi[0];
+      if (o) {
+        o.rotation.x = 1.1;
+        o.scale.y *= 0.8;
+      }
+      break;
+    }
+    case 'ciuffo ribelle':
+      for (let k = 0; k < 5; k++) {
+        const c = mesh(geo.cono(0.06, 0.26, 6), pelo(varia(p.corpo, 0, 0.08)), (k - 2) * 0.05, 0.48, 0.1 - Math.abs(k - 2) * 0.03);
+        c.rotation.set(-0.4, 0, (2 - k) * 0.35);
+        testa.add(c);
+      }
+      break;
+    case 'macchia a cuore': {
+      const cuore = new THREE.Group();
+      // cuore chiaro sui manti scuri, rosato sui manti chiari: si deve vedere sempre
+      const mantoChiaro = new THREE.Color(base.corpo).getHSL({ h: 0, s: 0, l: 0 }).l > 0.6;
+      const chiaro = mat(mantoChiaro ? '#e0607a' : '#fff3e6', { rim: 0 });
+      for (const x of [-0.045, 0.045]) cuore.add(mesh(geo.palla(0.06, 10), chiaro, x, 0.03, 0));
+      const punta = mesh(geo.cono(0.085, 0.11, 10), chiaro, 0, -0.04, 0);
+      punta.rotation.z = Math.PI;
+      cuore.add(punta);
+      cuore.scale.z = 0.4;
+      cuore.position.set(t.lato * 0.31, 0.47, 0.02);
+      cuore.rotation.y = t.lato * Math.PI / 2;
+      cuore.traverse((c) => (c.userData.senzaContorno = true));
+      corpo.add(cuore);
+      break;
+    }
+    case 'lentiggini':
+      for (const x of [-1, 1]) for (let k = 0; k < 4; k++) {
+        const l = mesh(geo.palla(0.017, 6), mat('#7a4a30', { rim: 0 }), x * (0.2 + k * 0.035), -0.1 + (k % 2) * 0.035, 0.39 - k * 0.02);
+        l.userData.senzaContorno = true;
+        testa.add(l);
+      }
+      break;
+    case 'stellina in fronte': {
+      const stella = mesh(new THREE.CircleGeometry(0.09, 5), mat('#fff7d6', { rim: 0, side: THREE.DoubleSide }), 0, 0.22, 0.43);
+      stella.rotation.x = -0.3;
+      stella.userData.senzaContorno = true;
+      testa.add(stella);
+      break;
+    }
+    case 'coda extra folta':
+      if (coda) coda.scale.setScalar(1.55);
+      break;
+    case 'fiocco rosso': {
+      const f = new THREE.Group();
+      for (const s of [-1, 1]) {
+        const ala = mesh(geo.cono(0.08, 0.16, 8), mat('#e03a4a'), s * 0.08, 0, 0);
+        ala.rotation.z = -s * Math.PI / 2;
+        f.add(ala);
+      }
+      f.add(mesh(geo.palla(0.045, 8), mat('#c02a3a'), 0, 0, 0));
+      f.position.set(t.lato * 0.24, 0.36, 0.12);
+      f.rotation.z = t.lato * 0.4;
+      testa.add(f);
+      break;
+    }
+    case 'bandana blu': {
+      const b = mesh(new THREE.TorusGeometry(0.25, 0.055, 8, 18), mat('#3a6ac8'), 0, 0, 0.02);
+      b.rotation.x = Math.PI / 2;
+      collo(b);
+      const triangolo = mesh(geo.cono(0.13, 0.2, 3), mat('#3a6ac8'), 0, -0.54, 0.22);
+      triangolo.rotation.set(0.3, 0, Math.PI);
+      testa.add(triangolo);
+      break;
+    }
+    case 'occhiali tondi':
+      for (const x of [-0.19, 0.19]) {
+        const lente = mesh(new THREE.TorusGeometry(0.12, 0.016, 6, 20), mat('#3a2a1e', { rim: 0 }), x, -0.02, 0.44);
+        lente.userData.senzaContorno = true;
+        testa.add(lente);
+      }
+      testa.add(mesh(geo.scatola(0.12, 0.02, 0.02), mat('#3a2a1e', { rim: 0 }), 0, 0.0, 0.46));
+      break;
+    case 'collana di bacche':
+      for (let k = 0; k < 11; k++) {
+        const ang = (k / 11) * Math.PI * 2;
+        const b = mesh(geo.palla(0.04, 8), mat(k % 2 ? '#d8344a' : '#7a3aa8', { rim: 0.3 }), Math.sin(ang) * 0.25, 0, Math.cos(ang) * 0.25 + 0.02);
+        b.userData.senzaContorno = true;
+        collo(b);
+      }
+      break;
+    case 'cappellino di foglia': {
+      const foglia = mesh(geo.palla(0.2, 10), mat('#6aa84a', { rim: 0.3 }), 0, 0.45, -0.02);
+      foglia.scale.set(1.1, 0.18, 0.8);
+      foglia.rotation.z = t.lato * 0.25;
+      testa.add(foglia);
+      testa.add(mesh(geo.cil(0.012, 0.012, 0.12, 5), mat('#5a3a20'), 0, 0.52, -0.02));
+      break;
+    }
+    case 'campanellino': {
+      const nastro = mesh(new THREE.TorusGeometry(0.24, 0.025, 6, 18), mat('#d8344a'), 0, 0, 0.02);
+      nastro.rotation.x = Math.PI / 2;
+      collo(nastro);
+      const camp = mesh(geo.palla(0.06, 10), mat('#f2c230', { rim: 0.6, emissive: '#806010', emissiveIntensity: 0.2 }), 0, -0.48, 0.27);
+      testa.add(camp);
+      break;
+    }
+    case 'punta della coda scura':
+      if (coda) coda.add(mesh(geo.palla(0.1), mat('#2e1c12'), 0, 0.2, -0.52));
+      break;
   }
 
   contorno(corpo);

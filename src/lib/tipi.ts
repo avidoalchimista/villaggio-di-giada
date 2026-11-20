@@ -69,7 +69,18 @@ export interface Animale {
   ricordi: Ricordo[];
   genitori: string[];
   abilita: string[]; // cose che ha imparato (pescare, cantare...)
+  aspetto: Aspetto; // com'è fatto: unico nel villaggio
   studio: { id: string; inizio: string; fine: string } | null; // cosa sta imparando ora
+}
+
+export interface Aspetto {
+  manto: number; // quale mantello della specie (0-3): diverso da quello degli altri della stessa specie
+  tratto: string; // segno particolare: mai uguale a quello di un altro abitante
+  forma: number; // -1 rotondetto … 1 slanciato
+  occhi: number; // 0 piccoli … 1 grandissimi
+  orecchie: number; // 0 piccole … 1 grandi
+  taglia: number; // fattore di grandezza
+  lato: number; // -1 o 1: da che parte sta il segno particolare
 }
 
 export interface Richiesta {
