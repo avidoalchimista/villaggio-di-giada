@@ -17,7 +17,17 @@ export const app = $state({
   animaleAperto: null as string | null,
   offsetGiorni: 0, // modalità sviluppatore
   audio: true,
+  // dialoghi da mostrare nel villaggio (es. dopo una pagina di diario) e festa degli animali
+  codaDialoghi: [] as RigaDialogo[],
+  festa: 0,
 });
+
+export interface RigaDialogo {
+  chi: string; // nome mostrato sull'etichetta
+  testo: string;
+  voce?: 'corvo' | 'animale' | 'narratore';
+  audioId?: string; // battuta registrata del corvo
+}
 
 const regole = preparaDizionario(diz.voci as VoceDizionario[]);
 

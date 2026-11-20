@@ -2,7 +2,7 @@
   import Corvo from '../componenti/Corvo.svelte';
   import Ritratto from '../componenti/Ritratto.svelte';
   import frasi from '../dati/frasi.json';
-  import { analizzaTesto, app, salvaVoce, vai } from '../lib/app.svelte';
+  import { analizzaTesto, app, salvaVoce, vai, type RigaDialogo } from '../lib/app.svelte';
   import { principali } from '../lib/analisi';
   import { EMOZIONE, NOME_FORZA } from '../lib/etichette';
   import { nomeAnimale } from '../lib/gioco';
@@ -63,7 +63,22 @@
     const r = await salvaVoce(testo, f, e, difficile);
     eventi = r.eventi;
     salvando = false;
-    fase = 'fatto';
+
+    // la risposta del villaggio diventa un dialogo nella radura
+    const C = frasi.corvo as Record<string, string>;
+    const corvo = (id: string): RigaDialogo => ({ chi: 'Corvo', testo: C[id], voce: 'corvo', audioId: id });
+    const righe: RigaDialogo[] = [];
+    if (serio) righe.push(corvo('segnali_seri'));
+    else if (difficile) righe.push(corvo('giornata_difficile'));
+    else if (primoCucciolo) righe.push(corvo('primo_cucciolo'));
+    else if (!nati.length) righe.push(corvo('uovo_si_muove'));
+    if (animaleCheParla && rispostaAnimale) righe.push({ chi: nomeAnimale(animaleCheParla), testo: rispostaAnimale, voce: 'animale' });
+    for (const ev of eventi) righe.push({ chi: 'Corvo', testo: ev.testo, voce: 'corvo' });
+    if (!righe.length) righe.push(corvo('pagina_salvata'));
+    app.codaDialoghi = righe;
+    app.festa = serio || difficile ? 0 : 1;
+    ricomincia();
+    vai('villaggio');
   }
 
   function ricomincia() {
@@ -152,34 +167,6 @@
       <button style="flex:1" disabled={salvando} onclick={conferma}>Conferma</button>
     </div>
 
-  {:else if fase === 'fatto'}
-    {#if serio}
-      <Corvo id="segnali_seri" />
-    {:else if difficile}
-      <Corvo id="giornata_difficile" />
-    {:else if primoCucciolo}
-      <Corvo id="primo_cucciolo" />
-    {:else if !nati.length}
-      <Corvo id="uovo_si_muove" />
-    {:else if !rispostaAnimale && !eventi.length}
-      <Corvo id="pagina_salvata" />
-    {/if}
-
-    {#if animaleCheParla && rispostaAnimale}
-      <div class="vignetta appare centro">
-        <Ritratto animale={animaleCheParla} taglia={110} />
-        <div class="nuvola" style="margin-top:12px; text-align:left">«{rispostaAnimale}» <span class="tenue">— {nomeAnimale(animaleCheParla)}</span></div>
-      </div>
-    {/if}
-
-    {#if eventi.length}
-      <div class="vignetta scura appare">
-        <span class="didascalia">Nel villaggio</span>
-        <ul>{#each eventi as e}<li>{e.testo}</li>{/each}</ul>
-      </div>
-    {/if}
-    <button class="largo" onclick={() => { ricomincia(); vai('villaggio'); }}>Torna al villaggio</button>
-
   {:else}
     <div class="riga tra">
       <h1>Pagine passate</h1>
@@ -217,5 +204,4 @@
   .voce strong { text-transform: capitalize; }
   .pallino-piccolo { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; border: 1px solid var(--inchiostro); }
   .testo-voce { white-space: pre-wrap; }
-  ul { padding-left: 18px; }
 </style>

@@ -7,7 +7,7 @@
   import Intro from './schermate/Intro.svelte';
   import Statistiche from './schermate/Statistiche.svelte';
   import Storia from './schermate/Storia.svelte';
-  import Villaggio from './schermate/Villaggio.svelte';
+  import Gioco from './schermate/Gioco.svelte';
 
   onMount(() => {
     avvia();
@@ -31,7 +31,7 @@
 {:else if app.schermata === 'intro'}
   <Intro />
 {:else}
-  {#if app.schermata === 'villaggio'}<Villaggio />
+  {#if app.schermata === 'villaggio'}<Gioco />
   {:else if app.schermata === 'diario'}<Diario />
   {:else if app.schermata === 'animale'}<Animale />
   {:else if app.schermata === 'storia'}<Storia />

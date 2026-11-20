@@ -1,3 +1,5 @@
+<script lang="ts"></script>
+
 <!-- Il corvo guida, versione disegnata: zampe, ali, coda, volume con sfumature e tratteggio a inchiostro.
      Resta un segnaposto vettoriale finché non arriva l'illustrazione definitiva (public/img/corvo.webp). -->
 <svg viewBox="0 0 160 200" aria-label="Il corvo" class="corvo-disegno">
