@@ -1,0 +1,36 @@
+{
+  "_nota": "Numeri del gioco. Si possono ritoccare senza toccare il codice.",
+  "specieVirtu": {
+    "volpe": "saggezza",
+    "daino": "trascendenza",
+    "tasso": "coraggio",
+    "riccio": "temperanza",
+    "scoiattolo": "giustizia",
+    "lepre": "umanita"
+  },
+  "specieDisponibili": ["volpe", "daino", "tasso"],
+  "faseMassima": "adulto",
+  "sogliaFase": { "giovane": 12, "adulto": 35, "maestro": 100 },
+  "vociPrimoUovo": 2,
+  "vociAltreUova": 3,
+  "soglieUova": [8, 30, 70, 130, 200, 300],
+  "maxAnimali": 12,
+  "xpBase": 1,
+  "quotaAltreVirtu": 0.3,
+  "umore": { "iniziale": 70, "perVoce": 15, "caloGiorno": 4, "minimo": 10, "giorniPerAddormentarsi": 5 },
+  "edificio": { "giorniLento": 10, "giorniFermo": 21 },
+  "mestieri": {
+    "coraggio": ["fabbro", "taglialegna", "guardia"],
+    "umanita": ["cuoco", "guaritore", "locandiere"],
+    "saggezza": ["artigiano", "esploratore", "bibliotecario"],
+    "giustizia": ["costruttore", "capovillaggio", "mercante"],
+    "temperanza": ["giardiniere", "custode delle scorte"],
+    "trascendenza": ["musicista", "pittore", "cantastorie"]
+  },
+  "mestieriAttivi": ["cuoco", "musicista", "artigiano"],
+  "edifici": [
+    { "tipo": "chiosco", "nome": "Il chiosco", "gestore": "cuoco", "virtu": "umanita", "utentiMinimi": 1 },
+    { "tipo": "piazza_musica", "nome": "La piazza della musica", "gestore": "musicista", "virtu": "trascendenza", "utentiMinimi": 2 },
+    { "tipo": "bottega", "nome": "La bottega", "gestore": "artigiano", "virtu": "saggezza", "utentiMinimi": 1, "dopoNatale": true }
+  ]
+}

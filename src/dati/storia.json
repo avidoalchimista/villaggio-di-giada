@@ -1,0 +1,23 @@
+{
+  "_nota": "BOZZA da rivedere con Riccardo. Condizioni: giorni dall'inizio, animali nati, adulti, edifici, pagine di diario.",
+  "capitoli": [
+    {
+      "id": "c1",
+      "titolo": "Il bosco si sveglia",
+      "testo": "Il corvo si sistema il cappello e guarda il primo cucciolo che barcolla tra le foglie. «Questo bosco dormiva da tanto tempo», dice. «Gli animali tornano solo dove qualcuno racconta la propria vita. Tu l'hai fatto, e lui è arrivato. Vediamo chi verrà dopo.»",
+      "condizioni": { "animali": 1 }
+    },
+    {
+      "id": "c2",
+      "titolo": "La radura",
+      "testo": "Ora gli animali sono più di uno e hanno cominciato a ripulire una radura. Il corvo ci gira sopra due volte, poi si posa su un ceppo. «Qui ci starebbe bene un villaggio. Non si costruisce in un giorno, però: si costruisce una pagina alla volta.»",
+      "condizioni": { "animali": 2, "giorni": 5, "voci": 5 }
+    },
+    {
+      "id": "c3",
+      "titolo": "La prima porta aperta",
+      "testo": "C'è odore di qualcosa di buono nella radura. Il primo edificio ha aperto, e il corvo, per una volta, non dice niente: si siede al bancone e aspetta il suo turno come tutti.",
+      "condizioni": { "edifici": 1 }
+    }
+  ]
+}

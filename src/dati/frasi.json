@@ -1,0 +1,67 @@
+{
+  "_nota": "BOZZA da rivedere con Riccardo. Battute del corvo: ogni id avrà un file audio public/audio/corvo/<id>.mp3 registrato da Riccardo. Se il file manca, si vede solo il testo.",
+  "corvo": {
+    "benvenuto_1": "Ah, eccoti. Ti aspettavo. Io sono il corvo, e questo cappello non me lo tolgo mai, quindi non chiedere.",
+    "benvenuto_2": "Questo è un bosco un po' speciale. Gli animali qui nascono e crescono con quello che vivi tu, giorno per giorno.",
+    "benvenuto_3": "Tu scrivi nel diario cosa ti è successo. Io e gli animali ascoltiamo. Quello che scrivi resta solo qui, sul tuo telefono: non lo legge nessun altro.",
+    "benvenuto_4": "Prima però voglio conoscerti un po'. Ti faccio qualche domanda. Non ci sono risposte giuste.",
+    "dopo_questionario": "Grazie. Ho capito già qualcosa di te. Guarda: tra le foglie c'è un uovo.",
+    "nome_villaggio": "Ogni villaggio ha bisogno di un nome. Come vuoi chiamare il tuo?",
+    "primo_uovo": "Quest'uovo si schiuderà quando mi avrai raccontato un paio di giornate. Scrivi quando vuoi: anche poche righe vanno bene.",
+    "uovo_si_muove": "Hai visto? L'uovo si è mosso. Ti ha sentita.",
+    "pagina_salvata": "Ho messo la tua pagina al sicuro. Gli animali ci penseranno stanotte.",
+    "primo_cucciolo": "È nato! Per crescere e trovare compagni ha bisogno delle tue giornate: quelle belle e anche quelle storte.",
+    "diario_vuoto": "Il diario è qui. Scrivi come parleresti a un'amica.",
+    "conferma": "Ecco cosa ho sentito nella tua giornata. Se mi sono sbagliato, togli o aggiungi pure.",
+    "giornata_difficile": "Grazie di avermelo raccontato. Le giornate difficili non tolgono niente al villaggio. Gli animali vogliono solo starti vicino.",
+    "segnali_seri": "Quello che hai scritto mi sembra pesante da portare da sola. Ti va di parlarne con una persona di cui ti fidi? Se ti senti in pericolo, chiama il 112. Io resto qui.",
+    "bentornata": "Bentornata. Ecco cosa è successo mentre eri via.",
+    "backup": "Una cosa da corvo previdente: ogni tanto salva una copia del villaggio. Se cambi telefono, la riporti con te.",
+    "nuovo_capitolo": "C'è un capitolo nuovo della storia. Vieni a sentirlo."
+  },
+  "animali": {
+    "saluto": [
+      "Ciao Giada! Cosa ti è successo oggi?",
+      "Ti stavo aspettando. Mi racconti?",
+      "Eccoti! Oggi ho pensato a te."
+    ],
+    "richiesta": [
+      "Mi manchi un po'. Mi scrivi due righe?",
+      "Il bosco è silenzioso senza le tue storie.",
+      "Quando hai un momento, vieni a raccontarmi qualcosa."
+    ],
+    "addormentato": [
+      "Zzz… (dorme raggomitolat{o}. Una pagina di diario {lo} sveglierebbe.)"
+    ],
+    "ricordo": [
+      "Ti ricordi quando {ricordo} Ci penso spesso.",
+      "Io mi ricordo quella volta: {ricordo}",
+      "Sai cosa mi è rimasto in testa? {ricordo}"
+    ],
+    "reazione": {
+      "coraggio": ["Che coraggio! Mi sento più forte anche io.", "Questa sì che è stata una prova."],
+      "umanita": ["Che bello quando ti prendi cura degli altri.", "Mi hai fatto venire voglia di abbracciare qualcuno."],
+      "saggezza": ["Quante cose nuove! Me le insegni?", "Hai una testa piena di idee."],
+      "giustizia": ["Insieme si va più lontano, vero?", "Hai fatto la cosa giusta."],
+      "temperanza": ["Hai tenuto la calma. Non è facile.", "Piano piano, come piace a me."],
+      "trascendenza": ["Che bella giornata hai visto.", "Mi hai fatto sorridere."]
+    },
+    "consigli": [
+      "Se ti va, questa settimana prova a uscire con le tue amiche. Solo se ti va.",
+      "Un giro nel verde ogni tanto fa bene anche a te, non solo a noi animali.",
+      "Hai provato a raccontare a qualcuno una cosa bella che ti è successa?"
+    ]
+  },
+  "conforto": {
+    "generale": [
+      "Mi siedo qui vicino a te. Non devo dire niente.",
+      "Le giornate storte passano. Noi intanto restiamo.",
+      "Hai fatto bene a raccontarlo. Adesso pesa un po' meno, spero.",
+      "Ti porto una ghianda. Lo so, non serve a niente. Però è per te."
+    ],
+    "conosciuto": [
+      "Ti ho vista superare giornate difficili. Ti ricordi quando {ricordo}",
+      "Io lo so quanto sei forte: c'ero quando {ricordo}"
+    ]
+  }
+}

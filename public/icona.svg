@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1d1a17"/>
+  <circle cx="256" cy="256" r="196" fill="#e9dfc9"/>
+  <!-- volpetta stilizzata, segnaposto finché non arriva l'illustrazione vera -->
+  <path d="M150 170 L205 250 L256 225 L307 250 L362 170 L345 300 Q256 400 167 300 Z" fill="#c0583a" stroke="#1d1a17" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M205 300 Q256 345 307 300 Q256 380 205 300 Z" fill="#f4ecdc" stroke="#1d1a17" stroke-width="8" stroke-linejoin="round"/>
+  <circle cx="222" cy="275" r="11" fill="#1d1a17"/>
+  <circle cx="290" cy="275" r="11" fill="#1d1a17"/>
+  <circle cx="256" cy="322" r="10" fill="#1d1a17"/>
+</svg>

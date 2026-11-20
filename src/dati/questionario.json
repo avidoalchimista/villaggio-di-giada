@@ -1,0 +1,95 @@
+{
+  "_nota": "BOZZA da rivedere con Riccardo. Domande originali (non il questionario VIA). Ogni risposta dà punti ai punti di forza.",
+  "domande": [
+    {
+      "testo": "È sabato e non hai impegni. Cosa ti va di fare?",
+      "risposte": [
+        { "testo": "Uscire con le mie persone", "f": { "intelligenza_sociale": 2, "amore": 1 } },
+        { "testo": "Scoprire un posto nuovo", "f": { "curiosita": 2, "coraggio": 1 } },
+        { "testo": "Creare qualcosa con le mani", "f": { "creativita": 2 } },
+        { "testo": "Stare tranquilla e godermi la calma", "f": { "spiritualita": 1, "bellezza": 1, "autocontrollo": 1 } }
+      ]
+    },
+    {
+      "testo": "Un'amica è giù di morale. Tu cosa fai per prima cosa?",
+      "risposte": [
+        { "testo": "La ascolto senza interromperla", "f": { "intelligenza_sociale": 2, "gentilezza": 1 } },
+        { "testo": "La faccio ridere", "f": { "umorismo": 2, "gentilezza": 1 } },
+        { "testo": "Cerco con lei una soluzione", "f": { "prospettiva": 2, "leadership": 1 } },
+        { "testo": "Le porto qualcosa di buono", "f": { "gentilezza": 2, "amore": 1 } }
+      ]
+    },
+    {
+      "testo": "Quando qualcosa ti fa paura, di solito…",
+      "risposte": [
+        { "testo": "La affronto anche se tremo", "f": { "coraggio": 3 } },
+        { "testo": "Ci penso bene prima di muovermi", "f": { "prudenza": 2, "prospettiva": 1 } },
+        { "testo": "Chiedo a qualcuno di starmi vicino", "f": { "umilta": 1, "amore": 1, "lavoro_squadra": 1 } },
+        { "testo": "Aspetto che passi", "f": { "autocontrollo": 1, "speranza": 1 } }
+      ]
+    },
+    {
+      "testo": "Cosa ti fa sentire più viva?",
+      "risposte": [
+        { "testo": "Muovermi, ballare, camminare", "f": { "vitalita": 3 } },
+        { "testo": "Imparare una cosa che non sapevo", "f": { "amore_apprendimento": 2, "curiosita": 1 } },
+        { "testo": "Un tramonto, una canzone, un bel posto", "f": { "bellezza": 3 } },
+        { "testo": "Ridere fino alle lacrime", "f": { "umorismo": 2, "vitalita": 1 } }
+      ]
+    },
+    {
+      "testo": "In un gruppo, tu sei quella che…",
+      "risposte": [
+        { "testo": "Organizza e tiene insieme tutti", "f": { "leadership": 2, "lavoro_squadra": 1 } },
+        { "testo": "Si assicura che nessuno resti fuori", "f": { "equita": 2, "gentilezza": 1 } },
+        { "testo": "Porta le idee strane", "f": { "creativita": 2, "apertura_mentale": 1 } },
+        { "testo": "Fa la sua parte senza farsi notare", "f": { "lavoro_squadra": 2, "umilta": 1 } }
+      ]
+    },
+    {
+      "testo": "Hai sbagliato con qualcuno. Cosa fai?",
+      "risposte": [
+        { "testo": "Chiedo scusa subito", "f": { "umilta": 2, "onesta": 1 } },
+        { "testo": "Ci rifletto e poi ne parlo", "f": { "prospettiva": 1, "onesta": 1, "prudenza": 1 } },
+        { "testo": "Rimedio con un gesto", "f": { "gentilezza": 2, "amore": 1 } },
+        { "testo": "Ci metto un po', ma ci arrivo", "f": { "perseveranza": 1, "umilta": 1 } }
+      ]
+    },
+    {
+      "testo": "Qualcuno ti ha ferita. Dopo un po' di tempo…",
+      "risposte": [
+        { "testo": "Lo perdono, se è sincero", "f": { "perdono": 3 } },
+        { "testo": "Provo a capire le sue ragioni", "f": { "apertura_mentale": 2, "intelligenza_sociale": 1 } },
+        { "testo": "Gli dico chiaramente come mi sono sentita", "f": { "onesta": 2, "coraggio": 1 } },
+        { "testo": "Lascio andare e guardo avanti", "f": { "speranza": 2, "autocontrollo": 1 } }
+      ]
+    },
+    {
+      "testo": "Un progetto si fa difficile a metà strada.",
+      "risposte": [
+        { "testo": "Stringo i denti e vado avanti", "f": { "perseveranza": 3 } },
+        { "testo": "Cambio strada e provo un'idea nuova", "f": { "creativita": 2, "apertura_mentale": 1 } },
+        { "testo": "Chiedo una mano", "f": { "lavoro_squadra": 2, "umilta": 1 } },
+        { "testo": "Mi fermo, respiro e riparto", "f": { "autocontrollo": 2, "speranza": 1 } }
+      ]
+    },
+    {
+      "testo": "Alla fine di una giornata, cosa ti fa stare bene?",
+      "risposte": [
+        { "testo": "Pensare a una cosa bella successa", "f": { "gratitudine": 3 } },
+        { "testo": "Sapere che ho aiutato qualcuno", "f": { "gentilezza": 2, "amore": 1 } },
+        { "testo": "Aver fatto tutto quello che volevo", "f": { "perseveranza": 1, "autocontrollo": 1, "prudenza": 1 } },
+        { "testo": "Una chiacchierata con chi amo", "f": { "amore": 2, "intelligenza_sociale": 1 } }
+      ]
+    },
+    {
+      "testo": "Se pensi al futuro, ti senti…",
+      "risposte": [
+        { "testo": "Piena di progetti", "f": { "speranza": 2, "vitalita": 1 } },
+        { "testo": "Curiosa di vedere cosa succede", "f": { "curiosita": 2, "apertura_mentale": 1 } },
+        { "testo": "Tranquilla: un passo alla volta", "f": { "prudenza": 1, "spiritualita": 1, "autocontrollo": 1 } },
+        { "testo": "Un po' preoccupata, ma ci credo", "f": { "coraggio": 1, "speranza": 2 } }
+      ]
+    }
+  ]
+}
