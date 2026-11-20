@@ -1,6 +1,6 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
-  import { app, avanzaGiorni, azzeraTutto, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import { app, avanzaGiorni, azzeraTutto, crescitaDiProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
 
   let nome = $state(app.stato!.nomeVillaggio);
@@ -64,6 +64,11 @@
         <button class="secondario" onclick={() => avanzaGiorni(1)}>+1 giorno</button>
         <button class="secondario" onclick={() => avanzaGiorni(7)}>+7</button>
         <button class="secondario" onclick={() => avanzaGiorni(30)}>+30</button>
+      </div>
+      <p style="margin-top:12px">Per vedere subito gli animali grandi (solo per le prove: prima del regalo si azzera tutto):</p>
+      <div class="riga" style="flex-wrap:wrap">
+        <button class="secondario" onclick={async () => { await crescitaDiProva(); messaggio = 'Tutti sono cresciuti di una fase. Torna al villaggio!'; }}>Fai crescere tutti</button>
+        <button class="secondario" onclick={async () => { await regalaCastagne(100); messaggio = '100 castagne in più per le prove.'; }}>+100 castagne</button>
       </div>
       <p style="margin-top:12px"><button onclick={() => confirm('Cancello TUTTO il villaggio e il diario da questo telefono?') && azzeraTutto()}>Azzera tutto</button></p>
     </div>

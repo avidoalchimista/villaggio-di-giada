@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { aggiungiGiorni } from './date';
-import { applicaVoce, costruisci, normalizzaStato, nuovoStato, REGOLE, riassunto, simula, speciePrimoUovo } from './gioco';
+import {
+  applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, REGOLE, riassunto,
+  SCHEMA, simula, speciePrimoUovo,
+} from './gioco';
+import { meteo } from './meteo';
 import { zeriForze, type Forza, type Punteggi, type StatoGioco, type VoceDiario } from './tipi';
 
 const INIZIO = '2026-12-25';
@@ -154,7 +158,83 @@ describe('ghiande e costruzioni', () => {
     const n = normalizzaStato(s as unknown as StatoGioco);
     expect(n.ghiande).toBe(4 * REGOLE.ghiande.perPagina);
     expect(n.costruzioni).toEqual([]);
-    expect(n.versioneSchema).toBe(2);
+    expect(n.versioneSchema).toBe(SCHEMA);
+    expect(n.castagneMature).toBe(0);
+    expect(n.animali[0].abilita).toEqual([]);
+  });
+});
+
+describe('vita del villaggio', () => {
+  function conCucciolo(): StatoGioco {
+    const s = partita();
+    applicaVoce(s, voce(INIZIO, { curiosita: 1 }));
+    applicaVoce(s, voce(INIZIO, { curiosita: 1 }));
+    s.ultimoAccesso = INIZIO;
+    return s;
+  }
+
+  it('il castagno matura solo nei giorni in cui Giada ha scritto da poco', () => {
+    const s = conCucciolo();
+    simula(s, aggiungiGiorni(INIZIO, 3));
+    expect(s.castagneMature).toBe(3);
+    simula(s, aggiungiGiorni(INIZIO, 30));
+    expect(s.castagneMature).toBeLessThanOrEqual(REGOLE.castagno.massimo);
+    const prima = s.ghiande;
+    expect(raccogliCastagne(s)).toBe(s.ghiande - prima);
+    expect(s.castagneMature).toBe(0);
+  });
+
+  it('si insegna solo dai giovani in su; si impara in qualche giorno, e chi dorme si ferma', () => {
+    const s = conCucciolo();
+    const a = s.animali[0];
+    expect(insegna(s, a.id, 'cantare', INIZIO)).toBeNull(); // è un cucciolo
+    a.fase = 'giovane';
+    expect(insegna(s, a.id, 'pescare', INIZIO)).toBeNull(); // serve il laghetto
+    expect(insegna(s, a.id, 'cantare', INIZIO)).not.toBeNull();
+    expect(insegna(s, a.id, 'ballare', INIZIO)).toBeNull(); // sta già imparando
+    simula(s, aggiungiGiorni(INIZIO, 2));
+    expect(a.abilita).toContain('cantare');
+    expect(a.studio).toBeNull();
+  });
+
+  it('le richieste arrivano ogni tanto, una alla volta, e soddisfarle regala castagne', () => {
+    const s = conCucciolo();
+    let giorni = 0;
+    while (!s.richiesta && giorni < 30) {
+      giorni++;
+      applicaVoce(s, voce(aggiungiGiorni(INIZIO, giorni), {}));
+      simula(s, aggiungiGiorni(INIZIO, giorni));
+    }
+    expect(s.richiesta).not.toBeNull();
+    // la soddisfo direttamente
+    const r = s.richiesta!;
+    r.tipo = 'trova';
+    const prima = s.ghiande;
+    const out: never[] = [];
+    controllaRichiesta(s, INIZIO, out, { trova: r.animale });
+    expect(s.richiesta).toBeNull();
+    expect(s.ghiande).toBe(prima + REGOLE.richieste.premio);
+  });
+
+  it('modalità prova: faiCrescere porta tutti avanti di una fase', () => {
+    const s = conCucciolo();
+    faiCrescere(s, INIZIO);
+    expect(s.animali[0].fase).toBe('giovane');
+    faiCrescere(s, INIZIO);
+    expect(s.animali[0].fase).toBe('adulto');
+    expect(s.animali[0].mestiere).not.toBeNull();
+  });
+});
+
+describe('meteo', () => {
+  it('stesso giorno e stessa ora, stesso tempo; non nevica in estate', () => {
+    expect(meteo('2026-12-25', 10)).toBe(meteo('2026-12-25', 10));
+    for (let g = 1; g <= 31; g++) for (const h of [3, 9, 15, 21]) expect(meteo(`2027-07-${String(g).padStart(2, '0')}`, h)).not.toBe('neve');
+  });
+  it('in un mese d\'inverno capitano tempi diversi', () => {
+    const visti = new Set<string>();
+    for (let g = 1; g <= 31; g++) visti.add(meteo(`2026-12-${String(g).padStart(2, '0')}`, 12));
+    expect(visti.size).toBeGreaterThan(3);
   });
 });
 

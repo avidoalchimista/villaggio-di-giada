@@ -4,7 +4,9 @@ import { analizza, preparaDizionario, type VoceDizionario } from './analisi';
 import { creaCopia, migra, type FileCopia } from './copia';
 import { aggiungiGiorni, oggi } from './date';
 import { chiediSpazioPersistente, db, leggiMeta, scriviMeta } from './db';
-import { applicaVoce, costruisci, normalizzaStato, nuovoStato, riassunto, simula } from './gioco';
+import {
+  applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, riassunto, simula,
+} from './gioco';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
 export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni';
@@ -102,10 +104,50 @@ export async function costruisciQui(id: string): Promise<Evento | null> {
   return ev;
 }
 
-export async function rinominaAnimale(id: string, nome: string) {
+export async function rinominaAnimale(id: string, nome: string): Promise<Evento[]> {
   const a = app.stato?.animali.find((x) => x.id === id);
-  if (!a) return;
+  if (!a || !app.stato) return [];
   a.nome = nome.trim().slice(0, 24);
+  const out: Evento[] = [];
+  controllaRichiesta(app.stato, dataDiOggi(), out, { nome: id });
+  await salvaStato();
+  return out;
+}
+
+/** Giada è passata a salutare un animale: se era la sua richiesta, è contento. */
+export async function salutaAnimale(id: string): Promise<Evento[]> {
+  if (!app.stato) return [];
+  const out: Evento[] = [];
+  controllaRichiesta(app.stato, dataDiOggi(), out, { trova: id });
+  if (out.length) await salvaStato();
+  return out;
+}
+
+export async function raccogliQui(): Promise<number> {
+  if (!app.stato) return 0;
+  const n = raccogliCastagne(app.stato);
+  if (n) await salvaStato();
+  return n;
+}
+
+export async function insegnaQui(animale: string, abilita: string): Promise<Evento | null> {
+  if (!app.stato) return null;
+  const ev = insegna(app.stato, animale, abilita, dataDiOggi());
+  if (ev) await salvaStato();
+  return ev;
+}
+
+/** Modalità prova: castagne extra. */
+export async function regalaCastagne(n: number) {
+  if (!app.stato) return;
+  app.stato.ghiande += n;
+  await salvaStato();
+}
+
+/** Modalità prova: tutti crescono di una fase. */
+export async function crescitaDiProva() {
+  if (!app.stato) return;
+  faiCrescere(app.stato, dataDiOggi());
   await salvaStato();
 }
 

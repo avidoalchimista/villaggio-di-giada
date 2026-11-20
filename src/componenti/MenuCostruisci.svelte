@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Finestra "Costruisci": come nei giochi di ruolo per console, con le ghiande come moneta.
+  // Finestra "Costruisci": come nei giochi di ruolo per console, con le castagne come moneta
+  // (nel codice il campo si chiama ancora "ghiande" per non rompere i salvataggi).
   import { app, costruisciQui } from '../lib/app.svelte';
   import { REGOLE, statoCostruzione, type DefCostruzione } from '../lib/gioco';
   import type { Evento } from '../lib/tipi';
@@ -13,7 +14,7 @@
   function motivo(c: DefCostruzione): string {
     if (c.richiede && !s.costruzioni.some((x) => x.id === c.richiede)) return `Prima serve ${nomeDi(c.richiede).toLowerCase()}`;
     if (c.pagine && s.numeroVoci < c.pagine) return `Dopo ${c.pagine} pagine di diario (ora ${s.numeroVoci})`;
-    if (s.ghiande < c.costo) return `Mancano ${c.costo - s.ghiande} ghiande`;
+    if (s.ghiande < c.costo) return `Mancano ${c.costo - s.ghiande} castagne`;
     return '';
   }
 
@@ -52,7 +53,7 @@
         </li>
       {/each}
     </ul>
-    <p class="aiuto">Le ghiande arrivano scrivendo nel diario: gli animali le raccolgono per te.</p>
+    <p class="aiuto">Le castagne arrivano scrivendo nel diario, esaudendo le richieste degli animali e raccogliendo quelle cadute sotto il castagno.</p>
     <button class="tondo grigio chiudi" onclick={onchiudi}>Chiudi</button>
   {/if}
 </div>

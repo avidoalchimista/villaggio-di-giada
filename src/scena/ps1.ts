@@ -46,11 +46,12 @@ export function materiale(opz: OpzMateriale = {}): THREE.MeshToonMaterial {
     shader.uniforms.uRim = { value: rim };
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uRim;')
+      // il bordo di luce va aggiunto PRIMA della nebbia, altrimenti gli alberi lontani sembrano fantasmi
       .replace(
-        '#include <dithering_fragment>',
-        `#include <dithering_fragment>
-        float bordo = smoothstep(0.55, 1.0, 1.0 - abs(dot(normalize(-vViewPosition), normal)));
-        gl_FragColor.rgb += vec3(1.0, 0.9, 0.7) * bordo * uRim;`,
+        '#include <fog_fragment>',
+        `float bordo = smoothstep(0.55, 1.0, 1.0 - abs(dot(normalize(-vViewPosition), normal)));
+        gl_FragColor.rgb += vec3(1.0, 0.9, 0.7) * bordo * uRim;
+        #include <fog_fragment>`,
       );
   };
   m.customProgramCacheKey = () => 'toon-rim-' + rim;

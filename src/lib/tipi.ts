@@ -68,6 +68,17 @@ export interface Animale {
   nato: string; // data in cui è comparso l'uovo
   ricordi: Ricordo[];
   genitori: string[];
+  abilita: string[]; // cose che ha imparato (pescare, cantare...)
+  studio: { id: string; inizio: string; fine: string } | null; // cosa sta imparando ora
+}
+
+export interface Richiesta {
+  animale: string;
+  tipo: 'racconta' | 'costruisci' | 'nome' | 'insegna' | 'trova';
+  virtu?: Virtu;
+  costruzione?: string;
+  data: string;
+  scade: string;
 }
 
 export type StatoEdificio = 'attivo' | 'lento' | 'fermo';
@@ -82,7 +93,7 @@ export interface Edificio {
 
 export interface Evento {
   data: string;
-  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione';
+  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne';
   testo: string;
 }
 
@@ -101,6 +112,8 @@ export interface StatoGioco {
   numeroVoci: number;
   ghiande: number; // la "moneta" del villaggio: si guadagna scrivendo, si spende per costruire
   costruzioni: { id: string; data: string }[];
+  castagneMature: number; // castagne cadute sotto il castagno, da raccogliere toccandole
+  richiesta: Richiesta | null; // al massimo una richiesta alla volta
   ultimaVoce: string | null; // data dell'ultima pagina di diario
   seme: number; // per la casualità deterministica
   contatore: number; // per gli id

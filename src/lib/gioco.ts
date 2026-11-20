@@ -10,10 +10,12 @@ import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './
 import {
   FASI, VIRTU, virtuDi, zeriVirtu,
   type Animale, type Edificio, type Emozione, type Evento, type Fase, type Forza,
-  type Punteggi, type Specie, type StatoGioco, type Virtu, type VoceDiario,
+  type Punteggi, type Richiesta, type Specie, type StatoGioco, type Virtu, type VoceDiario,
 } from './tipi';
 
-export const SCHEMA = 2;
+export const SCHEMA = 3;
+
+export interface DefAbilita { id: string; nome: string; giorni: number; simbolo: string; frase: string; richiede?: string; luogo?: string }
 
 export interface DefCostruzione { id: string; nome: string; descrizione: string; costo: number; richiede?: string; pagine?: number }
 
@@ -36,6 +38,9 @@ interface Regole {
   edifici: DefEdificio[];
   ghiande: { perPagina: number; perPuntoForza: number; massimoPerPagina: number };
   costruzioni: DefCostruzione[];
+  castagno: { perGiorno: number; massimo: number; giorniSenzaDiario: number };
+  richieste: { probabilitaAlGiorno: number; durataGiorni: number; premio: number };
+  abilita: DefAbilita[];
 }
 export const REGOLE = regoleJson as unknown as Regole;
 
@@ -118,6 +123,8 @@ function nuovoUovo(s: StatoGioco, specie: Specie, data: string, voci: number): A
     nato: data,
     ricordi: [],
     genitori: [],
+    abilita: [],
+    studio: null,
   };
   s.animali.push(a);
   return a;
@@ -140,6 +147,8 @@ export function nuovoStato(data: string, profilo: Record<Forza, number>, nomeVil
     ultimaVoce: null,
     ghiande: 0,
     costruzioni: [],
+    castagneMature: 0,
+    richiesta: null,
     seme: seme >>> 0,
     contatore: 0,
     ultimoBackupRicordato: null,
@@ -178,7 +187,8 @@ export function applicaVoce(s: StatoGioco, voce: VoceDiario): Evento[] {
   if (!s.ultimaVoce || data > s.ultimaVoce) s.ultimaVoce = data;
   const g = ghiandeDaVoce(voce.forze);
   s.ghiande += g;
-  evento(s, data, 'ghiande', `Gli animali hanno raccolto ${g} ghiande.`, out);
+  evento(s, data, 'ghiande', `Gli animali hanno raccolto ${g} castagne.`, out);
+  controllaRichiesta(s, data, out, { voce });
 
   for (const v of VIRTU) {
     s.totaleVirtu[v] += nutr[v];
@@ -351,6 +361,7 @@ export function simula(s: StatoGioco, fino: string): Evento[] {
     }
     aggiornaEdifici(s, giorno, out);
     sbloccaStoria(s, giorno, out);
+    vitaDelGiorno(s, giorno, out);
   }
   s.ultimoAccesso = fino;
   return out;
@@ -382,6 +393,138 @@ export function costruisci(s: StatoGioco, id: string, data: string): Evento | nu
   s.costruzioni.push({ id, data });
   const out: Evento[] = [];
   evento(s, data, 'costruzione', `Gli animali hanno costruito ${c.nome.charAt(0).toLowerCase() + c.nome.slice(1)}!`, out);
+  controllaRichiesta(s, data, out, { costruzione: id });
+  return out[0];
+}
+
+// ---------- vita del villaggio: castagno, richieste, abilità ----------
+
+/** Un giorno che passa: il castagno matura, si impara, ogni tanto qualcuno chiede qualcosa. */
+export function vitaDelGiorno(s: StatoGioco, giorno: string, out: Evento[]) {
+  const svegli = s.animali.filter((a) => a.fase !== 'uovo' && !a.addormentato);
+  const vivo = giorniTra(s.ultimaVoce ?? s.inizio, giorno) < REGOLE.castagno.giorniSenzaDiario;
+
+  // il castagno: matura solo finché il villaggio è sveglio (Giada ha scritto da poco)
+  if (vivo) {
+    const raccoglitori = svegli.filter((a) => a.abilita.includes('raccogliere')).length;
+    s.castagneMature = Math.min(REGOLE.castagno.massimo, s.castagneMature + REGOLE.castagno.perGiorno + raccoglitori);
+  }
+
+  // chi studia va avanti solo da sveglio; chi dorme riprende quando si sveglia
+  for (const a of s.animali) {
+    if (!a.studio) continue;
+    if (a.addormentato) {
+      a.studio.fine = aggiungiGiorni(a.studio.fine, 1);
+      continue;
+    }
+    if (giorno >= a.studio.fine) {
+      const def = REGOLE.abilita.find((x) => x.id === a.studio!.id);
+      a.abilita.push(a.studio.id);
+      a.studio = null;
+      if (def) evento(s, giorno, 'abilita', `${cap(nomeAnimale(a))} ${def.frase}!`, out);
+    }
+  }
+
+  // richieste: una alla volta, scadono senza conseguenze
+  if (s.richiesta && giorno > s.richiesta.scade) s.richiesta = null;
+  if (!s.richiesta && vivo && svegli.length && casuale(s) < REGOLE.richieste.probabilitaAlGiorno) {
+    s.richiesta = nuovaRichiesta(s, svegli, giorno);
+  }
+}
+
+function nuovaRichiesta(s: StatoGioco, svegli: Animale[], giorno: string): Richiesta | null {
+  const a = svegli[Math.floor(casuale(s) * svegli.length)];
+  const scade = aggiungiGiorni(giorno, REGOLE.richieste.durataGiorni);
+  const base = { animale: a.id, data: giorno, scade };
+  const possibili: Richiesta[] = [];
+  if (!a.nome) possibili.push({ ...base, tipo: 'nome' });
+  possibili.push({ ...base, tipo: 'trova' });
+  possibili.push({ ...base, tipo: 'racconta', virtu: VIRTU[Math.floor(casuale(s) * VIRTU.length)] });
+  const daFare = REGOLE.costruzioni.find((c) => statoCostruzione(s, c) === 'pronta' || statoCostruzione(s, c) === 'poche_ghiande');
+  if (daFare) possibili.push({ ...base, tipo: 'costruisci', costruzione: daFare.id });
+  if (a.fase !== 'cucciolo' && !a.studio && abilitaPossibili(s, a).length) possibili.push({ ...base, tipo: 'insegna' });
+  return possibili[Math.floor(casuale(s) * possibili.length)];
+}
+
+/** Se la richiesta in corso è soddisfatta, premio e festa. */
+export function controllaRichiesta(
+  s: StatoGioco,
+  data: string,
+  out: Evento[],
+  fatto: { voce?: VoceDiario; costruzione?: string; nome?: string; insegna?: string; trova?: string },
+) {
+  const r = s.richiesta;
+  if (!r) return;
+  const a = s.animali.find((x) => x.id === r.animale);
+  if (!a) {
+    s.richiesta = null;
+    return;
+  }
+  let ok = false;
+  if (r.tipo === 'racconta' && fatto.voce) ok = Object.entries(fatto.voce.forze).some(([f, v]) => (v ?? 0) > 0 && virtuDi(f as Forza) === r.virtu);
+  if (r.tipo === 'costruisci') ok = fatto.costruzione === r.costruzione || s.costruzioni.some((c) => c.id === r.costruzione);
+  if (r.tipo === 'nome') ok = fatto.nome === a.id || !!a.nome;
+  if (r.tipo === 'insegna') ok = fatto.insegna === a.id;
+  if (r.tipo === 'trova') ok = fatto.trova === a.id;
+  if (!ok) return;
+  s.richiesta = null;
+  s.ghiande += REGOLE.richieste.premio;
+  a.umore = Math.min(100, a.umore + 10);
+  evento(s, data, 'richiesta', `${cap(nomeAnimale(a))} è felicissim${a.sesso === 'f' ? 'a' : 'o'}! Per ringraziarti ti regala ${REGOLE.richieste.premio} castagne.`, out);
+}
+
+export function testoRichiesta(s: StatoGioco, r: Richiesta): string {
+  switch (r.tipo) {
+    case 'nome': return 'Sai… non ho ancora un nome. Me ne daresti uno?';
+    case 'trova': return 'Mi sei mancata! Passi a salutarmi ogni tanto? Toccami quando mi vedi.';
+    case 'racconta': return `Mi racconti nel diario di una volta in cui hai avuto ${({ coraggio: 'coraggio', umanita: 'cura per qualcuno', saggezza: 'voglia di scoprire qualcosa', giustizia: 'spirito di squadra', temperanza: 'pazienza', trascendenza: 'un momento bello da ricordare' } as Record<Virtu, string>)[r.virtu!]}?`;
+    case 'costruisci': {
+      const c = REGOLE.costruzioni.find((x) => x.id === r.costruzione);
+      return `Sogno ${c ? c.nome.charAt(0).toLowerCase() + c.nome.slice(1) : 'qualcosa di nuovo'} nel villaggio… Lo costruiamo quando avremo le castagne?`;
+    }
+    case 'insegna': return 'Mi annoio un pochino… Mi insegni qualcosa di nuovo?';
+  }
+}
+
+/** Solo per la modalità prova: tutti salgono di una fase (le uova si schiudono). */
+export function faiCrescere(s: StatoGioco, data: string): Evento[] {
+  const out: Evento[] = [];
+  for (const a of s.animali) {
+    if (a.fase === 'uovo') {
+      a.fase = 'cucciolo';
+      evento(s, data, 'schiusa', `È nat${a.sesso === 'f' ? 'a' : 'o'} ${conArticolo(a)}!`, out);
+      continue;
+    }
+    const prossima = a.fase === 'cucciolo' ? REGOLE.sogliaFase.giovane : a.fase === 'giovane' ? REGOLE.sogliaFase.adulto : null;
+    if (prossima === null) continue;
+    a.xp = Math.max(a.xp, prossima);
+    cresci(s, a, data, out);
+  }
+  aggiornaEdifici(s, data, out);
+  return out;
+}
+
+/** Raccolta delle castagne cadute sotto il castagno. */
+export function raccogliCastagne(s: StatoGioco): number {
+  const n = s.castagneMature;
+  s.ghiande += n;
+  s.castagneMature = 0;
+  return n;
+}
+
+export function abilitaPossibili(s: StatoGioco, a: Animale): DefAbilita[] {
+  return REGOLE.abilita.filter((d) => !a.abilita.includes(d.id) && (!d.richiede || s.costruzioni.some((c) => c.id === d.richiede)));
+}
+
+/** Giada mette un animale a imparare qualcosa: ci vogliono alcuni giorni. */
+export function insegna(s: StatoGioco, animaleId: string, abilitaId: string, data: string): Evento | null {
+  const a = s.animali.find((x) => x.id === animaleId);
+  const d = REGOLE.abilita.find((x) => x.id === abilitaId);
+  if (!a || !d || a.fase === 'uovo' || a.fase === 'cucciolo' || a.studio || !abilitaPossibili(s, a).some((x) => x.id === abilitaId)) return null;
+  a.studio = { id: abilitaId, inizio: data, fine: aggiungiGiorni(data, d.giorni) };
+  const out: Evento[] = [];
+  evento(s, data, 'abilita', `${cap(nomeAnimale(a))} ha cominciato a imparare: ${d.nome.toLowerCase()}. Ci vorranno ${d.giorni} giorni.`, out);
+  controllaRichiesta(s, data, out, { insegna: a.id });
   return out[0];
 }
 
@@ -390,6 +533,14 @@ export function normalizzaStato(s: StatoGioco): StatoGioco {
   if ((s.versioneSchema ?? 1) < 2) {
     s.ghiande ??= s.numeroVoci * REGOLE.ghiande.perPagina;
     s.costruzioni ??= [];
+  }
+  if ((s.versioneSchema ?? 1) < 3) {
+    s.castagneMature ??= 0;
+    s.richiesta ??= null;
+    for (const a of s.animali) {
+      a.abilita ??= [];
+      a.studio ??= null;
+    }
   }
   s.versioneSchema = SCHEMA;
   return s;

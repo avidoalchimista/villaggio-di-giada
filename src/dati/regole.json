@@ -30,6 +30,18 @@
   },
   "mestieriAttivi": ["cuoco", "musicista", "artigiano"],
   "ghiande": { "perPagina": 3, "perPuntoForza": 0.5, "massimoPerPagina": 10 },
+  "castagno": { "perGiorno": 1, "massimo": 8, "giorniSenzaDiario": 5 },
+  "richieste": { "probabilitaAlGiorno": 0.35, "durataGiorni": 7, "premio": 5 },
+  "abilita": [
+    { "id": "cantare", "nome": "Cantare", "giorni": 2, "simbolo": "♪", "frase": "ha imparato a cantare" },
+    { "id": "ballare", "nome": "Ballare", "giorni": 2, "simbolo": "✦", "frase": "ha imparato a ballare" },
+    { "id": "raccogliere", "nome": "Raccogliere castagne", "giorni": 3, "simbolo": "🌰", "frase": "ha imparato a raccogliere castagne: ora sotto il castagno ne cadono di più", "luogo": "castagno" },
+    { "id": "pescare", "nome": "Pescare", "giorni": 3, "simbolo": "~", "frase": "ha imparato a pescare", "richiede": "laghetto", "luogo": "laghetto" },
+    { "id": "fiori", "nome": "Curare i fiori", "giorni": 3, "simbolo": "✿", "frase": "ha imparato a curare i fiori", "richiede": "aiuola", "luogo": "aiuola" },
+    { "id": "intagliare", "nome": "Intagliare il legno", "giorni": 4, "simbolo": "✂", "frase": "ha imparato a intagliare il legno" },
+    { "id": "storie", "nome": "Raccontare storie", "giorni": 5, "simbolo": "…", "frase": "ha imparato a raccontare storie intorno al fuoco", "richiede": "falo", "luogo": "falo" },
+    { "id": "stelle", "nome": "Guardare le stelle", "giorni": 4, "simbolo": "★", "frase": "ha imparato i nomi delle stelle", "richiede": "torretta", "luogo": "torretta" }
+  ],
   "costruzioni": [
     { "id": "sentiero", "nome": "Il sentiero", "descrizione": "Un anello di terra battuta in mezzo alla radura.", "costo": 6 },
     { "id": "cartello", "nome": "Il cartello del villaggio", "descrizione": "Con il nome del villaggio scritto sopra.", "costo": 8 },

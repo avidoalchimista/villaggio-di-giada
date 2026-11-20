@@ -6,11 +6,12 @@ import { REGOLE } from '../lib/gioco';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
   aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaBottegaMestiere, creaCartello, creaChiosco, creaCorvo, creaFalo,
-  creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa,
+  creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, creaCastagno, creaCastagna, creaCanna,
   creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
 } from './modelli';
 import { CURVA, materialeTerreno, spriteTesto } from './ps1';
+import type { Meteo } from '../lib/meteo';
 
 export type Bersaglio =
   | { tipo: 'animale'; id: string }
@@ -18,7 +19,27 @@ export type Bersaglio =
   | { tipo: 'quaderno' }
   | { tipo: 'uovo'; id: string }
   | { tipo: 'edificio'; tipo_edificio: string }
-  | { tipo: 'bottega'; id: string };
+  | { tipo: 'bottega'; id: string }
+  | { tipo: 'castagne' };
+
+const POSTO_CASTAGNO: [number, number] = [-7.5, -3.5];
+
+/** Puntino rotondo e sfumato per neve, pioggia e lucciole (senza, i punti sono quadrati). */
+let texPunto: THREE.CanvasTexture | null = null;
+function puntoTondo(): THREE.CanvasTexture {
+  if (texPunto) return texPunto;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 32;
+  const c = cv.getContext('2d')!;
+  const g = c.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 32, 32);
+  texPunto = new THREE.CanvasTexture(cv);
+  return texPunto;
+}
 
 interface Abitante {
   m: ModelloAnimale;
@@ -29,6 +50,8 @@ interface Abitante {
   salto: number;
   ammicca: number;
   z: THREE.Sprite[];
+  attivita: { id: string; tempo: number; prossimo: number } | null; // cosa sta facendo tra quelle che sa fare
+  canna: THREE.Object3D | null;
   eretto: number; // 0 = quattro zampe, 1 = in piedi
   amico: string | null; // con chi sta passando del tempo
   incontro: number; // secondi di chiacchierata rimasti
@@ -79,6 +102,12 @@ export class Scena {
   private strutture = new Map<string, THREE.Object3D>();
   private giaAggiornata = false;
   private fiamma: THREE.Mesh | null = null;
+  private castagne = new THREE.Group();
+  private esclamativo!: THREE.Sprite;
+  private conRichiesta: string | null = null;
+  private precipitazioni!: THREE.Points;
+  private meteo: Meteo = 'sole';
+  private fulmine = 0;
   private pale: THREE.Group | null = null;
   private raggio = 0;
   private raggioMostrato = 5.5;
@@ -158,6 +187,89 @@ export class Scena {
     brilla.position.set(0, 1.4, 0);
     brilla.name = 'brilla';
     this.quaderno.add(brilla);
+
+    // il castagno: le castagne mature cadono qui sotto e si raccolgono toccandole
+    const castagno = creaCastagno();
+    castagno.position.set(POSTO_CASTAGNO[0], 0, POSTO_CASTAGNO[1]);
+    this.scene.add(castagno);
+    this.castagne.position.copy(castagno.position);
+    this.castagne.userData.bersaglio = { tipo: 'castagne' };
+    this.scene.add(this.castagne);
+
+    // il "!" sopra chi ha una richiesta
+    this.esclamativo = spriteTesto('!', '#ffd166');
+    this.esclamativo.scale.setScalar(0.55);
+    this.esclamativo.visible = false;
+    this.scene.add(this.esclamativo);
+
+    // pioggia e neve: particelle in una scatola intorno alla telecamera
+    const n = 900;
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) pos.set([(Math.random() - 0.5) * 30, Math.random() * 14, (Math.random() - 0.5) * 30], i * 3);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.precipitazioni = new THREE.Points(g, new THREE.PointsMaterial({ color: '#cfe4ff', size: 0.07, transparent: true, opacity: 0.85, depthWrite: false, map: puntoTondo() }));
+    this.precipitazioni.visible = false;
+    this.precipitazioni.frustumCulled = false;
+    this.scene.add(this.precipitazioni);
+  }
+
+  // ---------- meteo ----------
+
+  /** Cambia il tempo che fa: lo chiama la schermata ogni volta che serve. */
+  impostaMeteo(m: Meteo) {
+    if (m === this.meteo) return;
+    this.meteo = m;
+    const p = this.precipitazioni.material as THREE.PointsMaterial;
+    this.precipitazioni.visible = m === 'pioggia' || m === 'temporale' || m === 'neve';
+    p.size = m === 'neve' ? 0.16 : 0.07;
+    p.color.set(m === 'neve' ? '#ffffff' : '#b9d4f0');
+    this.luceDelGiorno();
+  }
+
+  private aggiornaPrecipitazioni(dt: number, t: number) {
+    if (!this.precipitazioni.visible) return;
+    const pos = this.precipitazioni.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const neve = this.meteo === 'neve';
+    const vel = neve ? 1.2 : this.meteo === 'temporale' ? 16 : 11;
+    for (let i = 0; i < pos.count; i++) {
+      let y = pos.getY(i) - vel * dt;
+      let x = pos.getX(i);
+      if (neve) x += Math.sin(t * 0.8 + i) * dt * 0.4;
+      else x += dt * (this.meteo === 'temporale' ? 2.5 : 0.8); // pioggia un po' obliqua
+      if (y < 0) {
+        y += 14;
+        x = (Math.random() - 0.5) * 30;
+      }
+      pos.setXYZ(i, x, y, pos.getZ(i));
+    }
+    pos.needsUpdate = true;
+    this.precipitazioni.position.set(this.centro.x, 0, this.centro.z);
+  }
+
+  // ---------- castagne e richieste ----------
+
+  private aggiornaCastagne(n: number) {
+    while (this.castagne.children.length > n) this.castagne.remove(this.castagne.children[this.castagne.children.length - 1]);
+    while (this.castagne.children.length < n) {
+      const i = this.castagne.children.length;
+      const c = creaCastagna();
+      const a = i * 2.4, r = 0.9 + (i % 3) * 0.35;
+      c.position.set(Math.cos(a) * r, c.position.y, Math.sin(a) * r);
+      c.rotation.y = i;
+      this.castagne.add(c);
+    }
+  }
+
+  /** Le castagne volano via quando Giada le raccoglie. */
+  raccolte() {
+    for (const c of [...this.castagne.children]) {
+      const p = c.getWorldPosition(new THREE.Vector3());
+      this.castagne.remove(c);
+      c.position.copy(p);
+      this.scene.add(c);
+      this.effimeri.push({ o: c, vita: 0.9, vel: new THREE.Vector3((Math.random() - 0.5) * 2, 4 + Math.random() * 2, (Math.random() - 0.5) * 2) });
+    }
   }
 
   /** Ricostruisce il bosco intorno alla radura quando il villaggio si allarga. */
@@ -185,7 +297,8 @@ export class Scena {
     // natura selvatica: fiori, ciuffi d'erba alta, cespugli con bacche, funghi, tronchi caduti, sassi
     // (lontano dal centro e dai posti delle costruzioni, sempre negli stessi punti)
     const libero = (x: number, z: number) =>
-      Math.hypot(x, z) > 3.2 && Object.values(POSTI_COSTRUZIONI).every(([px, pz]) => Math.hypot(x - px, z - pz) > 2.2);
+      Math.hypot(x, z) > 3.2 && Math.hypot(x - POSTO_CASTAGNO[0], z - POSTO_CASTAGNO[1]) > 2.6 &&
+      Object.values(POSTI_COSTRUZIONI).every(([px, pz]) => Math.hypot(x - px, z - pz) > 2.2);
     const colori = ['#ff8fb1', '#ffd166', '#ffffff', '#b39ddb', '#ff7b6b', '#8fd3ff'];
     const area = r * r;
     const metti = (n: number, f: (i: number) => THREE.Object3D, seme: number, min = 3.2) => {
@@ -216,7 +329,7 @@ export class Scena {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    return new THREE.Points(g, new THREE.PointsMaterial({ color: '#fff3a0', size: 0.12, transparent: true, opacity: 0, depthWrite: false }));
+    return new THREE.Points(g, new THREE.PointsMaterial({ color: '#fff3a0', size: 0.16, transparent: true, opacity: 0, depthWrite: false, map: puntoTondo() }));
   }
 
   // ---------- stato del gioco → scena ----------
@@ -269,6 +382,8 @@ export class Scena {
 
   aggiorna(s: StatoGioco) {
     this.allarga(raggioVillaggio(s));
+    this.aggiornaCastagne(s.castagneMature ?? 0);
+    this.conRichiesta = s.richiesta?.animale ?? null;
     const primaVolta = this.strutture.size === 0 && !this.giaAggiornata;
     for (const c of s.costruzioni) this.metti(c.id, s, !primaVolta);
     this.giaAggiornata = true;
@@ -303,6 +418,7 @@ export class Scena {
         ab = {
           m, dati: a, meta: this.puntoCasuale(), pausa: 1 + Math.random() * 2, passo: Math.random() * 6, salto: uovo ? 1 : 0,
           ammicca: Math.random() * 4, z: [], eretto: 0, amico: null, incontro: 0, prossimoBalloon: 0, balloon: null,
+          attivita: null, canna: null,
         };
         this.abitanti.set(a.id, ab);
       }
@@ -503,6 +619,11 @@ export class Scena {
     this.centroVoluto.set(p.x, 0, p.z);
   }
 
+  guardaAnimale(id: string) {
+    const ab = this.abitanti.get(id);
+    if (ab) this.guarda(ab.m.gruppo.position);
+  }
+
   /** Gira la telecamera di un quarto di giro (pulsante). */
   ruota(verso: number) {
     this.velAngolo += verso * 0.06;
@@ -520,7 +641,7 @@ export class Scena {
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
     const candidati: THREE.Object3D[] = [
-      this.corvo.gruppo, this.quaderno, ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
+      this.corvo.gruppo, this.quaderno, this.castagne, ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
       ...[...this.abitanti.values()].map((a) => a.m.gruppo),
     ];
     const hit = ray.intersectObjects(candidati, true)[0];
@@ -572,6 +693,17 @@ export class Scena {
     this.sole.color.set(tramonto > 0.2 ? '#ffc08a' : '#fff1d6');
     this.ambiente.intensity = 0.7 + giorno * 0.65;
     this.ambiente.color.set(giorno > 0.3 ? '#bfe0ff' : '#7c88d8'); // notte: ombre blu-violette
+    // il tempo che fa: cielo grigio, meno sole, nebbia più vicina
+    const coperto = ({ sole: 0, nuvole: 0.45, pioggia: 0.65, temporale: 0.85, neve: 0.5, nebbia: 0.45, vento: 0.15 } as const)[this.meteo];
+    cielo.lerp(new THREE.Color('#8b96a2').multiplyScalar(0.3 + 0.7 * giorno), coperto * 0.8);
+    this.scene.background = cielo;
+    (this.scene.fog as THREE.Fog).color = cielo;
+    const nebbia = this.scene.fog as THREE.Fog;
+    if (this.meteo === 'nebbia') { nebbia.near = 3; nebbia.far = 24; }
+    else if (this.meteo === 'pioggia' || this.meteo === 'temporale' || this.meteo === 'neve') { nebbia.near = 12; nebbia.far = 42; }
+    else { nebbia.near = 24; nebbia.far = 62; }
+    this.sole.intensity *= 1 - coperto * 0.7;
+    this.ambiente.intensity *= 1 - coperto * 0.15;
     const notte = 1 - giorno;
     for (const l of this.lanterne) (l.material as THREE.MeshToonMaterial).emissiveIntensity = 0.25 + notte * 2.2;
     (this.lucciole.material as THREE.PointsMaterial).opacity = Math.max(0, notte - 0.3);
@@ -634,7 +766,30 @@ export class Scena {
       this.fiamma.scale.set(1 + Math.sin(t * 13) * 0.08, 1 + Math.sin(t * 9.3) * 0.15, 1 + Math.cos(t * 11) * 0.08);
       (this.fiamma.material as THREE.MeshToonMaterial).emissiveIntensity = 1.4 + Math.sin(t * 17) * 0.3;
     }
-    if (this.pale) this.pale.rotation.z += dt * 0.6;
+    if (this.pale) this.pale.rotation.z += dt * (this.meteo === 'vento' || this.meteo === 'temporale' ? 2.2 : 0.6);
+
+    // meteo: pioggia/neve, lampi, alberi che ondeggiano col vento
+    this.aggiornaPrecipitazioni(dt, t);
+    if (this.meteo === 'temporale' && this.fulmine <= 0 && Math.random() < dt * 0.12) this.fulmine = 0.35;
+    if (this.fulmine > 0) {
+      this.fulmine -= dt;
+      const lampo = this.fulmine > 0.25 || (this.fulmine > 0.1 && this.fulmine < 0.17) ? 1 : 0;
+      this.ambiente.intensity = lampo ? 3 : this.ambiente.intensity;
+      if (this.fulmine <= 0) this.luceDelGiorno();
+    }
+    const vento = this.meteo === 'vento' ? 1 : this.meteo === 'temporale' || this.meteo === 'pioggia' ? 0.5 : 0.12;
+    for (let i = 0; i < this.bosco.children.length; i += 1) {
+      const o = this.bosco.children[i];
+      o.rotation.z = Math.sin(t * 1.6 + i * 0.7) * 0.035 * vento;
+    }
+
+    // il "!" sopra chi ha una richiesta
+    const conR = this.conRichiesta ? this.abitanti.get(this.conRichiesta) : undefined;
+    this.esclamativo.visible = !!conR && !conR.dati.addormentato;
+    if (conR) {
+      this.esclamativo.position.copy(conR.m.gruppo.position);
+      this.esclamativo.position.y = 2.1 * conR.m.gruppo.scale.x + Math.abs(Math.sin(t * 3)) * 0.2;
+    }
 
     const brilla = this.quaderno.getObjectByName('brilla');
     if (brilla) brilla.position.y = 1.4 + Math.sin(t * 3) * 0.08;
@@ -678,6 +833,7 @@ export class Scena {
       return;
     }
     ab.m.corpo.rotation.z = THREE.MathUtils.lerp(ab.m.corpo.rotation.z, 0, dt * 4);
+    if (!ab.attivita) ab.m.corpo.rotation.x = THREE.MathUtils.lerp(ab.m.corpo.rotation.x, 0, dt * 4);
 
     if (ab.salto > 0) {
       ab.salto = Math.max(0, ab.salto - dt * 1.6);
@@ -735,6 +891,11 @@ export class Scena {
       }
     }
 
+    if (ab.attivita && !cammina) {
+      this.faiAttivita(ab, dt, t);
+      return;
+    }
+
     if (ab.pausa > 0) {
       ab.pausa -= dt;
       // respiro e testolina che si inclina
@@ -748,7 +909,7 @@ export class Scena {
       return;
     }
     if (dist < 0.15) {
-      ab.pausa = 1.5 + Math.random() * 4;
+      if (!ab.attivita) ab.pausa = 1.5 + Math.random() * 4;
       return;
     }
 
@@ -778,6 +939,15 @@ export class Scena {
 
   /** Finita una pausa: a volte si va a trovare qualcuno, altrimenti si gironzola. */
   private scegliCosaFare(ab: Abitante) {
+    // chi ha imparato qualcosa, spesso va a farlo
+    const sa = ab.dati.abilita ?? [];
+    if (sa.length && Math.random() < 0.45) {
+      const id = sa[Math.floor(Math.random() * sa.length)];
+      const luogo = this.luogoAttivita(id);
+      ab.attivita = { id, tempo: 7 + Math.random() * 6, prossimo: 0.5 };
+      ab.meta = luogo ?? this.puntoCasuale();
+      return;
+    }
     const liberi = [...this.abitanti.values()].filter((b) => b !== ab && !b.amico && !b.dati.addormentato && b.salto <= 0);
     const voglia = ab.dati.fase === 'cucciolo' ? 0.3 : 0.45;
     if (liberi.length && Math.random() < voglia) {
@@ -798,6 +968,94 @@ export class Scena {
       return;
     }
     ab.meta = this.puntoCasuale();
+  }
+
+  /** Dove si va a fare un'attività: vicino al castagno, sul bordo del laghetto, attorno al falò... */
+  private luogoAttivita(id: string): THREE.Vector3 | null {
+    const intorno = (x: number, z: number, r: number) => {
+      const a = Math.random() * Math.PI * 2;
+      return new THREE.Vector3(x + Math.cos(a) * r, 0, z + Math.sin(a) * r);
+    };
+    const posto = (k: string) => POSTI_COSTRUZIONI[k];
+    switch (id) {
+      case 'raccogliere': return intorno(POSTO_CASTAGNO[0], POSTO_CASTAGNO[1], 1.6);
+      case 'pescare': { const p = posto('laghetto'); return intorno(p[0], p[1], 2.1); }
+      case 'fiori': { const p = posto('aiuola'); return intorno(p[0], p[1], 1.0); }
+      case 'storie': { const p = posto('falo'); return intorno(p[0], p[1], 1.3); }
+      case 'stelle': { const p = posto('torretta'); return intorno(p[0], p[1], 1.4); }
+      default: return null;
+    }
+  }
+
+  /** L'animale fa una cosa che ha imparato. */
+  private faiAttivita(ab: Abitante, dt: number, t: number) {
+    const att = ab.attivita!;
+    const g = ab.m.gruppo;
+    const def = REGOLE.abilita.find((d) => d.id === att.id);
+    att.tempo -= dt;
+    att.prossimo -= dt;
+    if (att.prossimo <= 0 && def) {
+      att.prossimo = 1.4 + Math.random() * 1.2;
+      this.fumetto(ab, def.simbolo);
+    }
+    const guardaVerso = (x: number, z: number) => {
+      const verso = Math.atan2(x - g.position.x, z - g.position.z);
+      const d = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
+      g.rotation.y += d * Math.min(1, dt * 4);
+    };
+    ab.m.testa.rotation.x = 0;
+    switch (att.id) {
+      case 'cantare':
+        ab.m.testa.rotation.z = Math.sin(t * 3) * 0.2;
+        ab.m.testa.rotation.x = -0.15;
+        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -1.2 + Math.sin(t * 3) * 0.2));
+        break;
+      case 'ballare':
+        g.rotation.y += dt * 4;
+        ab.m.corpo.position.y = Math.abs(Math.sin(t * 8)) * 0.15;
+        ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(t * 8 + i) * 0.8));
+        break;
+      case 'pescare': {
+        const p = POSTI_COSTRUZIONI.laghetto;
+        guardaVerso(p[0], p[1]);
+        if (!ab.canna) {
+          ab.canna = creaCanna();
+          ab.m.zampe[0].add(ab.canna);
+        }
+        ab.m.zampe[0].rotation.x = -0.9 + Math.sin(t * 1.5) * 0.08;
+        break;
+      }
+      case 'raccogliere':
+      case 'fiori':
+        ab.m.corpo.rotation.x = 0.35 + Math.sin(t * 2.5) * 0.12;
+        ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -0.8 + Math.sin(t * 5 + i * 2) * 0.4));
+        if (att.id === 'raccogliere') guardaVerso(POSTO_CASTAGNO[0], POSTO_CASTAGNO[1]);
+        break;
+      case 'intagliare':
+        ab.m.corpo.position.y = -0.08;
+        ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -1.0 + Math.sin(t * 9 + i * Math.PI) * 0.25));
+        ab.m.testa.rotation.x = 0.3;
+        break;
+      case 'storie': {
+        const p = POSTI_COSTRUZIONI.falo;
+        guardaVerso(p[0], p[1]);
+        ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -0.5 - Math.abs(Math.sin(t * 2.5 + i * 1.3)) * 0.8));
+        ab.m.testa.rotation.x = Math.sin(t * 4) * 0.1;
+        break;
+      }
+      case 'stelle':
+        ab.m.testa.rotation.x = -0.55;
+        break;
+    }
+    if (att.tempo <= 0) {
+      ab.attivita = null;
+      ab.m.corpo.rotation.x = 0;
+      if (ab.canna) {
+        ab.canna.parent?.remove(ab.canna);
+        ab.canna = null;
+      }
+      ab.pausa = 1.5 + Math.random() * 2;
+    }
   }
 
   private fumetto(ab: Abitante, simbolo: string) {

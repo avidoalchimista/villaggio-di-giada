@@ -540,6 +540,39 @@ export function creaFiore(colore: string): THREE.Group {
   return g;
 }
 
+// ---------- castagno e castagne ----------
+
+export function creaCastagno(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(geo.cil(0.28, 0.42, 1.8, 10), corteccia(), 0, 0.9, 0));
+  for (const [x, y, z, r] of [[0, 2.5, 0, 1.2], [0.8, 2.1, 0.3, 0.85], [-0.85, 2.2, -0.1, 0.9], [0.2, 3.1, -0.2, 0.85], [-0.3, 2.0, 0.75, 0.75], [0.4, 2.2, -0.8, 0.8]])
+    g.add(mesh(geo.palla(r, 12), chioma(1), x, y, z));
+  // ricci spinosi tra le foglie
+  for (let i = 0; i < 14; i++) {
+    const a = i * 2.4, rr = 1.05 + (i % 3) * 0.2;
+    const riccio = mesh(new THREE.IcosahedronGeometry(0.11, 0), mat('#b8c44a', { rim: 0.2 }), Math.cos(a) * rr, 2.0 + (i % 4) * 0.35, Math.sin(a) * rr);
+    riccio.userData.senzaContorno = true;
+    g.add(riccio);
+  }
+  g.add(ombra(1.6));
+  return contorno(g);
+}
+
+export function creaCastagna(): THREE.Mesh {
+  const c = mesh(geo.palla(0.09, 10), mat('#7a3e1c', { rim: 0.5 }), 0, 0.07, 0);
+  c.scale.set(1, 0.8, 0.9);
+  return c;
+}
+
+/** Canna da pesca (si dà in mano a chi sa pescare). */
+export function creaCanna(): THREE.Group {
+  const g = new THREE.Group();
+  const asta = mesh(geo.cil(0.015, 0.025, 1.3, 5), mat('#8a5a36'), 0, 0.6, 0.2);
+  asta.rotation.x = 0.9;
+  g.add(asta);
+  return g;
+}
+
 // ---------- natura selvatica della radura ----------
 
 export function creaCespuglio(scala = 1, tinta = 0): THREE.Group {
