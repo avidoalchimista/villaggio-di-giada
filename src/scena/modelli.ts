@@ -56,6 +56,8 @@ const MANTELLO: Record<Specie, Mantello> = {
 export interface ModelloAnimale {
   gruppo: THREE.Group;
   corpo: THREE.Group;
+  busto: THREE.Mesh;
+  pancia: THREE.Mesh;
   testa: THREE.Group;
   zampe: THREE.Object3D[];
   coda: THREE.Object3D | null;
@@ -326,10 +328,46 @@ export function creaAnimale(a: Animale): ModelloAnimale {
 
   contorno(corpo);
   gruppo.userData.taglia = t.taglia;
-  const m: ModelloAnimale = { gruppo, corpo, testa, zampe, coda, occhi, accessorio: null, mestiere: null };
+  const m: ModelloAnimale = { gruppo, corpo, busto, pancia, testa, zampe, coda, occhi, accessorio: null, mestiere: null };
+  // posizioni "a quattro zampe" da cui partire per la posa in piedi
+  busto.userData.base = { y: busto.position.y, sy: busto.scale.y };
+  pancia.userData.base = { y: pancia.position.y, sy: pancia.scale.y, z: pancia.position.z };
+  testa.userData.base = { y: testa.position.y, z: testa.position.z };
+  zampe.forEach((z) => (z.userData.base = z.position.clone()));
+  if (coda) coda.userData.base = coda.position.clone();
+  posa(m, 0);
   aggiornaMestiere(m, a.mestiere);
   gruppo.userData.id = a.id;
   return m;
+}
+
+/**
+ * Posa tra "a quattro zampe" (e = 0, cucciolo) e "in piedi su due zampe" (e = 1, adulto):
+ * il corpo si allunga in verticale, le zampe davanti diventano braccia ai lati, quelle dietro vanno sotto.
+ */
+export function posa(m: ModelloAnimale, e: number) {
+  const b = m.busto.userData.base, p = m.pancia.userData.base, t = m.testa.userData.base;
+  m.busto.position.y = b.y + e * 0.16;
+  m.busto.scale.y = b.sy * (1 + e * 0.38);
+  m.busto.position.z = -e * 0.02;
+  m.pancia.position.y = p.y + e * 0.16;
+  m.pancia.position.z = p.z + e * 0.06;
+  m.pancia.scale.y = p.sy * (1 + e * 0.4);
+  m.testa.position.y = t.y + e * 0.3;
+  m.testa.position.z = t.z - e * 0.04;
+  m.zampe.forEach((z, i) => {
+    const base = z.userData.base as THREE.Vector3;
+    const davanti = i < 2;
+    const lato = Math.sign(base.x);
+    const inPiedi = davanti ? new THREE.Vector3(lato * 0.3, 0.62, 0.06) : new THREE.Vector3(lato * 0.13, base.y, 0.0);
+    z.position.lerpVectors(base, inPiedi, e);
+    // le braccia si aprono un po' di lato
+    z.rotation.z = davanti ? -lato * 0.35 * e : 0;
+  });
+  if (m.coda) {
+    const c = m.coda.userData.base as THREE.Vector3;
+    m.coda.position.set(c.x, c.y - e * 0.1, c.z + e * 0.08);
+  }
 }
 
 /** Cappello da cuoco, sciarpa da musicista, grembiule da artigiano... */
@@ -347,13 +385,14 @@ export function aggiornaMestiere(m: ModelloAnimale, mestiere: string | null) {
     g.add(sbuffo);
     m.testa.add(contorno(g));
   } else if (mestiere === 'musicista') {
-    const s = mesh(new THREE.TorusGeometry(0.22, 0.07, 8, 16), mat('#d64545'), 0, 0.66, 0.02);
+    // sciarpa al collo: attaccata alla testa, così segue anche la posa in piedi
+    const s = mesh(new THREE.TorusGeometry(0.24, 0.07, 8, 16), mat('#d64545'), 0, -0.4, 0.02);
     s.rotation.x = Math.PI / 2;
     g.add(s);
-    const coda = mesh(geo.scatola(0.12, 0.26, 0.05), mat('#d64545'), 0.12, 0.52, 0.2);
+    const coda = mesh(geo.scatola(0.12, 0.26, 0.05), mat('#d64545'), 0.12, -0.56, 0.22);
     coda.rotation.z = 0.3;
     g.add(coda);
-    m.corpo.add(contorno(g));
+    m.testa.add(contorno(g));
   } else {
     const gr = mesh(geo.scatola(0.38, 0.34, 0.05), mat('#8a5a36'), 0, 0.38, 0.3);
     gr.rotation.x = -0.15;
@@ -498,6 +537,67 @@ export function creaFiore(colore: string): THREE.Group {
     g.add(p);
   }
   g.add(mesh(geo.palla(0.04, 8), mat('#ffd34d', { rim: 0 }), 0, 0.29, 0));
+  return g;
+}
+
+// ---------- natura selvatica della radura ----------
+
+export function creaCespuglio(scala = 1, tinta = 0): THREE.Group {
+  const g = new THREE.Group();
+  for (const [x, y, z, r] of [[0, 0.35, 0, 0.45], [0.35, 0.28, 0.1, 0.33], [-0.32, 0.27, 0.05, 0.35], [0.05, 0.3, 0.32, 0.3]])
+    g.add(mesh(geo.palla(r, 10), chioma(tinta + 1), x, y, z));
+  if (tinta % 2 === 0) for (const [x, y, z] of [[0.2, 0.55, 0.3], [-0.25, 0.45, 0.3], [0.4, 0.4, 0.25]]) {
+    const bacca = mesh(geo.palla(0.05, 6), mat('#d8344a', { rim: 0 }), x, y, z);
+    bacca.userData.senzaContorno = true;
+    g.add(bacca);
+  }
+  g.add(ombra(0.6));
+  g.scale.setScalar(scala);
+  return g;
+}
+
+export function creaFungo(scala = 1): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(geo.cil(0.05, 0.07, 0.2, 8), mat('#f4ead8'), 0, 0.1, 0));
+  const cappello = mesh(geo.palla(0.14, 10), mat('#c8402e', { rim: 0.3 }), 0, 0.2, 0);
+  cappello.scale.y = 0.6;
+  g.add(cappello);
+  for (const [x, z] of [[0.06, 0.05], [-0.05, 0.07], [0.0, -0.08]]) {
+    const p = mesh(geo.palla(0.02, 5), mat('#ffffff', { rim: 0 }), x, 0.27, z);
+    p.userData.senzaContorno = true;
+    g.add(p);
+  }
+  g.scale.setScalar(scala);
+  return g;
+}
+
+export function creaTronco(): THREE.Group {
+  const g = new THREE.Group();
+  const t = mesh(geo.cil(0.22, 0.25, 1.6, 10), corteccia(), 0, 0.22, 0);
+  t.rotation.z = Math.PI / 2;
+  g.add(t);
+  for (const x of [-0.8, 0.8]) {
+    const anelli = mesh(geo.cil(0.21, 0.21, 0.02, 10), mat('#d8b07a'), x, 0.22, 0);
+    anelli.rotation.z = Math.PI / 2;
+    g.add(anelli);
+  }
+  const muschio = mesh(geo.palla(0.2, 8), mat('#6a9a48'), 0.2, 0.4, 0);
+  muschio.scale.set(1.8, 0.35, 0.9);
+  g.add(muschio);
+  g.add(ombra(0.9));
+  return g;
+}
+
+/** Ciuffi d'erba alta: tanti fili sottili che spuntano dal prato. */
+export function creaCiuffo(scala = 1): THREE.Group {
+  const g = new THREE.Group();
+  const m = mat('#5f9a44', { rim: 0.2, side: THREE.DoubleSide });
+  for (let i = 0; i < 7; i++) {
+    const filo = mesh(geo.cono(0.035, 0.42 + (i % 3) * 0.12, 3), m, Math.cos(i * 2.3) * 0.08, 0.2, Math.sin(i * 2.3) * 0.08);
+    filo.rotation.set(Math.sin(i) * 0.3, 0, Math.cos(i * 1.7) * 0.3);
+    g.add(filo);
+  }
+  g.scale.setScalar(scala);
   return g;
 }
 

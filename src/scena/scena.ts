@@ -6,6 +6,7 @@ import { REGOLE } from '../lib/gioco';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
   aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaBottegaMestiere, creaCartello, creaChiosco, creaCorvo, creaFalo,
+  creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa,
   creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
 } from './modelli';
@@ -28,13 +29,18 @@ interface Abitante {
   salto: number;
   ammicca: number;
   z: THREE.Sprite[];
+  eretto: number; // 0 = quattro zampe, 1 = in piedi
+  amico: string | null; // con chi sta passando del tempo
+  incontro: number; // secondi di chiacchierata rimasti
+  prossimoBalloon: number;
+  balloon: THREE.Sprite | null;
 }
 
 /** Grandezza della radura: cresce con gli abitanti, i mestieri e le costruzioni. */
 export function raggioVillaggio(s: StatoGioco): number {
   const nati = s.animali.filter((a) => a.fase !== 'uovo').length;
   const mestieri = s.animali.filter((a) => a.mestiere).length;
-  return Math.min(16, 5.5 + nati * 0.6 + mestieri * 0.9 + s.edifici.length * 1.0 + (s.costruzioni?.length ?? 0) * 0.35);
+  return Math.min(22, 12 + nati * 0.6 + mestieri * 0.8 + s.edifici.length * 1.0 + (s.costruzioni?.length ?? 0) * 0.3);
 }
 
 /** Dove va ogni costruzione: [x, z, rotazione]. */
@@ -79,9 +85,12 @@ export class Scena {
   private angolo = 0.0;
   private velAngolo = 0;
   private zoom = 1;
-  private trascina: { x: number; mosso: number } | null = null;
+  private centro = new THREE.Vector3(); // punto guardato dalla telecamera
+  private centroVoluto = new THREE.Vector3();
+  private trascina: { x: number; y: number; mosso: number } | null = null;
   private dita = new Map<number, { x: number; y: number }>();
   private distanzaPizzico = 0;
+  private angoloDita = 0;
   private raf = 0;
   private corvoParla = 0;
   private effimeri: { o: THREE.Object3D; vita: number; vel: THREE.Vector3 }[] = [];
@@ -159,7 +168,7 @@ export class Scena {
     this.bosco.clear();
     let k = 0;
     for (let anello = 0; anello < 3; anello++) {
-      const ra = r + 2.6 + anello * 2.6;
+      const ra = r + 1.5 + anello * 2.6;
       const n = Math.round(ra * 1.9);
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2 + anello * 0.37;
@@ -173,16 +182,29 @@ export class Scena {
         this.bosco.add(albero);
       }
     }
-    // fiori sparsi in tutta la radura
+    // natura selvatica: fiori, ciuffi d'erba alta, cespugli con bacche, funghi, tronchi caduti, sassi
+    // (lontano dal centro e dai posti delle costruzioni, sempre negli stessi punti)
+    const libero = (x: number, z: number) =>
+      Math.hypot(x, z) > 3.2 && Object.values(POSTI_COSTRUZIONI).every(([px, pz]) => Math.hypot(x - px, z - pz) > 2.2);
     const colori = ['#ff8fb1', '#ffd166', '#ffffff', '#b39ddb', '#ff7b6b', '#8fd3ff'];
-    const nFiori = Math.round(r * r * 0.25);
-    for (let i = 0; i < nFiori; i++) {
-      const a = i * 2.39996, d = 2.7 + ((i * 37) % 100) / 100 * (r - 1);
-      const f = creaFiore(colori[i % colori.length]);
-      f.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
-      f.scale.setScalar(0.9 + (i % 3) * 0.15);
-      this.bosco.add(f);
-    }
+    const area = r * r;
+    const metti = (n: number, f: (i: number) => THREE.Object3D, seme: number, min = 3.2) => {
+      for (let i = 0; i < n; i++) {
+        const a = (i + seme) * 2.39996, d = min + (((i * 37 + seme * 11) % 100) / 100) * (r - min - 0.5);
+        const x = Math.cos(a) * d, z = Math.sin(a) * d;
+        if (!libero(x, z)) continue;
+        const o = f(i);
+        o.position.set(x, o.position.y, z);
+        o.rotation.y = i * 1.7;
+        this.bosco.add(o);
+      }
+    };
+    metti(Math.round(area * 0.22), (i) => { const f = creaFiore(colori[i % colori.length]); f.scale.setScalar(1 + (i % 3) * 0.2); return f; }, 1);
+    metti(Math.round(area * 0.12), (i) => creaCiuffo(0.9 + (i % 4) * 0.2), 2);
+    metti(Math.round(area * 0.035), (i) => creaCespuglio(0.8 + (i % 3) * 0.25, i), 3, 5);
+    metti(Math.round(area * 0.02), (i) => creaFungo(1 + (i % 3) * 0.4), 4, 4);
+    metti(Math.round(area * 0.012), () => creaTronco(), 5, 6);
+    metti(Math.round(area * 0.02), (i) => creaSasso(0.4 + (i % 4) * 0.15), 6, 4);
   }
 
   private creaLucciole(): THREE.Points {
@@ -278,7 +300,10 @@ export class Scena {
         m.gruppo.position.set(pos.x, 0, pos.z);
         m.gruppo.userData.bersaglio = { tipo: 'animale', id: a.id };
         this.scene.add(m.gruppo);
-        ab = { m, dati: a, meta: this.puntoCasuale(), pausa: 1 + Math.random() * 2, passo: Math.random() * 6, salto: uovo ? 1 : 0, ammicca: Math.random() * 4, z: [] };
+        ab = {
+          m, dati: a, meta: this.puntoCasuale(), pausa: 1 + Math.random() * 2, passo: Math.random() * 6, salto: uovo ? 1 : 0,
+          ammicca: Math.random() * 4, z: [], eretto: 0, amico: null, incontro: 0, prossimoBalloon: 0, balloon: null,
+        };
         this.abitanti.set(a.id, ab);
       }
       ab.dati = a;
@@ -306,7 +331,7 @@ export class Scena {
     posti.forEach((p, i) => {
       const n = posti.length;
       const ang = Math.PI * 1.5 + (i - (n - 1) / 2) * Math.min(0.75, 4.2 / Math.max(n, 1));
-      const d = Math.max(4.2, this.raggio - 1.2);
+      const d = Math.min(9.5, this.raggio - 2);
       const x = Math.cos(ang) * d, z = Math.sin(ang) * d;
       if (p.k.startsWith('e:')) {
         const tipo = p.k.slice(2);
@@ -373,6 +398,18 @@ export class Scena {
     }
   }
 
+  /** Solo per le prove: fa passare il tempo degli animali senza disegnare (utile se la pagina è nascosta). */
+  avanzaTempo(secondi: number, finche?: () => boolean) {
+    const dt = 1 / 30;
+    for (let k = 0; k < secondi * 30; k++) {
+      this.tempoFinto += dt;
+      for (const ab of this.abitanti.values()) this.muovi(ab, dt, this.tempoFinto);
+      if (finche?.()) return true;
+    }
+    return false;
+  }
+  private tempoFinto = 0;
+
   /** Solo per le prove: mette in fila un animale per specie davanti alla telecamera. */
   vetrina() {
     let i = 0;
@@ -400,14 +437,17 @@ export class Scena {
     }
   }
 
-  // ---------- input: trascina per girare, pizzica per avvicinarti ----------
+  // ---------- input: un dito sposta la vista, due dita zoom e rotazione ----------
 
   private collegaInput() {
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => {
       this.dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (this.dita.size === 1) this.trascina = { x: e.clientX, mosso: 0 };
-      else this.distanzaPizzico = this.distanzaDita();
+      if (this.dita.size === 1) this.trascina = { x: e.clientX, y: e.clientY, mosso: 0 };
+      else {
+        this.distanzaPizzico = this.distanzaDita();
+        this.angoloDita = this.angoloTraDita();
+      }
       c.setPointerCapture(e.pointerId);
     });
     c.addEventListener('pointermove', (e) => {
@@ -415,17 +455,28 @@ export class Scena {
       this.dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.dita.size >= 2) {
         const d = this.distanzaDita();
-        if (this.distanzaPizzico) this.zoom = THREE.MathUtils.clamp(this.zoom * (this.distanzaPizzico / d), 0.55, 1.5);
+        if (this.distanzaPizzico) this.zoom = THREE.MathUtils.clamp(this.zoom * (this.distanzaPizzico / d), 0.5, 2.4);
         this.distanzaPizzico = d;
+        const a = this.angoloTraDita();
+        let da = a - this.angoloDita;
+        da = Math.atan2(Math.sin(da), Math.cos(da));
+        this.angolo -= da;
+        this.angoloDita = a;
         if (this.trascina) this.trascina.mosso = 99;
         return;
       }
       if (!this.trascina) return;
-      const dx = e.clientX - this.trascina.x;
-      this.trascina.mosso += Math.abs(dx);
+      const dx = e.clientX - this.trascina.x, dy = e.clientY - this.trascina.y;
+      this.trascina.mosso += Math.abs(dx) + Math.abs(dy);
       this.trascina.x = e.clientX;
-      this.angolo -= dx * 0.008;
-      this.velAngolo = -dx * 0.008;
+      this.trascina.y = e.clientY;
+      // sposto il punto guardato sul terreno, nella direzione del dito
+      const k = 0.022 * this.zoom * (12 / Math.max(300, this.canvas.clientWidth)) * 30;
+      const destra = new THREE.Vector3(Math.cos(this.angolo), 0, -Math.sin(this.angolo));
+      const avanti = new THREE.Vector3(-Math.sin(this.angolo), 0, -Math.cos(this.angolo));
+      this.centroVoluto.addScaledVector(destra, -dx * k).addScaledVector(avanti, dy * k);
+      const lim = this.raggio - 1;
+      if (this.centroVoluto.length() > lim) this.centroVoluto.setLength(lim);
     });
     const fine = (e: PointerEvent) => {
       this.dita.delete(e.pointerId);
@@ -438,8 +489,23 @@ export class Scena {
     c.addEventListener('pointerup', fine);
     c.addEventListener('pointercancel', fine);
     c.addEventListener('wheel', (e) => {
-      this.zoom = THREE.MathUtils.clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.55, 1.5);
+      this.zoom = THREE.MathUtils.clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.5, 2.4);
     }, { passive: true });
+  }
+
+  private angoloTraDita() {
+    const [a, b] = [...this.dita.values()];
+    return Math.atan2(b.y - a.y, b.x - a.x);
+  }
+
+  /** Porta la vista su un punto (es. l'animale toccato). */
+  guarda(p: THREE.Vector3) {
+    this.centroVoluto.set(p.x, 0, p.z);
+  }
+
+  /** Gira la telecamera di un quarto di giro (pulsante). */
+  ruota(verso: number) {
+    this.velAngolo += verso * 0.06;
   }
 
   private distanzaDita() {
@@ -472,6 +538,7 @@ export class Scena {
         const verso = Math.atan2(this.camera.position.x - ab.m.gruppo.position.x, this.camera.position.z - ab.m.gruppo.position.z);
         ab.m.gruppo.rotation.y = verso;
       }
+      if (ab) this.guarda(ab.m.gruppo.position);
     }
     if (b.tipo === 'uovo') {
       const u = this.uova.get(b.id);
@@ -515,23 +582,26 @@ export class Scena {
     const dt = Math.min(0.05, this.orologio.getDelta());
     const t = this.orologio.elapsedTime;
 
-    // la telecamera si allontana dolcemente quando il villaggio cresce
+    // telecamera da avventura: guarda un punto della radura che si sposta col dito, bassa (circa 35°)
     this.raggioMostrato += (this.raggio - this.raggioMostrato) * Math.min(1, dt * 1.5);
     const verticale = this.camera.aspect < 0.8;
-    // inquadratura bassa (circa 30°) come nei giochi cozy: si vedono i musi e l'orizzonte curvo
-    // la telecamera si allontana con il villaggio, ma meno che in proporzione: il centro resta protagonista
-    const r = 4 + Math.sqrt(this.raggioMostrato) * 2.2;
-    const dist = (verticale ? 1.75 : 1.45) * r * this.zoom + 1.5;
-    const alt = (verticale ? 1.2 : 0.8) * r * this.zoom + 1;
-    CURVA.valore = 0.0035 * (6 / this.raggioMostrato);
+    const r = 8.5;
+    const dist = (verticale ? 1.6 : 1.3) * r * this.zoom + 1.5;
+    const alt = (verticale ? 1.05 : 0.75) * r * this.zoom + 1;
+    CURVA.valore = 0.0022 / Math.max(0.6, this.zoom);
 
     if (!this.trascina) {
       this.velAngolo *= 0.92;
       this.angolo += this.velAngolo;
     }
-    const oscilla = Math.sin(t * 0.15) * 0.05;
-    this.camera.position.set(Math.sin(this.angolo + oscilla) * dist, alt, Math.cos(this.angolo + oscilla) * dist);
-    this.camera.lookAt(Math.sin(this.angolo) * 0.5, 0.6, Math.cos(this.angolo) * 0.5);
+    this.centro.lerp(this.centroVoluto, Math.min(1, dt * 3));
+    const oscilla = Math.sin(t * 0.15) * 0.04;
+    this.camera.position.set(
+      this.centro.x + Math.sin(this.angolo + oscilla) * dist,
+      alt,
+      this.centro.z + Math.cos(this.angolo + oscilla) * dist,
+    );
+    this.camera.lookAt(this.centro.x, 0.6, this.centro.z);
 
     if (Math.floor(t / 5) !== Math.floor((t - dt) / 5)) this.luceDelGiorno();
 
@@ -620,34 +690,123 @@ export class Scena {
 
     const dir = ab.meta.clone().sub(g.position);
     const dist = dir.length();
+    const fase = ab.dati.fase;
+    const cammina = ab.pausa <= 0 && dist >= 0.15;
+
+    // postura: i cuccioli a quattro zampe, i giovani si alzano quando stanno fermi, gli adulti stanno in piedi
+    const erettoVoluto = fase === 'cucciolo' ? 0 : fase === 'giovane' ? (cammina ? 0 : 0.6) : 1;
+    ab.eretto += (erettoVoluto - ab.eretto) * Math.min(1, dt * 3);
+    posa(ab.m, ab.eretto);
+
+    // ---- incontri tra abitanti ----
+    if (ab.amico) {
+      const b = this.abitanti.get(ab.amico);
+      if (!b || b.dati.addormentato || b.amico !== ab.dati.id) {
+        ab.amico = null;
+        ab.incontro = 0;
+      } else if (!cammina) {
+        // arrivato: si gira verso l'amico
+        const verso = Math.atan2(b.m.gruppo.position.x - g.position.x, b.m.gruppo.position.z - g.position.z);
+        const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
+        g.rotation.y += diff * Math.min(1, dt * 5);
+        const bArrivato = b.meta.distanceTo(b.m.gruppo.position) < 0.2;
+        if (bArrivato && ab.incontro === 0) ab.incontro = fase === 'cucciolo' ? 1.2 : 6 + Math.random() * 4;
+        if (ab.incontro > 0) {
+          ab.incontro -= dt;
+          // chiacchiera: testa che annuisce, braccia che gesticolano, fumetti
+          ab.m.testa.rotation.x = Math.sin(t * 6 + g.position.x) * 0.12;
+          ab.m.testa.rotation.z = Math.sin(t * 1.3) * 0.1;
+          if (ab.eretto > 0.5) ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -0.6 - Math.abs(Math.sin(t * 4 + i * 1.5)) * 0.6));
+          ab.prossimoBalloon -= dt;
+          if (ab.prossimoBalloon <= 0 && fase !== 'cucciolo') {
+            ab.prossimoBalloon = 1.6 + Math.random() * 1.6;
+            this.fumetto(ab, ['♥', '♪', '!', '?', '☺', '…', '✿'][Math.floor(Math.random() * 7)]);
+          }
+          if (ab.incontro <= 0) {
+            ab.amico = null;
+            ab.incontro = 0;
+            ab.pausa = 1 + Math.random() * 2;
+            if (fase === 'cucciolo') ab.salto = 1; // i cuccioli giocano: saltano insieme
+          }
+          return;
+        }
+        ab.m.corpo.position.y = 0;
+        return;
+      }
+    }
+
     if (ab.pausa > 0) {
       ab.pausa -= dt;
-      // respiro e testolina che si inclina, come un cucciolo curioso
+      // respiro e testolina che si inclina
       ab.m.corpo.position.y = Math.sin(t * 2.2 + g.position.x) * 0.012;
+      ab.m.testa.rotation.x = 0;
       ab.m.testa.rotation.z = Math.sin(t * 0.8 + g.position.z) * 0.15;
       ab.m.testa.rotation.y = Math.sin(t * 0.6 + g.position.x) * 0.35;
       ab.m.zampe.forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, 0, dt * 6)));
       if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(t * 3) * 0.3;
-      if (ab.pausa <= 0) ab.meta = this.puntoCasuale();
+      if (ab.pausa <= 0) this.scegliCosaFare(ab);
       return;
     }
     if (dist < 0.15) {
       ab.pausa = 1.5 + Math.random() * 4;
       return;
     }
-    // passetti saltellanti
-    const vel = (ab.dati.fase === 'cucciolo' ? 0.7 : 0.9) * (ab.dati.umore > 50 ? 1 : 0.6);
+
+    // camminata: i cuccioli trotterellano a quattro zampe, gli adulti camminano su due
+    const gioca = ab.amico && fase === 'cucciolo';
+    const vel = (fase === 'cucciolo' ? (gioca ? 1.5 : 0.7) : 0.95) * (ab.dati.umore > 50 ? 1 : 0.6);
     dir.normalize();
     g.position.addScaledVector(dir, Math.min(dist, vel * dt));
     const verso = Math.atan2(dir.x, dir.z);
     const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
     g.rotation.y += diff * Math.min(1, dt * 6);
-    ab.passo += dt * 11;
-    ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.1;
-    ab.m.testa.rotation.z = Math.sin(ab.passo) * 0.06;
+    ab.m.testa.rotation.x = 0;
     ab.m.testa.rotation.y = 0;
-    ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7));
+    if (ab.eretto > 0.6) {
+      ab.passo += dt * 8;
+      ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.05;
+      ab.m.corpo.rotation.z = Math.sin(ab.passo) * 0.06; // ondeggia da un piede all'altro
+      ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i % 2 === 0 ? 0 : Math.PI) + (i < 2 ? Math.PI : 0)) * (i < 2 ? 0.5 : 0.65)));
+    } else {
+      ab.passo += dt * (gioca ? 16 : 11);
+      ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.1;
+      ab.m.testa.rotation.z = Math.sin(ab.passo) * 0.06;
+      ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7));
+    }
     if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(ab.passo) * 0.4;
+  }
+
+  /** Finita una pausa: a volte si va a trovare qualcuno, altrimenti si gironzola. */
+  private scegliCosaFare(ab: Abitante) {
+    const liberi = [...this.abitanti.values()].filter((b) => b !== ab && !b.amico && !b.dati.addormentato && b.salto <= 0);
+    const voglia = ab.dati.fase === 'cucciolo' ? 0.3 : 0.45;
+    if (liberi.length && Math.random() < voglia) {
+      // preferisce chi è vicino
+      liberi.sort((x, y) => x.m.gruppo.position.distanceTo(ab.m.gruppo.position) - y.m.gruppo.position.distanceTo(ab.m.gruppo.position));
+      const b = liberi[Math.floor(Math.random() * Math.min(2, liberi.length))];
+      const pa = ab.m.gruppo.position, pb = b.m.gruppo.position;
+      const mezzo = pa.clone().add(pb).multiplyScalar(0.5);
+      const asse = pb.clone().sub(pa).setY(0);
+      if (asse.lengthSq() < 0.01) asse.set(1, 0, 0);
+      asse.setLength(0.55 * Math.max(ab.m.gruppo.scale.x, 1));
+      ab.amico = b.dati.id;
+      b.amico = ab.dati.id;
+      ab.incontro = b.incontro = 0;
+      ab.meta = mezzo.clone().sub(asse);
+      b.meta = mezzo.clone().add(asse);
+      b.pausa = 0;
+      return;
+    }
+    ab.meta = this.puntoCasuale();
+  }
+
+  private fumetto(ab: Abitante, simbolo: string) {
+    const colore = simbolo === '♥' ? '#ff6b8a' : simbolo === '♪' ? '#8fd3ff' : simbolo === '✿' ? '#ffd166' : '#ffffff';
+    const f = spriteTesto(simbolo, colore);
+    f.scale.setScalar(0.42);
+    f.position.copy(ab.m.gruppo.position).add(new THREE.Vector3(0, 1.75 * ab.m.gruppo.scale.x, 0));
+    this.scene.add(f);
+    this.effimeri.push({ o: f, vita: 1.1, vel: new THREE.Vector3(0, 0.35, 0) });
   }
 
   distruggi() {

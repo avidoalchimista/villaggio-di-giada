@@ -178,7 +178,7 @@
           🔨<span class="punto" class:visibile={puoCostruire}></span>
         </button>
       </div>
-      <p class="suggerimento">Tocca chi vuoi · trascina per girare · pizzica per lo zoom</p>
+      <p class="suggerimento">Tocca chi vuoi · 1 dito muove · 2 dita zoom e giro</p>
     {/if}
   </div>
 </div>

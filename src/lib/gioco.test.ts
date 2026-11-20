@@ -45,7 +45,7 @@ describe('crescita', () => {
   it('cresce fino ad adulto e sceglie un mestiere coerente col nutrimento', () => {
     const s = partita();
     let d = INIZIO;
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 70; i++) {
       applicaVoce(s, voce(d, { gentilezza: 3 }));
       d = aggiungiGiorni(d, 1);
     }
@@ -67,11 +67,31 @@ describe('crescita', () => {
   it('una virtù nutrita fa comparire nuove uova della sua specie', () => {
     const s = partita();
     let d = INIZIO;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       applicaVoce(s, voce(d, { coraggio: 2 }));
       d = aggiungiGiorni(d, 1);
     }
     expect(s.animali.some((a) => a.specie === 'tasso')).toBe(true);
+  });
+
+  it('crescita lenta: dopo 10 pagine il primo cucciolo è ancora cucciolo', () => {
+    const s = partita();
+    let d = INIZIO;
+    for (let i = 0; i < 10; i++) {
+      applicaVoce(s, voce(d, { curiosita: 2, gentilezza: 1 }));
+      d = aggiungiGiorni(d, 1);
+    }
+    expect(s.animali[0].fase).toBe('cucciolo');
+  });
+
+  it('mai più di sette abitanti', () => {
+    const s = partita();
+    let d = INIZIO;
+    for (let i = 0; i < 400; i++) {
+      applicaVoce(s, voce(d, { coraggio: 3, curiosita: 3, bellezza: 3, gentilezza: 3 }));
+      d = aggiungiGiorni(d, 1);
+    }
+    expect(s.animali.length).toBe(7);
   });
 });
 
@@ -142,7 +162,7 @@ describe('edifici e simulazione', () => {
   function conChiosco(): StatoGioco {
     const s = partita();
     let d = INIZIO;
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 80; i++) {
       applicaVoce(s, voce(d, { gentilezza: 3, coraggio: 1 }));
       d = aggiungiGiorni(d, 1);
     }
