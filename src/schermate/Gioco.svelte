@@ -31,6 +31,7 @@
       return;
     }
     scena.onTocco = tocco;
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).scena = scena;
     scena.aggiorna($state.snapshot(app.stato!) as typeof s);
 
     // cosa succede appena si entra
@@ -74,6 +75,12 @@
       if (!a) return;
       const m = a.vociPerSchiudersi;
       dialogo = { righe: [{ chi: 'Uovo', voce: 'narratore', testo: `Toc toc… Dentro si muove qualcosa. ${m === 1 ? 'Manca una pagina di diario' : `Mancano ${m} pagine di diario`} perché si schiuda.` }] };
+      return;
+    }
+    if (b.tipo === 'bottega') {
+      const a = s.animali.find((x) => x.id === b.id);
+      if (!a) return;
+      dialogo = { righe: [{ chi: nomeAnimale(a), voce: 'animale', testo: `Questa è la mia bottega! Qui faccio ${a.sesso === 'f' ? 'la' : 'il'} ${a.mestiere}. L'ho costruita grazie alle tue giornate.` }] };
       return;
     }
     if (b.tipo === 'edificio') {
@@ -150,14 +157,14 @@
       <button class="bottone-diario" onclick={() => vai('diario')}>
         <span class="icona">📖</span> Scrivi nel diario
       </button>
-      <p class="suggerimento">Tocca gli animali, il corvo o il quaderno · trascina per girare</p>
+      <p class="suggerimento">Tocca chi vuoi · trascina per girare · pizzica per lo zoom</p>
     {/if}
   </div>
 </div>
 
 <style>
   .gioco { position: fixed; inset: 0; max-width: 560px; margin: 0 auto; overflow: hidden; background: #bfe3f2; }
-  .mondo { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; touch-action: none; display: block; }
+  .mondo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
   .errore { position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; background: var(--panna); padding: 16px; border-radius: 18px; }
   .hud-alto { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; }
   .pillola {
