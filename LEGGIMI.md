@@ -24,6 +24,11 @@ npm run dev       # prova in locale
 npm run build     # versione finale in dist/
 ```
 
+## Online
+
+https://avidoalchimista.github.io/villaggio-di-giada/ — ogni modifica caricata su `main` rifà i test e ripubblica da sola
+(`.github/workflows/pages.yml`). I dati di chi la usa restano sul suo telefono: il telefono di Giada parte da zero.
+
 ## Funziona offline
 
 Dopo la prima apertura con internet il service worker mette tutta l'app in cache: si apre e si usa senza rete.
