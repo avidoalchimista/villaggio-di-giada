@@ -5,7 +5,7 @@ import { creaCopia, migra, type FileCopia } from './copia';
 import { aggiungiGiorni, oggi } from './date';
 import { chiediSpazioPersistente, db, leggiMeta, scriviMeta } from './db';
 import {
-  applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, riassunto, simula,
+  applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, riassunto, simula, simulaGiorniConDiario,
 } from './gioco';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
@@ -231,6 +231,23 @@ export async function avanzaGiorni(n: number) {
   app.offsetGiorni += n;
   await scriviMeta('offsetGiorni', app.offsetGiorni);
   aggiornaTempo();
+}
+
+/**
+ * Modalità prova: avanti di `giorni` giorni scrivendo pagine finte nell'80% dei giorni,
+ * così si vedono gli sviluppi. Restituisce quanti eventi importanti sono successi.
+ */
+export async function avantiConDiario(giorni: number): Promise<{ pagine: number; eventi: number }> {
+  if (!app.stato) return { pagine: 0, eventi: 0 };
+  aggiornaTempo();
+  const { eventi, voci } = simulaGiorniConDiario(app.stato, dataDiOggi(), giorni);
+  app.offsetGiorni += giorni;
+  await scriviMeta('offsetGiorni', app.offsetGiorni);
+  await db.voci.bulkPut(voci);
+  app.voci = [...voci.reverse(), ...app.voci];
+  app.mentreEriVia = [...app.mentreEriVia, ...eventi];
+  await salvaStato();
+  return { pagine: voci.length, eventi: eventi.length };
 }
 
 /** Spegne il pannello prove su questo telefono (si riaccende con ?prova). */

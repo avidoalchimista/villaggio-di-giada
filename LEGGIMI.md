@@ -39,7 +39,7 @@ I dati (diario, animali) stanno in IndexedDB sul telefono. Provato il 2026-11-20
 Giada non può aprirla per caso: non c'è più nessun tocco segreto, si usano due indirizzi.
 
 - `https://avidoalchimista.github.io/villaggio-di-giada/?prova` accende il pannello prove in fondo ad Altro
-  (+1/+7/+30 giorni, fai crescere tutti, +100 castagne, azzera tutto). Resta acceso su quel telefono finché
+  (+1/+7/+30 giorni, +7/+30/+90/+365 giorni con diario finto per vedere gli sviluppi, fai crescere tutti, +100 castagne, azzera tutto). Resta acceso su quel telefono finché
   non premi «Nascondi questo pannello» o azzeri.
 - `https://avidoalchimista.github.io/villaggio-di-giada/?azzera` chiede conferma e cancella tutto da quel telefono:
   villaggio, diario, giorni simulati e pannello prove. Il gioco riparte dall'inizio.

@@ -1,10 +1,18 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
-  import { app, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import { app, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
 
   let nome = $state(app.stato!.nomeVillaggio);
   let messaggio = $state('');
+
+  let simulando = $state(false);
+  async function avanti(n: number) {
+    simulando = true;
+    const r = await avantiConDiario(n);
+    simulando = false;
+    messaggio = `Passati ${n} giorni con ${r.pagine} pagine di diario: ${r.eventi} novità. Torna al villaggio!`;
+  }
 
   async function salvaCopia() {
     const c = esportaCopia();
@@ -63,6 +71,12 @@
         <button class="secondario" onclick={() => avanzaGiorni(1)}>+1 giorno</button>
         <button class="secondario" onclick={() => avanzaGiorni(7)}>+7</button>
         <button class="secondario" onclick={() => avanzaGiorni(30)}>+30</button>
+      </div>
+      <p style="margin-top:12px">Avanti veloce come se Giada scrivesse quasi ogni giorno (pagine finte, si vedono nel diario):</p>
+      <div class="riga" style="flex-wrap:wrap">
+        {#each [7, 30, 90, 365] as n}
+          <button class="secondario" disabled={simulando} onclick={() => avanti(n)}>+{n} giorni con diario</button>
+        {/each}
       </div>
       <p style="margin-top:12px">Per vedere subito gli animali grandi (solo per le prove: prima del regalo si azzera tutto):</p>
       <div class="riga" style="flex-wrap:wrap">
