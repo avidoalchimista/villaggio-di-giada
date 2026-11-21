@@ -20,6 +20,9 @@ export const TRATTI = [
   'orecchio piegato', 'occhi di due colori', 'ciuffo ribelle', 'macchia a cuore', 'lentiggini', 'stellina in fronte',
   'calzini bianchi', 'coda extra folta', 'fiocco rosso', 'bandana blu', 'occhiali tondi', 'collana di bacche',
   'cappellino di foglia', 'campanellino', 'macchia sull\'occhio', 'punta della coda scura',
+  'nasino a cuore', 'fiore all\'orecchio', 'corona di margherite', 'sciarpa a righe', 'baffi lunghi', 'dentino sporgente',
+  'neo sulla guancia', 'sopracciglia folte', 'zainetto', 'nastro sulla coda', 'una zampa bianca', 'pancia a pois',
+  'orecchino d\'oro', 'ghianda al collo', 'cappellino a fungo', 'striscia sul dorso',
 ] as const;
 export const NUMERO_MANTI = 4;
 export const NOME_MANTO: Record<Specie, string[]> = {
