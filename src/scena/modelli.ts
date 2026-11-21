@@ -388,52 +388,91 @@ export function creaAnimale(a: Animale): ModelloAnimale {
       break;
     }
     case 'riccio': {
-      orecchio(-0.27, 0.07, 0.08, p.corpo, 1.0);
-      orecchio(0.27, 0.07, 0.08, p.corpo, 1.0);
-      // mantello di aculei a punta sulla schiena e un ciuffo a frangia sulla fronte:
-      // da cucciolo corti e chiari (quasi peluche), da grande più lunghi e scuri
+      // Come un riccio di peluche: cupola di aculei pettinati all'indietro, dalla fronte (a punta, come una frangetta)
+      // fino al sedere; aculei a due colori (scuri con la punta chiara); faccina chiara a cuore,
+      // musetto a punta con il nasone a bottone e orecchiette tonde che spuntano ai lati.
+      // Da cucciolo gli aculei sono corti, morbidi e chiari; da grande più lunghi e scuri.
       const piccolo = a.fase === 'cucciolo';
-      const coloreAculei = piccolo ? varia(p.extra, 0, 0.12) : p.extra;
-      const base = mesh(new THREE.IcosahedronGeometry(0.4, 2), pelo(coloreAculei), 0, 0.55, -0.12);
-      base.scale.set(1.05, 0.95, 1.1);
-      corpo.add(base);
-      const punte: THREE.BufferGeometry[] = [];
-      const lung = piccolo ? 0.13 : 0.2;
+      const coloreAculei = piccolo ? varia(p.extra, 0, 0.14) : p.extra;
+      const punta = piccolo ? '#fbf3e6' : varia(p.muso, 0, 0.04);
+      const lung = piccolo ? 0.12 : 0.19;
       const r = rng(hash(a.id + 'aculei'));
-      for (let k = 0; k < 70; k++) {
-        // punti sparsi su una sfera, solo dietro e sopra
-        const y = 1 - (k + 0.5) / 70 * 2;
-        const rr = Math.sqrt(1 - y * y);
-        const th = k * 2.39996;
-        const d = new THREE.Vector3(Math.cos(th) * rr, y, Math.sin(th) * rr);
-        if (d.z > 0.35 || d.y < -0.25) continue;
-        const c = new THREE.ConeGeometry(0.05, lung * (0.85 + r() * 0.3), 5);
-        c.translate(0, 0.4 + lung * 0.35, 0);
-        c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d));
-        c.scale(1.05, 0.95, 1.1);
-        c.translate(0, 0.55, -0.12);
-        punte.push(c.toNonIndexed());
-      }
-      corpo.add(mesh(unisci(punte), mat(varia(coloreAculei, 0, -0.06), { rim: 0.3 })));
-      // aculei anche sulla testa, dalla fronte alla nuca: la sagoma da riccio si vede da ogni lato
       cranio.material = pelo(p.muso);
-      const cappuccio = mesh(geo.palla(0.47, 22), pelo(coloreAculei), 0, 0.07, -0.09);
-      cappuccio.scale.set(1.12, 0.97, 1);
-      testa.add(cappuccio);
-      const frangia: THREE.BufferGeometry[] = [];
-      for (let k = 0; k < 140; k++) {
-        const y = 1 - (k + 0.5) / 140 * 2;
-        const rr = Math.sqrt(1 - y * y);
-        const th = k * 2.39996;
-        const d = new THREE.Vector3(Math.cos(th) * rr, y, Math.sin(th) * rr);
-        if (d.y < -0.1 + Math.max(0, d.z) * 1.1 || d.z > 0.5) continue;
-        const c = new THREE.ConeGeometry(0.055, lung * (0.9 + r() * 0.3), 5);
-        c.translate(0, 0.44 + lung * 0.3, 0);
-        c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d));
-        c.translate(0, 0.07, -0.09);
-        frangia.push(c.toNonIndexed());
+      naso.scale.set(1.6, 1.25, 1.3);
+      // orecchiette tonde
+      for (const s of [-1, 1]) {
+        const g = new THREE.Group();
+        g.position.set(s * 0.38, 0.13, 0.3);
+        g.rotation.set(0, s * 0.7, -s * 0.3);
+        g.scale.setScalar(1.2);
+        const o = mesh(geo.palla(0.075), pelo(p.muso), 0, 0, 0);
+        o.scale.set(1, 1, 0.5);
+        g.add(o);
+        const i = mesh(geo.palla(0.045), mat('#f4b0b0', { rim: 0 }), 0, 0, 0.03);
+        i.scale.set(1, 1, 0.4);
+        i.userData.senzaContorno = true;
+        g.add(i);
+        testa.add(g);
+        orecchieDi.push(g);
       }
-      testa.add(mesh(unisci(frangia), mat(varia(coloreAculei, 0, -0.06), { rim: 0.3 })));
+      /** Aculei su un ellissoide, pettinati all'indietro; `tiene` sceglie dove crescono. */
+      const aculei = (rx: number, ry: number, rz: number, quanti: number, tiene: (d: THREE.Vector3) => boolean, davantiSu = false) => {
+        const scuri: THREE.BufferGeometry[] = [];
+        const chiari: THREE.BufferGeometry[] = [];
+        for (let k = 0; k < quanti; k++) {
+          const y = 1 - (k + 0.5) / quanti * 2;
+          const rr = Math.sqrt(1 - y * y);
+          const th = k * 2.39996;
+          const d = new THREE.Vector3(Math.cos(th) * rr, y, Math.sin(th) * rr);
+          if (!tiene(d)) continue;
+          const pos = new THREE.Vector3(d.x * rx, d.y * ry, d.z * rz);
+          // sulla fronte gli aculei stanno più dritti, così il bordo è frastagliato e non sembra un caschetto
+          const pettine = davantiSu ? 0.65 * (1 - Math.max(0, d.z) * 0.9) : 0.65;
+          const verso = d.clone().add(new THREE.Vector3(0, 0.05, -pettine)).normalize();
+          const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), verso);
+          const l = lung * (0.85 + r() * 0.3);
+          const c = new THREE.ConeGeometry(0.06, l, 6);
+          c.translate(0, l / 2 - 0.02, 0);
+          c.applyQuaternion(q);
+          c.translate(pos.x, pos.y, pos.z);
+          scuri.push(c.toNonIndexed());
+          const t = new THREE.ConeGeometry(0.026, l * 0.36, 6);
+          t.translate(0, l * 0.82, 0);
+          t.applyQuaternion(q);
+          t.translate(pos.x, pos.y, pos.z);
+          chiari.push(t.toNonIndexed());
+        }
+        const g = new THREE.Group();
+        g.add(mesh(unisci(scuri), mat(coloreAculei, { rim: 0.3 })));
+        const tips = mesh(unisci(chiari), mat(punta, { rim: 0.2 }));
+        tips.userData.senzaContorno = true;
+        g.add(tips);
+        return g;
+      };
+      // la schiena: una cupola sola dal collo alla coda
+      const schiena = mesh(geo.palla(0.42, 20), pelo(coloreAculei), 0, 0.55, -0.1);
+      schiena.scale.set(1.05, 0.98, 1.12);
+      corpo.add(schiena);
+      const dorso = aculei(0.44, 0.41, 0.47, 260, (d) => d.z < 0.3 && d.y > -0.35 - Math.max(0, -d.z) * 0.3);
+      dorso.position.set(0, 0.55, -0.1);
+      corpo.add(dorso);
+      // la testa: un cappuccio che lascia scoperta la faccina e scende a punta in mezzo alla fronte
+      const fuori = (d: THREE.Vector3) => {
+        if (d.z > 0.88) return false;
+        const fronte = 0.0 + Math.abs(d.x) * 0.5; // a "V": più basso al centro
+        return d.y > fronte - Math.max(0, -d.z) * 1.4 || d.z < -0.2;
+      };
+      const cappuccio = mesh(geo.palla(0.47, 22), pelo(coloreAculei), 0, 0.12, -0.07);
+      cappuccio.scale.set(1.1, 0.98, 1);
+      testa.add(cappuccio);
+      const testaAculei = aculei(0.5, 0.45, 0.47, 300, fuori, true);
+      testaAculei.position.set(0, 0.1, -0.03);
+      testa.add(testaAculei);
+      // frangetta a punta sulla fronte
+      const frangetta = mesh(geo.cono(0.1, 0.18, 8), pelo(coloreAculei), 0, 0.22, 0.42);
+      frangetta.rotation.set(Math.PI - 0.7, 0, 0);
+      frangetta.scale.z = 0.5;
+      testa.add(frangetta);
       break;
     }
     case 'scoiattolo': {
@@ -508,7 +547,7 @@ export function creaAnimale(a: Animale): ModelloAnimale {
   }
 
   // maschi: ciuffo di pelo in testa (e bozzetti delle corna per i daini piccoli)
-  if (a.sesso === 'm') {
+  if (a.sesso === 'm' && a.specie !== 'riccio') {
     for (const [x, rz] of [[-0.06, 0.4], [0.02, 0], [0.09, -0.4]]) {
       const ciuffo = mesh(geo.cono(0.05, 0.16, 6), pelo(p.corpo), x, 0.46, 0.06);
       ciuffo.rotation.z = rz;
