@@ -7,9 +7,10 @@ import { chiediSpazioPersistente, db, leggiMeta, scriviMeta } from './db';
 import {
   applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, riassunto, simula,
 } from './gioco';
+import { doveSiamo } from './telefono';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
-export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni';
+export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni' | 'icona';
 
 export const app = $state({
   schermata: 'caricamento' as Schermata,
@@ -18,6 +19,8 @@ export const app = $state({
   mentreEriVia: [] as Evento[],
   animaleAperto: null as string | null,
   offsetGiorni: 0, // modalità sviluppatore
+  guidaIconaVista: false, // la guida "metti l'icona sul telefono" è già stata mostrata
+  datiAlSicuro: false, // il browser ha promesso di non cancellare i dati
   audio: true,
   // dialoghi da mostrare nel villaggio (es. dopo una pagina di diario) e festa degli animali
   codaDialoghi: [] as RigaDialogo[],
@@ -43,12 +46,16 @@ async function salvaStato() {
 }
 
 export async function avvia() {
-  chiediSpazioPersistente();
+  chiediSpazioPersistente().then((ok) => (app.datiAlSicuro = ok));
+  app.guidaIconaVista = await leggiMeta('guidaIcona', false);
   app.offsetGiorni = await leggiMeta('offsetGiorni', 0);
   app.audio = await leggiMeta('audio', true);
   const riga = await db.stato.get('unico');
   if (!riga) {
-    app.schermata = 'intro';
+    // prima volta: se è un telefono e non è aperto dall'icona, prima mettiamo l'icona
+    // (sull'iPhone l'icona ha dati suoi: meglio cominciare già da lì)
+    const dove = doveSiamo();
+    app.schermata = !app.guidaIconaVista && dove !== 'app' && dove !== 'computer' ? 'icona' : 'intro';
     return;
   }
   app.stato = normalizzaStato(riga.dati);
@@ -70,7 +77,16 @@ export async function iniziaPartita(profilo: Record<Forza, number>, nomeVillaggi
   app.stato = nuovoStato(dataDiOggi(), profilo, nomeVillaggio.trim() || 'Il villaggio', seme);
   app.voci = [];
   await salvaStato();
+  await scriviMeta('introInCorso', null);
+  chiediSpazioPersistente().then((ok) => (app.datiAlSicuro = ok));
   app.schermata = 'villaggio';
+}
+
+/** Chiude la guida dell'icona e non la ripropone più da sola. */
+export async function chiudiGuidaIcona() {
+  app.guidaIconaVista = true;
+  await scriviMeta('guidaIcona', true);
+  vai(app.stato ? 'villaggio' : 'intro');
 }
 
 export function analizzaTesto(testo: string): Analisi {

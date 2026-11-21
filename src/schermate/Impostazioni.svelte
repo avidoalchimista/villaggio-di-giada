@@ -1,5 +1,6 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
+  import GuidaIcona from '../componenti/GuidaIcona.svelte';
   import { app, avanzaGiorni, azzeraTutto, crescitaDiProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
 
@@ -41,6 +42,12 @@
   <div class="vignetta">
     <span class="didascalia">Voce del corvo</span>
     <label class="riga"><input type="checkbox" checked={app.audio} onchange={(e) => impostaAudio(e.currentTarget.checked)} /> Ascolta le registrazioni</label>
+  </div>
+
+  <div class="vignetta">
+    <span class="didascalia">Icona sul telefono</span>
+    <GuidaIcona piccola />
+    <p class="tenue centro" style="margin:10px 0 0">{app.datiAlSicuro ? 'Il telefono ha promesso di custodire il villaggio.' : 'Il villaggio è salvato su questo telefono.'}</p>
   </div>
 
   <div class="vignetta">
