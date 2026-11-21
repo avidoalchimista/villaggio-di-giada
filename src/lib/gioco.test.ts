@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { aggiungiGiorni } from './date';
 import {
-  applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, REGOLE, riassunto,
-  SCHEMA, simula, speciePrimoUovo,
+  applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, REGOLE, requisitiCapitolo, riassunto,
+  SCHEMA, simula, speciePrimoUovo, STORIA,
 } from './gioco';
 import { meteo } from './meteo';
 import { zeriForze, type Forza, type Punteggi, type StatoGioco, type VoceDiario } from './tipi';
@@ -294,5 +294,17 @@ describe('edifici e simulazione', () => {
     const s = conChiosco();
     expect(s.capitoli).toContain('c1');
     expect(s.capitoli).toContain('c3');
+  });
+
+  it('dice cosa manca per il prossimo capitolo', () => {
+    const s = partita();
+    const c2 = STORIA.find((c) => c.id === 'c2')!;
+    const r = requisitiCapitolo(s, c2, INIZIO);
+    expect(r.map((x) => x.chiave).sort()).toEqual(['animali', 'giorni', 'voci']);
+    expect(r.every((x) => x.ora === 0)).toBe(true);
+    applicaVoce(s, voce(INIZIO, { curiosita: 1 }));
+    const dopo = requisitiCapitolo(s, c2, aggiungiGiorni(INIZIO, 30));
+    expect(dopo.find((x) => x.chiave === 'voci')!.ora).toBe(1);
+    expect(dopo.find((x) => x.chiave === 'giorni')!.ora).toBe(5); // non va oltre quello che serve
   });
 });
