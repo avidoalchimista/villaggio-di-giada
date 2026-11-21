@@ -841,7 +841,7 @@ export function creaAnimale(a: Animale): ModelloAnimale {
       break;
   }
 
-  vesti(a, { testa, busto, corpo, collo, fiore, fiocco });
+  vesti(a, { testa, busto, pancia, corpo, collo, fiore, fiocco });
 
   contorno(corpo);
   gruppo.userData.taglia = t.taglia;
@@ -870,7 +870,6 @@ function partiOccupate(a: Animale): Set<Parte> {
   if (tr === 'zainetto') o.add('schiena');
   if (a.mestiere === 'cuoco') o.add('testa');
   else if (a.mestiere === 'musicista') o.add('collo');
-  else if (a.mestiere) o.add('corpo'); // il grembiule
   if (a.specie === 'riccio') o.add('schiena'); // gli aculei!
   return o;
 }
@@ -883,6 +882,7 @@ function calotta(r: number, apertura: number) {
 interface Attacchi {
   testa: THREE.Group;
   busto: THREE.Mesh;
+  pancia: THREE.Mesh;
   corpo: THREE.Group;
   collo: (o: THREE.Object3D) => void;
   fiore: (petalo: string, centro: string) => THREE.Group;
@@ -900,7 +900,7 @@ function vesti(a: Animale, at: Attacchi) {
   for (const k of indossati(copia)) if (!occupate.has(k.parte)) mettiCapo(k, { ...at, testa: k.parte === 'testa' ? cappelli : at.testa });
 }
 
-function mettiCapo(k: Capo, { testa, busto, collo, fiore, fiocco }: Attacchi) {
+function mettiCapo(k: Capo, { testa, busto, pancia, collo, fiore, fiocco }: Attacchi) {
   const tinta = mat(k.colore, { rim: 0.3 });
   const scuro = mat(varia(k.colore, 0, -0.15), { rim: 0.2 });
   const piatto = (o: THREE.Object3D) => { o.traverse((c) => (c.userData.senzaContorno = true)); return o; };
@@ -1002,8 +1002,10 @@ function mettiCapo(k: Capo, { testa, busto, collo, fiore, fiocco }: Attacchi) {
     // ---- corpo: sopra il busto, così segue la posa ----
     case 'maglione-rosa': case 'maglione-blu': case 'maglione-stella': case 'maglione-righe': {
       const tessuto = k.id === 'maglione-righe' ? mat('#ffffff', { map: texture(64, (c, l) => { for (let i = 0; i < 6; i++) { c.fillStyle = i % 2 ? '#f4f0e0' : k.colore; c.fillRect(0, (i * l) / 6, l, l / 6); } }) }) : tinta;
-      const mg = mesh(geo.palla(0.355, 20), tessuto, 0, -0.01, 0.0);
+      // il maglione copre anche la pancia, ed è un po' più largo: si vede bene
+      const mg = mesh(geo.palla(0.375, 20), tessuto, 0, -0.01, 0.0);
       busto.add(mg);
+      pancia.visible = false;
       const colletto = mesh(new THREE.TorusGeometry(0.2, 0.05, 6, 16), scuro, 0, 0.28, 0.02);
       colletto.rotation.x = Math.PI / 2;
       busto.add(colletto);
@@ -1014,11 +1016,11 @@ function mettiCapo(k: Capo, { testa, busto, collo, fiore, fiocco }: Attacchi) {
         pt.rotation.z = Math.PI;
         cuore.add(pt);
         cuore.scale.z = 0.35;
-        cuore.position.set(0, 0.05, 0.35);
+        cuore.position.set(0, 0.05, 0.37);
         busto.add(piatto(cuore));
       }
       if (k.id === 'maglione-stella') {
-        const st = mesh(new THREE.CircleGeometry(0.08, 5), mat('#ffd166', { rim: 0, emissive: '#806010', emissiveIntensity: 0.3 }), 0, 0.04, 0.357);
+        const st = mesh(new THREE.CircleGeometry(0.08, 5), mat('#ffd166', { rim: 0, emissive: '#806010', emissiveIntensity: 0.3 }), 0, 0.04, 0.377);
         busto.add(piatto(st));
       }
       break;
@@ -1124,6 +1126,9 @@ export function aggiornaMestiere(m: ModelloAnimale, mestiere: string | null) {
     g.add(gr);
     g.add(mesh(geo.palla(0.05), mat('#f2c94c'), 0.1, 0.42, 0.33));
     m.corpo.add(contorno(g));
+    // il grembiule si mette solo per lavorare: il resto del tempo si vedono i vestiti suoi
+    g.userData.grembiule = true;
+    g.visible = false;
   }
   m.accessorio = g;
 }
