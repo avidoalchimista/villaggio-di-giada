@@ -93,8 +93,10 @@ describe('regole composte', () => {
 
 describe('segnali seri', () => {
   it('riconosce le frasi di malessere serio', () => {
-    expect(analizza('Non ce la faccio più.', R).segnaliSeri).toBe(true);
+    expect(analizza('A volte vorrei farla finita.', R).segnaliSeri).toBe(true);
+    expect(analizza('Mi viene voglia di farmi del male.', R).segnaliSeri).toBe(true);
     expect(analizza('Oggi giornata no, ma domani va meglio.', R).segnaliSeri).toBe(false);
+    expect(analizza('Non ce la faccio più con questo lavoro.', R).segnaliSeri).toBe(false); // sfogo normale, il corvo non si allarma
   });
 });
 
