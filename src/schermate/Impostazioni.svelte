@@ -1,13 +1,19 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
   import GuidaIcona from '../componenti/GuidaIcona.svelte';
-  import { app, vai, avanzaGiorni, azzeraTutto, crescitaDiProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import { app, vai, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
 
   let nome = $state(app.stato!.nomeVillaggio);
   let messaggio = $state('');
-  let tocchi = $state(0);
-  let sviluppatore = $derived(tocchi >= 7);
+
+  let simulando = $state(false);
+  async function avanti(n: number) {
+    simulando = true;
+    const r = await avantiConDiario(n);
+    simulando = false;
+    messaggio = `Passati ${n} giorni con ${r.pagine} pagine di diario: ${r.eventi} novità. Torna al villaggio!`;
+  }
 
   async function salvaCopia() {
     const c = esportaCopia();
@@ -63,9 +69,10 @@
     {#if messaggio}<p class="tenue" style="margin-top:10px">{messaggio}</p>{/if}
   </div>
 
-  <button type="button" class="leggero largo versione" onclick={() => tocchi++}>Il villaggio di Giada · versione 0.1</button>
+  <p class="tenue versione">Il villaggio di Giada · versione 0.1</p>
 
-  {#if sviluppatore}
+  <!-- pannello prove: si accende solo aprendo il sito con ?prova (vedi LEGGIMI) -->
+  {#if app.prova}
     <div class="vignetta scura">
       <span class="didascalia">Modalità sviluppatore</span>
       <p>Data simulata: {dataDiOggi()} (spostata di {app.offsetGiorni} giorni)</p>
@@ -74,17 +81,24 @@
         <button class="secondario" onclick={() => avanzaGiorni(7)}>+7</button>
         <button class="secondario" onclick={() => avanzaGiorni(30)}>+30</button>
       </div>
+      <p style="margin-top:12px">Avanti veloce come se Giada scrivesse quasi ogni giorno (pagine finte, si vedono nel diario):</p>
+      <div class="riga" style="flex-wrap:wrap">
+        {#each [7, 30, 90, 365] as n}
+          <button class="secondario" disabled={simulando} onclick={() => avanti(n)}>+{n} giorni con diario</button>
+        {/each}
+      </div>
       <p style="margin-top:12px">Per vedere subito gli animali grandi (solo per le prove: prima del regalo si azzera tutto):</p>
       <div class="riga" style="flex-wrap:wrap">
         <button class="secondario" onclick={async () => { await crescitaDiProva(); messaggio = 'Tutti sono cresciuti di una fase. Torna al villaggio!'; }}>Fai crescere tutti</button>
         <button class="secondario" onclick={async () => { await regalaCastagne(100); messaggio = '100 castagne in più per le prove.'; }}>+100 castagne</button>
       </div>
       <p style="margin-top:12px"><button onclick={() => confirm('Cancello TUTTO il villaggio e il diario da questo telefono?') && azzeraTutto()}>Azzera tutto</button></p>
+      <p style="margin-top:12px"><button class="secondario" onclick={esciDallaProva}>Nascondi questo pannello</button></p>
     </div>
   {/if}
 </div>
 
 <style>
   .carica { display: block; text-align: center; margin-top: 10px; }
-  .versione { margin-top: 30px; user-select: none; }
+  .versione { margin-top: 30px; text-align: center; }
 </style>

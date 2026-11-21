@@ -34,6 +34,15 @@ https://avidoalchimista.github.io/villaggio-di-giada/ — ogni modifica caricata
 Dopo la prima apertura con internet il service worker mette tutta l'app in cache: si apre e si usa senza rete.
 I dati (diario, animali) stanno in IndexedDB sul telefono. Provato il 2026-11-20: con il server spento l'app si riapre.
 
-## Modalità sviluppatore
+## Modalità prova (solo per il telefono di prova)
 
-Altro → toccare 7 volte la riga «versione» in fondo: +1/+7/+30 giorni, azzera tutto.
+Giada non può aprirla per caso: non c'è più nessun tocco segreto, si usano due indirizzi.
+
+- `https://avidoalchimista.github.io/villaggio-di-giada/?prova` accende il pannello prove in fondo ad Altro
+  (+1/+7/+30 giorni, +7/+30/+90/+365 giorni con diario finto per vedere gli sviluppi, fai crescere tutti, +100 castagne, azzera tutto). Resta acceso su quel telefono finché
+  non premi «Nascondi questo pannello» o azzeri.
+- `https://avidoalchimista.github.io/villaggio-di-giada/?azzera` chiede conferma e cancella tutto da quel telefono:
+  villaggio, diario, giorni simulati e pannello prove. Il gioco riparte dall'inizio.
+
+Se il gioco è installato sulla schermata home: su Android apri questi indirizzi in Chrome, i dati sono gli stessi dell'app.
+Su iPhone l'app sulla home ha dati suoi, separati da Safari: per ripartire da zero toglila dalla home e rimettila.
