@@ -24,7 +24,7 @@ const INTENSI: [RegExp, number][] = [
 // Frasi che indicano un malessere serio: il corvo suggerisce con delicatezza di parlarne con qualcuno.
 const SEGNALI_SERI = [
   'farla finita', 'voglio morire', 'vorrei morire', 'non voglio piu vivere', 'togliermi la vita',
-  'farmi del male', 'mi faccio del male', 'non ce la faccio piu', 'non ha senso vivere',
+  'farmi del male', 'mi faccio del male', 'non ha senso vivere',
   'vorrei sparire', 'meglio se non ci fossi', 'nessuno sentirebbe la mia mancanza',
 ];
 
