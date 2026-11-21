@@ -209,6 +209,11 @@ nav.barra button {
 }
 nav.barra button.attivo { background: var(--panna); color: var(--legno-scuro); animation: pop 0.25s cubic-bezier(0.2, 1.8, 0.4, 1); }
 nav.barra svg { width: 26px; height: 26px; }
+nav.barra button { position: relative; }
+nav.barra .avviso {
+  position: absolute; top: 2px; right: calc(50% - 20px); width: 14px; height: 14px; border-radius: 50%;
+  background: var(--brace); border: 2px solid var(--panna); animation: pop 0.3s cubic-bezier(0.2, 1.8, 0.4, 1) both;
+}
 
 .appare { animation: pop 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
 

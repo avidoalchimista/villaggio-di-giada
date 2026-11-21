@@ -20,6 +20,7 @@ export const app = $state({
   offsetGiorni: 0, // modalità sviluppatore
   prova: false, // pannello prove visibile (solo sul telefono aperto con ?prova)
   audio: true,
+  capitoliLetti: [] as string[], // per il «NUOVO!» sulla Storia
   // dialoghi da mostrare nel villaggio (es. dopo una pagina di diario) e festa degli animali
   codaDialoghi: [] as RigaDialogo[],
   festa: 0,
@@ -74,6 +75,7 @@ export async function avvia() {
   app.prova = await leggiMeta('prova', false);
   app.offsetGiorni = await leggiMeta('offsetGiorni', 0);
   app.audio = await leggiMeta('audio', true);
+  app.capitoliLetti = await leggiMeta<string[]>('capitoliLetti', []);
   const riga = await db.stato.get('unico');
   if (!riga) {
     app.schermata = 'intro';
@@ -193,6 +195,12 @@ export function vai(s: Schermata, animale?: string) {
   app.schermata = s;
   if (animale) app.animaleAperto = animale;
   window.scrollTo(0, 0);
+}
+
+export async function segnaCapitoloLetto(id: string) {
+  if (app.capitoliLetti.includes(id)) return;
+  app.capitoliLetti = [...app.capitoliLetti, id];
+  await scriviMeta('capitoliLetti', $state.snapshot(app.capitoliLetti));
 }
 
 export async function impostaAudio(on: boolean) {

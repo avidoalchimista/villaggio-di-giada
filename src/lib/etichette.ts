@@ -112,3 +112,13 @@ export const RIASSUNTO_EMOZIONE: Record<Emozione, string> = {
   rabbia: 'era arrabbiata',
   attesa: 'aspettava qualcosa',
 };
+
+// Icone da gioco per le schermate (finché non arrivano i disegni veri)
+export const SIMBOLO_SPECIE: Record<Specie, string> = {
+  volpe: '🦊',
+  daino: '🦌',
+  tasso: '🦡',
+  riccio: '🦔',
+  scoiattolo: '🐿️',
+  lepre: '🐇',
+};
