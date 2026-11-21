@@ -1,12 +1,11 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
-  import { app, avanzaGiorni, azzeraTutto, crescitaDiProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import { app, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
   import { giorniTra } from '../lib/date';
 
   let nome = $state(app.stato!.nomeVillaggio);
   let messaggio = $state('');
-  let tocchi = $state(0);
   let rinomina = $state(false);
   let s = $derived(app.stato!);
   let giorni = $derived(giorniTra(s.inizio, dataDiOggi()) + 1);
@@ -24,7 +23,6 @@
     await rinominaVillaggio(nome);
     rinomina = false;
   }
-  let sviluppatore = $derived(tocchi >= 7);
 
   async function salvaCopia() {
     const c = esportaCopia();
@@ -94,9 +92,10 @@
     {#if messaggio}<p class="avviso appare">{messaggio}</p>{/if}
   </div>
 
-  <button type="button" class="leggero largo versione" onclick={() => tocchi++}>Il villaggio di Giada · versione 0.1</button>
+  <p class="versione">Il villaggio di Giada · versione 0.1</p>
 
-  {#if sviluppatore}
+  <!-- pannello prove: si accende solo aprendo il sito con ?prova (vedi LEGGIMI) -->
+  {#if app.prova}
     <div class="finestra-gioco appare">
       <div class="testata">MODALITÀ SVILUPPATORE</div>
       <p>Data simulata: {dataDiOggi()} (spostata di {app.offsetGiorni} giorni)</p>
@@ -111,6 +110,7 @@
         <button class="secondario tondo" onclick={async () => { await regalaCastagne(100); messaggio = '100 castagne in più per le prove.'; }}>+100 castagne</button>
       </div>
       <p style="margin-top:12px"><button class="tondo" onclick={() => confirm('Cancello TUTTO il villaggio e il diario da questo telefono?') && azzeraTutto()}>Azzera tutto</button></p>
+      <p style="margin-top:12px"><button class="secondario tondo" onclick={esciDallaProva}>Nascondi questo pannello</button></p>
     </div>
   {/if}
 </div>
@@ -156,7 +156,7 @@
   .carica { display: block; text-align: center; margin-top: 12px; }
   .carica.secondario { background: var(--panna-2); color: var(--inchiostro); text-shadow: none; }
   .avviso { margin: 12px 0 0; background: #fff; border: 2px dashed var(--foglia-scura); border-radius: 12px; padding: 8px 12px; font-size: 0.9rem; }
-  .versione { margin-top: 18px; user-select: none; font-size: 0.85rem; color: var(--testo-tenue); }
+  .versione { margin-top: 18px; text-align: center; font-size: 0.85rem; font-weight: 800; color: var(--testo-tenue); }
 
   .finestra-gioco {
     background: linear-gradient(180deg, rgba(34, 52, 112, 0.96), rgba(18, 28, 70, 0.98));
