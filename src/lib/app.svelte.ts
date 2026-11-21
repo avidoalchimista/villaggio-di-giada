@@ -18,6 +18,7 @@ export const app = $state({
   mentreEriVia: [] as Evento[],
   animaleAperto: null as string | null,
   offsetGiorni: 0, // modalità sviluppatore
+  prova: false, // pannello prove visibile (solo sul telefono aperto con ?prova)
   audio: true,
   // dialoghi da mostrare nel villaggio (es. dopo una pagina di diario) e festa degli animali
   codaDialoghi: [] as RigaDialogo[],
@@ -42,8 +43,35 @@ async function salvaStato() {
   await db.stato.put({ id: 'unico', dati: $state.snapshot(app.stato) as StatoGioco });
 }
 
+/**
+ * Indirizzi segreti per il telefono di prova (Giada non li vede mai):
+ * ?prova  accende il pannello prove in Altro, e resta acceso su quel telefono
+ * ?azzera cancella villaggio, diario, giorni simulati e pannello prove
+ * Il parametro viene tolto subito dalla barra degli indirizzi.
+ */
+async function leggiLinkSegreti(): Promise<boolean> {
+  const url = new URL(location.href);
+  const azzera = url.searchParams.has('azzera');
+  const prova = url.searchParams.has('prova');
+  if (!azzera && !prova) return false;
+  url.searchParams.delete('azzera');
+  url.searchParams.delete('prova');
+  history.replaceState(null, '', url.pathname + url.search + url.hash);
+  if (azzera) {
+    if (confirm('Cancello TUTTO il villaggio e il diario da questo telefono?')) {
+      await azzeraTutto();
+      return true;
+    }
+  } else {
+    await scriviMeta('prova', true);
+  }
+  return false;
+}
+
 export async function avvia() {
+  if (await leggiLinkSegreti()) return;
   chiediSpazioPersistente();
+  app.prova = await leggiMeta('prova', false);
   app.offsetGiorni = await leggiMeta('offsetGiorni', 0);
   app.audio = await leggiMeta('audio', true);
   const riga = await db.stato.get('unico');
@@ -203,6 +231,12 @@ export async function avanzaGiorni(n: number) {
   app.offsetGiorni += n;
   await scriviMeta('offsetGiorni', app.offsetGiorni);
   aggiornaTempo();
+}
+
+/** Spegne il pannello prove su questo telefono (si riaccende con ?prova). */
+export async function esciDallaProva() {
+  app.prova = false;
+  await scriviMeta('prova', false);
 }
 
 export async function azzeraTutto() {

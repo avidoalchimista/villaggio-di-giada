@@ -1,12 +1,10 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
-  import { app, avanzaGiorni, azzeraTutto, crescitaDiProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import { app, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
 
   let nome = $state(app.stato!.nomeVillaggio);
   let messaggio = $state('');
-  let tocchi = $state(0);
-  let sviluppatore = $derived(tocchi >= 7);
 
   async function salvaCopia() {
     const c = esportaCopia();
@@ -54,9 +52,10 @@
     {#if messaggio}<p class="tenue" style="margin-top:10px">{messaggio}</p>{/if}
   </div>
 
-  <button type="button" class="leggero largo versione" onclick={() => tocchi++}>Il villaggio di Giada · versione 0.1</button>
+  <p class="tenue versione">Il villaggio di Giada · versione 0.1</p>
 
-  {#if sviluppatore}
+  <!-- pannello prove: si accende solo aprendo il sito con ?prova (vedi LEGGIMI) -->
+  {#if app.prova}
     <div class="vignetta scura">
       <span class="didascalia">Modalità sviluppatore</span>
       <p>Data simulata: {dataDiOggi()} (spostata di {app.offsetGiorni} giorni)</p>
@@ -71,11 +70,12 @@
         <button class="secondario" onclick={async () => { await regalaCastagne(100); messaggio = '100 castagne in più per le prove.'; }}>+100 castagne</button>
       </div>
       <p style="margin-top:12px"><button onclick={() => confirm('Cancello TUTTO il villaggio e il diario da questo telefono?') && azzeraTutto()}>Azzera tutto</button></p>
+      <p style="margin-top:12px"><button class="secondario" onclick={esciDallaProva}>Nascondi questo pannello</button></p>
     </div>
   {/if}
 </div>
 
 <style>
   .carica { display: block; text-align: center; margin-top: 10px; }
-  .versione { margin-top: 30px; user-select: none; }
+  .versione { margin-top: 30px; text-align: center; }
 </style>
