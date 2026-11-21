@@ -6,6 +6,7 @@
   import { COLORE_VIRTU, NOME_FASE, NOME_VIRTU } from '../lib/etichette';
   import { accorda, conArticolo, NOME_MANTO, REGOLE } from '../lib/gioco';
   import { VIRTU } from '../lib/tipi';
+  import { indossati } from '../lib/vestiti';
 
   let a = $derived(app.stato!.animali.find((x) => x.id === app.animaleAperto)!);
   let nome = $state('');
@@ -29,6 +30,7 @@
         <h1 style="margin-top:8px">{a.nome} <span class="sesso">{a.sesso === 'f' ? '♀' : '♂'}</span></h1>
         <p class="tenue">{conArticolo(a)} {NOME_MANTO[a.specie][a.aspetto?.manto ?? 0]} · {a.mestiere ?? NOME_FASE[a.fase]}</p>
         {#if a.aspetto}<p class="segno">Segno particolare: <strong>{a.aspetto.tratto}</strong></p>{/if}
+        {#if a.vestiti?.length}<p class="tenue">Si è fatt{a.sesso === 'f' ? 'a' : 'o'} da sol{a.sesso === 'f' ? 'a' : 'o'}: {indossati(a).map((k) => k.nome).join(', ')}</p>{/if}
         {#if a.abilita?.length}<p class="tenue">Sa: {a.abilita.map((x) => REGOLE.abilita.find((d) => d.id === x)?.nome.toLowerCase()).join(', ')}</p>{/if}
       {:else}
         <h2 style="margin-top:8px">Come si chiama {conArticolo(a)}?</h2>
