@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { aggiornaTempo, app, avvia, chiudiGuidaIcona, vai, type Schermata } from './lib/app.svelte';
+  import { STORIA } from './lib/gioco';
   import Animale from './schermate/Animale.svelte';
   import Diario from './schermate/Diario.svelte';
   import Impostazioni from './schermate/Impostazioni.svelte';
@@ -24,6 +25,9 @@
     document.addEventListener('visibilitychange', quandoTorna);
     return () => document.removeEventListener('visibilitychange', quandoTorna);
   });
+
+  // pallino sulla Storia quando c'è un capitolo ancora da leggere
+  let storiaNuova = $derived(!!app.stato?.capitoli.some((id) => STORIA.some((c) => c.id === id) && !app.capitoliLetti.includes(id)));
 
   const voci: { s: Schermata; nome: string; icona: string }[] = [
     { s: 'villaggio', nome: 'Villaggio', icona: 'M4 20 L4 11 L12 4 L20 11 L20 20 Z M10 20 L10 14 L14 14 L14 20' },
@@ -66,6 +70,7 @@
   <nav class="barra">
     {#each voci as v}
       <button class:attivo={app.schermata === v.s || (v.s === 'villaggio' && app.schermata === 'animale')} onclick={() => vai(v.s)}>
+        {#if v.s === 'storia' && storiaNuova}<span class="avviso" aria-label="capitolo nuovo"></span>{/if}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d={v.icona} /></svg>
         {v.nome}
       </button>

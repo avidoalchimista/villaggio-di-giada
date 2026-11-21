@@ -5,6 +5,7 @@
 import regoleJson from '../dati/regole.json';
 import storiaJson from '../dati/storia.json';
 import { rng } from './caso';
+import { aggiornaGuardaroba } from './vestiti';
 import { aggiungiGiorni, giorniTra } from './date';
 import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './etichette';
 import {
@@ -20,6 +21,9 @@ export const TRATTI = [
   'orecchio piegato', 'occhi di due colori', 'ciuffo ribelle', 'macchia a cuore', 'lentiggini', 'stellina in fronte',
   'calzini bianchi', 'coda extra folta', 'fiocco rosso', 'bandana blu', 'occhiali tondi', 'collana di bacche',
   'cappellino di foglia', 'campanellino', 'macchia sull\'occhio', 'punta della coda scura',
+  'nasino a cuore', 'fiore all\'orecchio', 'corona di margherite', 'sciarpa a righe', 'baffi lunghi', 'dentino sporgente',
+  'neo sulla guancia', 'sopracciglia folte', 'zainetto', 'nastro sulla coda', 'una zampa bianca', 'pancia a pois',
+  'orecchino d\'oro', 'ghianda al collo', 'cappellino a fungo', 'striscia sul dorso',
 ] as const;
 export const NUMERO_MANTI = 4;
 export const NOME_MANTO: Record<Specie, string[]> = {
@@ -60,7 +64,7 @@ interface Regole {
 }
 export const REGOLE = regoleJson as unknown as Regole;
 
-interface Capitolo { id: string; titolo: string; testo: string; condizioni: { giorni?: number; animali?: number; edifici?: number; adulti?: number; voci?: number } }
+export interface Capitolo { id: string; titolo: string; testo: string; condizioni: { giorni?: number; animali?: number; edifici?: number; adulti?: number; voci?: number } }
 export const STORIA = storiaJson.capitoli as Capitolo[];
 
 // ---------- utilità ----------
@@ -305,6 +309,11 @@ function cresci(s: StatoGioco, a: Animale, data: string, out: Evento[]) {
       if (fase === 'adulto' && !a.mestiere) scegliMestiere(s, a, data, out);
     }
   }
+  // crescendo si fa da solo qualcosa da mettersi, secondo il suo carattere
+  const f = a.sesso === 'f';
+  for (const k of aggiornaGuardaroba(a)) {
+    evento(s, data, 'crescita', `${cap(nomeAnimale(a))} si è fatt${f ? 'a' : 'o'} da sol${f ? 'a' : 'o'} ${k.nome}.`, out);
+  }
 }
 
 /** Il mestiere segue il nutrimento ricevuto: la virtù più nutrita con un mestiere disponibile. */
@@ -359,19 +368,33 @@ export function aggiornaEdifici(s: StatoGioco, data: string, out: Evento[]) {
 
 // ---------- storia ----------
 
+export interface Requisito { chiave: keyof Capitolo['condizioni']; testo: string; ora: number; serve: number }
+
+/** Cosa manca per sbloccare un capitolo: una riga per ogni condizione, con a che punto si è. */
+export function requisitiCapitolo(s: StatoGioco, c: Capitolo, data: string): Requisito[] {
+  const ora: Record<keyof Capitolo['condizioni'], number> = {
+    giorni: giorniTra(s.inizio, data),
+    animali: s.animali.filter((a) => a.fase !== 'uovo').length,
+    adulti: s.animali.filter((a) => indiceFase(a.fase) >= indiceFase('adulto')).length,
+    edifici: s.edifici.length,
+    voci: s.numeroVoci,
+  };
+  const testi: Record<keyof Capitolo['condizioni'], (n: number) => string> = {
+    giorni: (n) => `${n} giorni nel bosco`,
+    animali: (n) => (n === 1 ? 'Il primo animale nato' : `${n} animali nati`),
+    adulti: (n) => (n === 1 ? 'Un animale adulto' : `${n} animali adulti`),
+    edifici: (n) => (n === 1 ? 'Il primo edificio aperto' : `${n} edifici aperti`),
+    voci: (n) => `${n} pagine di diario`,
+  };
+  return (Object.entries(c.condizioni) as [keyof Capitolo['condizioni'], number][])
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => ({ chiave: k, testo: testi[k](n), ora: Math.min(ora[k], n), serve: n }));
+}
+
 export function sbloccaStoria(s: StatoGioco, data: string, out: Evento[]) {
-  const giorni = giorniTra(s.inizio, data);
-  const nati = s.animali.filter((a) => a.fase !== 'uovo').length;
-  const adulti = s.animali.filter((a) => indiceFase(a.fase) >= indiceFase('adulto')).length;
-  const nVoci = s.numeroVoci;
   for (const c of STORIA) {
     if (s.capitoli.includes(c.id)) continue;
-    const k = c.condizioni;
-    if ((k.giorni ?? 0) > giorni) continue;
-    if ((k.animali ?? 0) > nati) continue;
-    if ((k.adulti ?? 0) > adulti) continue;
-    if ((k.edifici ?? 0) > s.edifici.length) continue;
-    if ((k.voci ?? 0) > nVoci) continue;
+    if (requisitiCapitolo(s, c, data).some((r) => r.ora < r.serve)) continue;
     s.capitoli.push(c.id);
     evento(s, data, 'storia', `Nuovo capitolo: ${c.titolo}`, out);
   }

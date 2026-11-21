@@ -25,6 +25,7 @@ export const app = $state({
   datiAlSicuro: false, // il browser ha promesso di non cancellare i dati
   consigli: { n: 0, giorno: '' }, // "Lo sapevi?" dei primi giorni: quanti mostrati e l'ultimo giorno
   audio: true,
+  capitoliLetti: [] as string[], // per il «NUOVO!» sulla Storia
   // dialoghi da mostrare nel villaggio (es. dopo una pagina di diario) e festa degli animali
   codaDialoghi: [] as RigaDialogo[],
   festa: 0,
@@ -81,6 +82,7 @@ export async function avvia() {
   app.offsetGiorni = await leggiMeta('offsetGiorni', 0);
   app.audio = await leggiMeta('audio', true);
   app.consigli = await leggiMeta('consigli', { n: 0, giorno: '' });
+  app.capitoliLetti = await leggiMeta<string[]>('capitoliLetti', []);
   const riga = await db.stato.get('unico');
   if (!riga) {
     // prima volta: se è un telefono e non è aperto dall'icona, prima mettiamo l'icona
@@ -223,6 +225,12 @@ export function vai(s: Schermata, animale?: string) {
   app.schermata = s;
   if (animale) app.animaleAperto = animale;
   window.scrollTo(0, 0);
+}
+
+export async function segnaCapitoloLetto(id: string) {
+  if (app.capitoliLetti.includes(id)) return;
+  app.capitoliLetti = [...app.capitoliLetti, id];
+  await scriviMeta('capitoliLetti', $state.snapshot(app.capitoliLetti));
 }
 
 export async function impostaAudio(on: boolean) {
