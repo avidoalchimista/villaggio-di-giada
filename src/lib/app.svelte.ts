@@ -7,10 +7,11 @@ import { chiediSpazioPersistente, db, leggiMeta, scriviMeta } from './db';
 import {
   applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, riassunto, simula,
 } from './gioco';
+import { GUIDA, type PaginaGuida } from '../dati/guida';
 import { doveSiamo } from './telefono';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
-export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni' | 'icona';
+export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni' | 'icona' | 'guida';
 
 export const app = $state({
   schermata: 'caricamento' as Schermata,
@@ -21,6 +22,7 @@ export const app = $state({
   offsetGiorni: 0, // modalità sviluppatore
   guidaIconaVista: false, // la guida "metti l'icona sul telefono" è già stata mostrata
   datiAlSicuro: false, // il browser ha promesso di non cancellare i dati
+  consigli: { n: 0, giorno: '' }, // "Lo sapevi?" dei primi giorni: quanti mostrati e l'ultimo giorno
   audio: true,
   // dialoghi da mostrare nel villaggio (es. dopo una pagina di diario) e festa degli animali
   codaDialoghi: [] as RigaDialogo[],
@@ -50,6 +52,7 @@ export async function avvia() {
   app.guidaIconaVista = await leggiMeta('guidaIcona', false);
   app.offsetGiorni = await leggiMeta('offsetGiorni', 0);
   app.audio = await leggiMeta('audio', true);
+  app.consigli = await leggiMeta('consigli', { n: 0, giorno: '' });
   const riga = await db.stato.get('unico');
   if (!riga) {
     // prima volta: se è un telefono e non è aperto dall'icona, prima mettiamo l'icona
@@ -79,7 +82,18 @@ export async function iniziaPartita(profilo: Record<Forza, number>, nomeVillaggi
   await salvaStato();
   await scriviMeta('introInCorso', null);
   chiediSpazioPersistente().then((ok) => (app.datiAlSicuro = ok));
-  app.schermata = 'villaggio';
+  app.schermata = 'guida'; // la prima volta il corvo spiega come si gioca
+}
+
+/** Nei primi giorni, un "Lo sapevi?" al giorno dalla guida (dal secondo giorno in poi). */
+export function prendiConsiglio(): PaginaGuida | null {
+  const s = app.stato;
+  const oggi = dataDiOggi();
+  if (!s || s.inizio === oggi || app.consigli.giorno === oggi || app.consigli.n >= GUIDA.length) return null;
+  const p = GUIDA[app.consigli.n];
+  app.consigli = { n: app.consigli.n + 1, giorno: oggi };
+  scriviMeta('consigli', $state.snapshot(app.consigli));
+  return p;
 }
 
 /** Chiude la guida dell'icona e non la ripropone più da sola. */

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
   import GuidaIcona from '../componenti/GuidaIcona.svelte';
-  import { app, avanzaGiorni, azzeraTutto, crescitaDiProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import { app, vai, avanzaGiorni, azzeraTutto, crescitaDiProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
 
   let nome = $state(app.stato!.nomeVillaggio);
@@ -43,6 +43,8 @@
     <span class="didascalia">Voce del corvo</span>
     <label class="riga"><input type="checkbox" checked={app.audio} onchange={(e) => impostaAudio(e.currentTarget.checked)} /> Ascolta le registrazioni</label>
   </div>
+
+  <button class="largo" style="margin-bottom:22px" onclick={() => vai('guida')}>📘 Come si gioca</button>
 
   <div class="vignetta">
     <span class="didascalia">Icona sul telefono</span>

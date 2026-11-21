@@ -9,6 +9,7 @@
   import Storia from './schermate/Storia.svelte';
   import Gioco from './schermate/Gioco.svelte';
   import GuidaIcona from './componenti/GuidaIcona.svelte';
+  import ComeSiGioca from './componenti/ComeSiGioca.svelte';
   import { doveSiamo } from './lib/telefono';
 
   // promemoria piccolo finché il villaggio è aperto nel browser invece che dall'icona
@@ -49,6 +50,8 @@
   {:else if app.schermata === 'storia'}<Storia />
   {:else if app.schermata === 'statistiche'}<Statistiche />
   {:else if app.schermata === 'impostazioni'}<Impostazioni />
+  {:else if app.schermata === 'guida'}
+    <div class="pagina"><h1>Come si gioca</h1><ComeSiGioca onfine={() => vai('villaggio')} /></div>
   {:else if app.schermata === 'icona'}
     <div class="pagina"><h1>Icona sul telefono</h1><GuidaIcona onfatto={chiudiGuidaIcona} /></div>
   {/if}
