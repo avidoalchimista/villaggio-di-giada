@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { aggiungiGiorni } from './date';
 import {
   applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, REGOLE, requisitiCapitolo, riassunto,
-  SCHEMA, simula, speciePrimoUovo, STORIA,
+  SCHEMA, simula, simulaGiorniConDiario, speciePrimoUovo, STORIA,
 } from './gioco';
 import { meteo } from './meteo';
 import { zeriForze, type Forza, type Punteggi, type StatoGioco, type VoceDiario } from './tipi';
@@ -306,5 +306,19 @@ describe('edifici e simulazione', () => {
     const dopo = requisitiCapitolo(s, c2, aggiungiGiorni(INIZIO, 30));
     expect(dopo.find((x) => x.chiave === 'voci')!.ora).toBe(1);
     expect(dopo.find((x) => x.chiave === 'giorni')!.ora).toBe(5); // non va oltre quello che serve
+  });
+});
+
+describe('modalità prova: avanti con diario', () => {
+  it('un anno di pagine finte fa crescere il villaggio', () => {
+    const s = partita();
+    const { eventi, voci } = simulaGiorniConDiario(s, INIZIO, 365);
+    expect(voci.length).toBeGreaterThan(200);
+    expect(s.numeroVoci).toBe(voci.length);
+    expect(s.animali.length).toBeGreaterThan(1);
+    expect(s.animali.some((a) => a.fase !== 'uovo' && a.fase !== 'cucciolo')).toBe(true);
+    expect(eventi.some((e) => e.tipo === 'schiusa')).toBe(true);
+    expect(eventi.every((e) => e.tipo !== 'ghiande')).toBe(true);
+    expect(s.ultimoAccesso).toBe(aggiungiGiorni(INIZIO, 365));
   });
 });
