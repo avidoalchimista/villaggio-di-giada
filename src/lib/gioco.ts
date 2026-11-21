@@ -8,7 +8,7 @@ import { rng } from './caso';
 import { aggiungiGiorni, giorniTra } from './date';
 import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './etichette';
 import {
-  FASI, VIRTU, virtuDi, zeriVirtu,
+  EMOZIONI, FASI, FORZE, VIRTU, virtuDi, zeriVirtu,
   type Animale, type Edificio, type Emozione, type Evento, type Fase, type Forza,
   type Aspetto, type Punteggi, type Richiesta, type Specie, type StatoGioco, type Virtu, type VoceDiario,
 } from './tipi';
@@ -534,6 +534,43 @@ export function testoRichiesta(s: StatoGioco, r: Richiesta): string {
     }
     case 'insegna': return 'Mi annoio un pochino… Mi insegni qualcosa di nuovo?';
   }
+}
+
+/** Eventi che contano davvero per vedere come si sviluppa il villaggio (niente castagne giornaliere). */
+const EVENTI_IMPORTANTI: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita'];
+
+/**
+ * Solo per la modalità prova: fa passare `giorni` giorni dopo `da` come se Giada scrivesse
+ * il diario in `quota` dei giorni (0..1), con punti di forza ed emozioni a caso.
+ * Le pagine finte passano dalle stesse regole di quelle vere, quindi si vedono schiuse,
+ * crescita, mestieri, edifici e capitoli come succederebbe davvero.
+ */
+export function simulaGiorniConDiario(s: StatoGioco, da: string, giorni: number, quota = 0.8): { eventi: Evento[]; voci: VoceDiario[] } {
+  const eventi: Evento[] = [];
+  const voci: VoceDiario[] = [];
+  for (let i = 1; i <= giorni; i++) {
+    const giorno = aggiungiGiorni(da, i);
+    eventi.push(...simula(s, giorno));
+    if (casuale(s) >= quota) continue;
+    const forze: Punteggi<Forza> = {};
+    const quante = 1 + Math.floor(casuale(s) * 3);
+    for (let k = 0; k < quante; k++) forze[FORZE[Math.floor(casuale(s) * FORZE.length)]] = 1 + Math.floor(casuale(s) * 3);
+    const emozioni: Punteggi<Emozione> = { [EMOZIONI[Math.floor(casuale(s) * EMOZIONI.length)]]: 1 + Math.floor(casuale(s) * 3) };
+    const difficile = casuale(s) < 0.1;
+    const voce: VoceDiario = {
+      id: `prova-${giorno}-${s.numeroVoci}`,
+      data: giorno,
+      creata: Date.now(),
+      testo: 'Pagina finta della modalità prova.',
+      forze,
+      emozioni,
+      giornataDifficile: difficile,
+      riassunto: riassunto(forze, emozioni, difficile),
+    };
+    eventi.push(...applicaVoce(s, voce));
+    voci.push(voce);
+  }
+  return { eventi: eventi.filter((e) => EVENTI_IMPORTANTI.includes(e.tipo)), voci };
 }
 
 /** Solo per la modalità prova: tutti salgono di una fase (le uova si schiudono). */
