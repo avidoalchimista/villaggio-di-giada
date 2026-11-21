@@ -1137,6 +1137,7 @@ export function creaUovo(colore: string): THREE.Group {
   const g = new THREE.Group();
   const guscio = mesh(geo.palla(0.3), mat('#fff7e6', { rim: 0.5 }), 0, 0.38, 0);
   guscio.scale.set(1, 1.3, 1);
+  guscio.name = 'guscio';
   g.add(guscio);
   for (const [x, y, z, r] of [[0.16, 0.48, 0.2, 0.07], [-0.2, 0.32, 0.14, 0.06], [0.05, 0.22, 0.26, 0.05], [-0.06, 0.6, 0.18, 0.05], [0.24, 0.3, -0.05, 0.05]]) {
     const m = mesh(geo.palla(r, 10), mat(colore, { rim: 0 }), x, y, z);
