@@ -43,8 +43,8 @@ export const CAPI: Capo[] = [
   c('mantella-stelle', 'una mantella azzurra con le stelle', 'schiena', '#5a8ad8', 'trascendenza'),
 ];
 
-/** Quando si fa un capo nuovo (punti di crescita): il primo da giovane, poi via via per un anno e più. */
-export const SOGLIE_CAPI = [35, 80, 120, 220, 340, 480, 640, 820];
+/** Quando si fa un capo nuovo (punti di crescita): una sciarpetta già da cucciolo dopo pochi giorni, poi via via per un anno e più. */
+export const SOGLIE_CAPI = [10, 35, 80, 140, 240, 360, 500, 660, 840];
 const ORDINE_PARTI: Parte[] = ['collo', 'testa', 'corpo', 'schiena'];
 
 export function capo(id: string): Capo | undefined {
@@ -72,7 +72,7 @@ export function prossimoCapo(a: Animale, giaFatti: string[]): Capo {
  * per gli animali che non avevano ancora il guardaroba lo riempie senza annunciarlo.
  */
 export function aggiornaGuardaroba(a: Animale): Capo[] {
-  if (a.fase === 'uovo' || a.fase === 'cucciolo') {
+  if (a.fase === 'uovo') {
     a.vestiti ??= [];
     return [];
   }

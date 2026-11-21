@@ -6,10 +6,9 @@ const animale = (xp: number, fase: Animale['fase'], vestiti?: string[]): Animale
   ({ id: 'a1', fase, xp, vestiti, nutrimento: { coraggio: 1, umanita: 9, saggezza: 2, giustizia: 0, temperanza: 0, trascendenza: 3 } }) as unknown as Animale;
 
 describe('vestiti che si fanno da soli', () => {
-  it('il cucciolo non ha niente, da giovane arriva il primo capo secondo il carattere', () => {
-    const a = animale(10, 'cucciolo');
+  it('appena nato non ha niente, dopo pochi giorni il cucciolo si fa la prima sciarpetta secondo il carattere', () => {
+    const a = animale(2, 'cucciolo');
     expect(aggiornaGuardaroba(a)).toEqual([]);
-    a.fase = 'giovane';
     a.xp = SOGLIE_CAPI[0];
     const nuovi = aggiornaGuardaroba(a);
     expect(nuovi).toHaveLength(1);

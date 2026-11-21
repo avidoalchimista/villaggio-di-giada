@@ -612,6 +612,7 @@ export class Scena {
   }
 
   private fineAttivita(ab: Abitante) {
+    if (ab.m.accessorio?.userData.grembiule) ab.m.accessorio.visible = false;
     ab.attivita = null;
     ab.m.corpo.rotation.x = 0;
     if (ab.canna) {
@@ -1096,42 +1097,64 @@ export class Scena {
     if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(ab.passo) * 0.4;
   }
 
-  /** Finita una pausa: a volte si va a trovare qualcuno, altrimenti si gironzola. */
+  /** Quanti altri sono già lì vicino (in cammino o arrivati). */
+  private affollato(p: THREE.Vector3, io: Abitante, r = 1.2): number {
+    let n = 0;
+    for (const b of this.abitanti.values()) {
+      if (b === io || b.dati.addormentato) continue;
+      if (b.meta.distanceTo(p) < r || b.m.gruppo.position.distanceTo(p) < r) n++;
+    }
+    return n;
+  }
+
+  /** Un punto vicino a quello voluto ma non addosso agli altri: ognuno il suo spazio. */
+  private postoLibero(io: Abitante, voluto: () => THREE.Vector3, quanti = 0): THREE.Vector3 {
+    let meglio = voluto(), folla = this.affollato(meglio, io);
+    for (let i = 0; i < 8 && folla > quanti; i++) {
+      const p = voluto(), f = this.affollato(p, io);
+      if (f < folla) { meglio = p; folla = f; }
+    }
+    return meglio;
+  }
+
+  /** Il posticino del cuore di ciascuno (dipende da chi è): il laghetto, il castagno, le aiuole... */
+  private postoPreferito(ab: Abitante): THREE.Vector3 {
+    const intorno = (x: number, z: number, r: number) => {
+      const a = Math.random() * Math.PI * 2, rr = r * (0.8 + Math.random() * 0.4);
+      return new THREE.Vector3(x + Math.cos(a) * rr, 0, z + Math.sin(a) * rr);
+    };
+    const c = POSTI_COSTRUZIONI;
+    const posti: (() => THREE.Vector3)[] = [
+      () => intorno(POSTO_CASTAGNO[0], POSTO_CASTAGNO[1], 1.8),
+      () => { const k = this.casa(ab); return intorno(k.x, k.z, 0.9); },
+    ];
+    if (this.strutture.has('laghetto')) posti.push(() => intorno(c.laghetto[0], c.laghetto[1], 2.2));
+    if (this.strutture.has('aiuola')) posti.push(() => intorno(c.aiuola[0], c.aiuola[1], 1.1));
+    if (this.strutture.has('pozzo')) posti.push(() => intorno(c.pozzo[0], c.pozzo[1], 1.3));
+    if (this.strutture.has('torretta')) posti.push(() => intorno(c.torretta[0], c.torretta[1], 1.5));
+    if (this.strutture.has('mulino')) posti.push(() => intorno(c.mulino[0], c.mulino[1], 1.6));
+    // un angolino tutto suo, sempre lo stesso, lungo il bordo del villaggio
+    const ang = ((hash(ab.dati.id + 'angolo') % 360) * Math.PI) / 180, r = Math.max(3.5, this.raggio - 2.5);
+    posti.push(() => intorno(Math.cos(ang) * r, Math.sin(ang) * r, 0.8));
+    return this.postoLibero(ab, posti[hash(ab.dati.id + 'cuore') % posti.length]);
+  }
+
+  /** Finita una pausa: ognuno fa la sua cosa, sparsi per il villaggio; ogni tanto due si incontrano. */
   private scegliCosaFare(ab: Abitante) {
-    // la giornata: di giorno chi ha un mestiere va a lavorare nella sua bottega,
-    // a pranzo e la sera ci si siede insieme attorno al falò o sulla panchina
     const momento = this.momento();
     const bottega = this.botteghe.get(ab.dati.id);
-    if (momento === 'lavoro' && bottega && Math.random() < 0.6) {
+    const tutti = [...this.abitanti.values()].filter((b) => !b.dati.addormentato);
+    const r = Math.random();
+    if (momento === 'lavoro' && bottega && r < 0.6) {
       ab.attivita = { id: 'lavoro', tempo: 10 + Math.random() * 10, prossimo: 1 };
       ab.meta = this.casa(ab);
       return;
     }
-    const insieme = momento === 'pranzo' ? 0.65 : momento === 'sera' ? 0.5 : momento === 'mattina' ? 0.1 : 0.15;
-    if (Math.random() < insieme) {
-      ab.attivita = { id: 'seduto', tempo: 12 + Math.random() * 14, prossimo: 3 + Math.random() * 3 };
-      const panca = this.strutture.has('panchina') && Math.random() < 0.35 ? POSTI_COSTRUZIONI.panchina : null;
-      if (panca) {
-        const lato = Math.random() < 0.5 ? -0.35 : 0.35;
-        ab.meta = new THREE.Vector3(panca[0] + Math.cos(panca[2]) * lato, 0, panca[1] - Math.sin(panca[2]) * lato + 0.45);
-      } else {
-        const a = Math.random() * Math.PI * 2;
-        ab.meta = new THREE.Vector3(Math.cos(a) * 1.8, 0, Math.sin(a) * 1.8);
-      }
-      return;
-    }
-    // chi ha imparato qualcosa, spesso va a farlo
-    const sa = ab.dati.abilita ?? [];
-    if (sa.length && Math.random() < 0.45) {
-      const id = sa[Math.floor(Math.random() * sa.length)];
-      const luogo = this.luogoAttivita(id);
-      ab.attivita = { id, tempo: 7 + Math.random() * 6, prossimo: 0.5 };
-      ab.meta = luogo ?? this.puntoCasuale();
-      return;
-    }
-    const liberi = [...this.abitanti.values()].filter((b) => b !== ab && !b.amico && !b.dati.addormentato && b.salto <= 0);
-    const voglia = ab.dati.fase === 'cucciolo' ? 0.3 : 0.45;
-    if (liberi.length && Math.random() < voglia) {
+    // incontri: solo qualcuno, mai tutti insieme (al massimo un terzo del villaggio in chiacchiere)
+    const inChiacchiera = tutti.filter((b) => b.amico).length;
+    const voglia = (ab.dati.fase === 'cucciolo' ? 0.22 : 0.18) * (momento === 'pranzo' || momento === 'sera' ? 1.4 : 1);
+    const liberi = tutti.filter((b) => b !== ab && !b.amico && b.salto <= 0 && !b.attivita);
+    if (liberi.length && inChiacchiera + 2 <= Math.max(2, Math.ceil(tutti.length / 3)) && Math.random() < voglia) {
       // preferisce chi è vicino
       liberi.sort((x, y) => x.m.gruppo.position.distanceTo(ab.m.gruppo.position) - y.m.gruppo.position.distanceTo(ab.m.gruppo.position));
       const b = liberi[Math.floor(Math.random() * Math.min(2, liberi.length))];
@@ -1148,7 +1171,38 @@ export class Scena {
       b.pausa = 0;
       return;
     }
-    ab.meta = this.puntoCasuale();
+    // chi ha imparato qualcosa, spesso va a farlo (ma non dove sono già in tanti)
+    const sa = ab.dati.abilita ?? [];
+    if (sa.length && Math.random() < 0.4) {
+      const id = sa[Math.floor(Math.random() * sa.length)];
+      const luogo = this.luogoAttivita(id);
+      if (!luogo || this.affollato(luogo, ab, 1.6) < 2) {
+        ab.attivita = { id, tempo: 9 + Math.random() * 8, prossimo: 0.5 };
+        ab.meta = luogo ? this.postoLibero(ab, () => this.luogoAttivita(id)!) : this.postoLibero(ab, () => this.puntoCasuale());
+        return;
+      }
+    }
+    // a pranzo e la sera ci si riposa, ma ognuno nel suo posticino; la panchina tiene due amici
+    const riposo = momento === 'pranzo' ? 0.55 : momento === 'sera' ? 0.5 : momento === 'mattina' ? 0.15 : 0.2;
+    if (Math.random() < riposo) {
+      const panca = POSTI_COSTRUZIONI.panchina;
+      if (this.strutture.has('panchina') && Math.random() < 0.3 && this.affollato(new THREE.Vector3(panca[0], 0, panca[1] + 0.45), ab, 0.9) < 2) {
+        const lato = this.affollato(new THREE.Vector3(panca[0] - 0.35, 0, panca[1] + 0.45), ab, 0.3) ? 0.35 : -0.35;
+        ab.meta = new THREE.Vector3(panca[0] + Math.cos(panca[2]) * lato, 0, panca[1] - Math.sin(panca[2]) * lato + 0.45);
+      } else ab.meta = this.postoPreferito(ab);
+      const cose = momento === 'sera' ? ['seduto', 'seduto', 'guarda', 'riposino'] : ['seduto', 'riposino', 'guarda', 'merenda'];
+      ab.attivita = { id: cose[Math.floor(Math.random() * cose.length)], tempo: 14 + Math.random() * 14, prossimo: 2 + Math.random() * 3 };
+      return;
+    }
+    // le piccole cose di tutti i giorni: annusare i fiori, stiracchiarsi, guardarsi intorno
+    if (Math.random() < 0.45) {
+      const cose = ['annusa', 'stiracchia', 'guarda', 'annusa', 'saltella'];
+      const id = cose[Math.floor(Math.random() * cose.length)];
+      ab.attivita = { id, tempo: 5 + Math.random() * 6, prossimo: 1 + Math.random() * 2 };
+      ab.meta = Math.random() < 0.5 ? this.postoPreferito(ab) : this.postoLibero(ab, () => this.puntoCasuale());
+      return;
+    }
+    ab.meta = this.postoLibero(ab, () => this.puntoCasuale());
   }
 
   /** Dove si va a fare un'attività: vicino al castagno, sul bordo del laghetto, attorno al falò... */
@@ -1228,6 +1282,7 @@ export class Scena {
         ab.m.testa.rotation.x = -0.55;
         break;
       case 'lavoro': {
+        if (ab.m.accessorio?.userData.grembiule) ab.m.accessorio.visible = true; // il grembiule da lavoro
         // al lavoro davanti alla bottega: martella, mescola, scrive...
         const b = this.botteghe.get(ab.dati.id);
         if (b) guardaVerso(b.position.x, b.position.z);
@@ -1241,8 +1296,7 @@ export class Scena {
         break;
       }
       case 'seduto': {
-        // seduti in cerchio: si guardano in mezzo, dondolano la testa, ogni tanto un sorriso
-        guardaVerso(0, 0);
+        // seduto nel suo posticino: dondola la testa, ogni tanto un sorriso
         ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
         ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
         ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, -0.3, dt * 4)));
@@ -1254,6 +1308,49 @@ export class Scena {
         }
         break;
       }
+      case 'riposino': {
+        // seduto a sonnecchiare: occhi socchiusi, testa che ciondola
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.testa.rotation.x = 0.2 + Math.sin(t * 0.7) * 0.08;
+        for (const o of ab.m.occhi) o.scale.y = 0.25;
+        if (att.prossimo <= 0) { att.prossimo = 4 + Math.random() * 3; this.fumetto(ab, '…'); }
+        break;
+      }
+      case 'merenda': {
+        // sgranocchia qualcosa: zampine alla bocca
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -1.4 + Math.sin(t * 10) * 0.08));
+        ab.m.testa.rotation.x = 0.1 + Math.abs(Math.sin(t * 8)) * 0.06;
+        if (att.prossimo <= 0) { att.prossimo = 3 + Math.random() * 3; this.fumetto(ab, ['🌰', '🍓', '☺'][Math.floor(Math.random() * 3)]); }
+        break;
+      }
+      case 'guarda':
+        // si guarda intorno, col naso all'insù quando è sera
+        ab.m.testa.rotation.y = Math.sin(t * 0.5 + g.position.x) * 0.6;
+        ab.m.testa.rotation.x = this.momento() === 'sera' ? -0.4 : -0.1;
+        if (att.prossimo <= 0) { att.prossimo = 4 + Math.random() * 4; this.fumetto(ab, this.momento() === 'sera' ? '☆' : '♪'); }
+        break;
+      case 'annusa':
+        // naso a terra tra l'erba e i fiori
+        ab.m.corpo.rotation.x = 0.3 + Math.sin(t * 3) * 0.05;
+        ab.m.testa.rotation.x = 0.35 + Math.sin(t * 12) * 0.05;
+        ab.m.testa.rotation.y = Math.sin(t * 1.4) * 0.4;
+        if (att.prossimo <= 0) { att.prossimo = 3 + Math.random() * 3; this.fumetto(ab, '✿'); }
+        break;
+      case 'stiracchia': {
+        const s = Math.min(1, Math.sin(Math.min(Math.PI, (att.tempo % 4) * 0.8)) * 1.3);
+        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -2.6 * s));
+        ab.m.testa.rotation.x = -0.3 * s;
+        ab.m.corpo.scale.set(1, 1 + 0.05 * s, 1);
+        break;
+      }
+      case 'saltella':
+        ab.m.corpo.position.y = Math.abs(Math.sin(t * 6)) * 0.18;
+        g.rotation.y += dt * 1.2;
+        if (att.prossimo <= 0) { att.prossimo = 2.5 + Math.random() * 2; this.fumetto(ab, '♪'); }
+        break;
     }
     if (att.tempo <= 0) {
       this.fineAttivita(ab);
@@ -1300,7 +1397,7 @@ export class Scena {
       guardaY = 0.6 * sc;
       // si ferma e si gira verso di noi
       ab.pausa = 999;
-      ab.attivita = null;
+      if (ab.attivita) this.fineAttivita(ab);
       ab.salto = 0.8;
       this.cine = null;
       o.rotation.y = this.angolo;
