@@ -157,6 +157,13 @@ export async function rinominaVillaggio(nome: string) {
   await salvaStato();
 }
 
+/** Una sorpresa è stata mostrata in primo piano: non la si rivede più. */
+export async function segnaSorpresaVista(e: Evento) {
+  if (!app.stato?.sorprese) return;
+  app.stato.sorprese = app.stato.sorprese.filter((x) => !(x.data === e.data && x.tipo === e.tipo && x.testo === e.testo));
+  await salvaStato();
+}
+
 export function chiudiMentreEriVia() {
   app.mentreEriVia = [];
 }
