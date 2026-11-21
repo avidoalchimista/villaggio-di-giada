@@ -14,7 +14,7 @@ import {
   type Aspetto, type Punteggi, type Richiesta, type Specie, type StatoGioco, type Virtu, type VoceDiario,
 } from './tipi';
 
-export const SCHEMA = 4;
+export const SCHEMA = 5;
 
 /** Segni particolari: nel villaggio non ce ne sono mai due uguali. */
 export const TRATTI = [
@@ -96,11 +96,20 @@ export function conArticolo(a: Pick<Animale, 'specie' | 'sesso'>): string {
   return /^(s[bcdfgklmnpqrtv]|z|gn|ps|x|y)/.test(n) ? 'lo ' + n : 'il ' + n;
 }
 
-function evento(s: StatoGioco, data: string, tipo: Evento['tipo'], testo: string, out: Evento[]) {
-  const e = { data, tipo, testo };
+/** Gli eventi importanti che il villaggio mostra in primo piano appena Giada guarda la radura. */
+const SORPRESE: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita'];
+
+function evento(s: StatoGioco, data: string, tipo: Evento['tipo'], testo: string, out: Evento[], animale?: string) {
+  const e: Evento = animale ? { data, tipo, testo, animale } : { data, tipo, testo };
   s.eventi.push(e);
   if (s.eventi.length > 500) s.eventi.splice(0, s.eventi.length - 500);
   out.push(e);
+  // resta "da vedere" finché non viene mostrato (anche se l'app si chiude prima)
+  if (SORPRESE.includes(tipo) && (animale || tipo === 'storia')) {
+    s.sorprese ??= [];
+    s.sorprese.push(e);
+    if (s.sorprese.length > 12) s.sorprese.splice(0, s.sorprese.length - 12);
+  }
 }
 
 function specieDaVirtu(v: Virtu): Specie | null {
@@ -196,6 +205,7 @@ export function nuovoStato(data: string, profilo: Record<Forza, number>, nomeVil
     seme: seme >>> 0,
     contatore: 0,
     ultimoBackupRicordato: null,
+    sorprese: [],
   };
   const uovo = nuovoUovo(s, speciePrimoUovo(profilo), data, REGOLE.vociPrimoUovo);
   s.eventi.push({ data, tipo: 'uovo', testo: `Nel bosco è comparso un uovo: dentro c'è ${conArticolo(uovo)}.` });
@@ -251,7 +261,7 @@ export function applicaVoce(s: StatoGioco, voce: VoceDiario): Evento[] {
       if (a.vociPerSchiudersi <= 0) {
         a.fase = 'cucciolo';
         const f = a.sesso === 'f';
-        evento(s, data, 'schiusa', `L'uovo si è schiuso: è nat${f ? 'a' : 'o'} ${conArticolo(a)}! Puoi ${f ? 'darle' : 'dargli'} un nome.`, out);
+        evento(s, data, 'schiusa', `L'uovo si è schiuso: è nat${f ? 'a' : 'o'} ${conArticolo(a)}! Puoi ${f ? 'darle' : 'dargli'} un nome.`, out, a.id);
       }
       continue;
     }
@@ -276,7 +286,7 @@ export function applicaVoce(s: StatoGioco, voce: VoceDiario): Evento[] {
         const sp = specieDaVirtu(v);
         if (!sp) continue;
         const u = nuovoUovo(s, sp, data, REGOLE.vociAltreUova);
-        evento(s, data, 'uovo', `Il corvo ha trovato un uovo nuovo: dentro c'è ${conArticolo(u)}.`, out);
+        evento(s, data, 'uovo', `Il corvo ha trovato un uovo nuovo: dentro c'è ${conArticolo(u)}.`, out, u.id);
       }
     }
   }
@@ -305,7 +315,7 @@ function cresci(s: StatoGioco, a: Animale, data: string, out: Evento[]) {
     if (indiceFase(fase) > max) break;
     if (indiceFase(a.fase) < indiceFase(fase) && a.xp >= soglia) {
       a.fase = fase;
-      evento(s, data, 'crescita', `${cap(nomeAnimale(a))} è cresciut${a.sesso === 'f' ? 'a' : 'o'}: ora è ${fase === 'giovane' ? 'giovane' : fase}.`, out);
+      evento(s, data, 'crescita', `${cap(nomeAnimale(a))} è cresciut${a.sesso === 'f' ? 'a' : 'o'}: ora è ${fase === 'giovane' ? 'giovane' : fase}.`, out, a.id);
       if (fase === 'adulto' && !a.mestiere) scegliMestiere(s, a, data, out);
     }
   }
@@ -324,7 +334,7 @@ export function scegliMestiere(s: StatoGioco, a: Animale, data: string, out: Eve
     const possibili = REGOLE.mestieri[v].filter((m) => REGOLE.mestieriAttivi.includes(m));
     if (!possibili.length) continue;
     a.mestiere = possibili.find((m) => !giaPresi.has(m)) ?? possibili[0];
-    evento(s, data, 'mestiere', `${cap(nomeAnimale(a))} ha scelto un mestiere: ${a.mestiere}.`, out);
+    evento(s, data, 'mestiere', `${cap(nomeAnimale(a))} ha scelto un mestiere: ${a.mestiere}.`, out, a.id);
     return;
   }
 }
@@ -342,7 +352,7 @@ export function aggiornaEdifici(s: StatoGioco, data: string, out: Evento[]) {
       const utenti = svegli.filter((a) => a.id !== gestore.id).length;
       if (utenti >= def.utentiMinimi) {
         s.edifici.push({ tipo: def.tipo, gestore: gestore.id, stato: 'attivo', virtu: def.virtu, costruito: data });
-        evento(s, data, 'edificio', `${cap(nomeAnimale(gestore))} ha aperto ${def.nome.toLowerCase()}!`, out);
+        evento(s, data, 'edificio', `${cap(nomeAnimale(gestore))} ha aperto ${def.nome.toLowerCase()}!`, out, gestore.id);
       }
       continue;
     }
@@ -484,7 +494,7 @@ export function vitaDelGiorno(s: StatoGioco, giorno: string, out: Evento[]) {
       const def = REGOLE.abilita.find((x) => x.id === a.studio!.id);
       a.abilita.push(a.studio.id);
       a.studio = null;
-      if (def) evento(s, giorno, 'abilita', `${cap(nomeAnimale(a))} ${def.frase}!`, out);
+      if (def) evento(s, giorno, 'abilita', `${cap(nomeAnimale(a))} ${def.frase}!`, out, a.id);
     }
   }
 
@@ -592,7 +602,7 @@ export function faiCrescere(s: StatoGioco, data: string): Evento[] {
   for (const a of s.animali) {
     if (a.fase === 'uovo') {
       a.fase = 'cucciolo';
-      evento(s, data, 'schiusa', `È nat${a.sesso === 'f' ? 'a' : 'o'} ${conArticolo(a)}!`, out);
+      evento(s, data, 'schiusa', `È nat${a.sesso === 'f' ? 'a' : 'o'} ${conArticolo(a)}!`, out, a.id);
       continue;
     }
     const prossima = a.fase === 'cucciolo' ? REGOLE.sogliaFase.giovane : a.fase === 'giovane' ? REGOLE.sogliaFase.adulto : null;
@@ -645,6 +655,7 @@ export function normalizzaStato(s: StatoGioco): StatoGioco {
   if ((s.versioneSchema ?? 1) < 4) {
     for (const a of s.animali) if (!a.aspetto) a.aspetto = nuovoAspetto(s, a.specie, a.sesso, a);
   }
+  s.sorprese ??= [];
   s.versioneSchema = SCHEMA;
   return s;
 }

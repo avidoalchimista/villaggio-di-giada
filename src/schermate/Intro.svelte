@@ -1,9 +1,10 @@
 <script lang="ts">
   // Primo avvio: il corvo si presenta, questionario, primo uovo, nome del villaggio.
-  import Corvo from '../componenti/Corvo.svelte';
+  import Corvo3D from '../componenti/Corvo3D.svelte';
+  import frasi from '../dati/frasi.json';
   import questionario from '../dati/questionario.json';
   import { onMount } from 'svelte';
-  import { iniziaPartita } from '../lib/app.svelte';
+  import { app, iniziaPartita } from '../lib/app.svelte';
   import { leggiMeta, scriviMeta } from '../lib/db';
   import { zeriForze, type Forza } from '../lib/tipi';
 
@@ -20,7 +21,19 @@
     { tipo: 'nome' },
   ];
 
+  const battute = frasi.corvo as Record<string, string>;
   let i = $state(0);
+
+  // la voce registrata del corvo, se c'è (altrimenti resta il testo)
+  let audio: HTMLAudioElement | null = null;
+  $effect(() => {
+    const id = passo.tipo === 'corvo' ? passo.id : passo.tipo === 'nome' ? 'nome_villaggio' : '';
+    if (!id || !app.audio) return;
+    audio?.pause();
+    audio = new Audio(`./audio/corvo/${id}.mp3`);
+    audio.play().catch(() => {});
+    return () => audio?.pause();
+  });
   let passo = $derived(passi[i]);
   const profilo = zeriForze();
   let nome = $state('');
@@ -49,9 +62,14 @@
 <div class="pagina intro">
   <h1 class="titolo">Il villaggio di Giada</h1>
 
+  <!-- il corvo resta lo stesso per tutta l'intro: cambia solo quello che dice -->
+  {#if passo.tipo !== 'domanda'}
+    <Corvo3D battuta={passo.tipo === 'corvo' ? battute[passo.id] : battute.nome_villaggio} />
+  {/if}
+
   {#key i}
     {#if passo.tipo === 'corvo'}
-      <Corvo id={passo.id} />
+      <div class="nuvola sotto-corvo appare">{battute[passo.id]}</div>
       <button class="largo" onclick={avanti}>Avanti</button>
     {:else if passo.tipo === 'domanda'}
       {@const d = domande[passo.n]}
@@ -65,7 +83,7 @@
         </div>
       </div>
     {:else}
-      <Corvo id="nome_villaggio" />
+      <div class="nuvola sotto-corvo appare">{battute.nome_villaggio}</div>
       <div class="vignetta appare">
         <input type="text" bind:value={nome} placeholder="Il nome del tuo villaggio" maxlength="40" />
         <p class="tenue" style="margin-top:8px">Potrai cambiarlo quando vuoi.</p>
@@ -77,7 +95,10 @@
 
 <style>
   .intro { padding-top: 32px; }
-  .titolo { text-align: center; font-size: 2rem; margin-bottom: 28px; }
+  .titolo { text-align: center; font-size: 2rem; margin-bottom: 18px; }
+  .sotto-corvo { margin: 22px 0 16px; }
+  /* la punta della nuvola guarda in su, verso il corvo */
+  .sotto-corvo::after { left: calc(50% - 10px); top: -13px; bottom: auto; transform: rotate(225deg); }
   .risposte { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
   .risposte button { text-align: left; font-family: var(--font-testo); font-weight: normal; }
 </style>

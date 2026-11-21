@@ -107,6 +107,7 @@ export interface Evento {
   data: string;
   tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne';
   testo: string;
+  animale?: string; // di chi parla (per inquadrarlo)
 }
 
 export interface StatoGioco {
@@ -130,6 +131,7 @@ export interface StatoGioco {
   seme: number; // per la casualità deterministica
   contatore: number; // per gli id
   ultimoBackupRicordato: string | null;
+  sorprese: Evento[]; // eventi importanti non ancora mostrati in primo piano
 }
 
 export function zeriVirtu(): Record<Virtu, number> {
