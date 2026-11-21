@@ -1,6 +1,7 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
-  import { app, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import GuidaIcona from '../componenti/GuidaIcona.svelte';
+  import { app, vai, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
   import { giorniTra } from '../lib/date';
 
@@ -87,6 +88,14 @@
       <span>🎙️ Voce del corvo</span>
       <span class="levetta" class:acceso={app.audio}><span></span></span>
     </button>
+  </div>
+
+  <button class="largo" style="margin-bottom:22px" onclick={() => vai('guida')}>📘 Come si gioca</button>
+
+  <div class="vignetta">
+    <span class="didascalia">Icona sul telefono</span>
+    <GuidaIcona piccola />
+    <p class="tenue centro" style="margin:10px 0 0">{app.datiAlSicuro ? 'Il telefono ha promesso di custodire il villaggio.' : 'Il villaggio è salvato su questo telefono.'}</p>
   </div>
 
   <div class="vignetta">

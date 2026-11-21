@@ -7,9 +7,11 @@ import { chiediSpazioPersistente, db, leggiMeta, scriviMeta } from './db';
 import {
   applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, riassunto, simula, simulaGiorniConDiario,
 } from './gioco';
+import { GUIDA, type PaginaGuida } from '../dati/guida';
+import { doveSiamo } from './telefono';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
-export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni';
+export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni' | 'icona' | 'guida';
 
 export const app = $state({
   schermata: 'caricamento' as Schermata,
@@ -19,6 +21,9 @@ export const app = $state({
   animaleAperto: null as string | null,
   offsetGiorni: 0, // modalità sviluppatore
   prova: false, // pannello prove visibile (solo sul telefono aperto con ?prova)
+  guidaIconaVista: false, // la guida "metti l'icona sul telefono" è già stata mostrata
+  datiAlSicuro: false, // il browser ha promesso di non cancellare i dati
+  consigli: { n: 0, giorno: '' }, // "Lo sapevi?" dei primi giorni: quanti mostrati e l'ultimo giorno
   audio: true,
   capitoliLetti: [] as string[], // per il «NUOVO!» sulla Storia
   // dialoghi da mostrare nel villaggio (es. dopo una pagina di diario) e festa degli animali
@@ -71,14 +76,19 @@ async function leggiLinkSegreti(): Promise<boolean> {
 
 export async function avvia() {
   if (await leggiLinkSegreti()) return;
-  chiediSpazioPersistente();
+  chiediSpazioPersistente().then((ok) => (app.datiAlSicuro = ok));
   app.prova = await leggiMeta('prova', false);
+  app.guidaIconaVista = await leggiMeta('guidaIcona', false);
   app.offsetGiorni = await leggiMeta('offsetGiorni', 0);
   app.audio = await leggiMeta('audio', true);
+  app.consigli = await leggiMeta('consigli', { n: 0, giorno: '' });
   app.capitoliLetti = await leggiMeta<string[]>('capitoliLetti', []);
   const riga = await db.stato.get('unico');
   if (!riga) {
-    app.schermata = 'intro';
+    // prima volta: se è un telefono e non è aperto dall'icona, prima mettiamo l'icona
+    // (sull'iPhone l'icona ha dati suoi: meglio cominciare già da lì)
+    const dove = doveSiamo();
+    app.schermata = !app.guidaIconaVista && dove !== 'app' && dove !== 'computer' ? 'icona' : 'intro';
     return;
   }
   app.stato = normalizzaStato(riga.dati);
@@ -100,7 +110,27 @@ export async function iniziaPartita(profilo: Record<Forza, number>, nomeVillaggi
   app.stato = nuovoStato(dataDiOggi(), profilo, nomeVillaggio.trim() || 'Il villaggio', seme);
   app.voci = [];
   await salvaStato();
-  app.schermata = 'villaggio';
+  await scriviMeta('introInCorso', null);
+  chiediSpazioPersistente().then((ok) => (app.datiAlSicuro = ok));
+  app.schermata = 'guida'; // la prima volta il corvo spiega come si gioca
+}
+
+/** Nei primi giorni, un "Lo sapevi?" al giorno dalla guida (dal secondo giorno in poi). */
+export function prendiConsiglio(): PaginaGuida | null {
+  const s = app.stato;
+  const oggi = dataDiOggi();
+  if (!s || s.inizio === oggi || app.consigli.giorno === oggi || app.consigli.n >= GUIDA.length) return null;
+  const p = GUIDA[app.consigli.n];
+  app.consigli = { n: app.consigli.n + 1, giorno: oggi };
+  scriviMeta('consigli', $state.snapshot(app.consigli));
+  return p;
+}
+
+/** Chiude la guida dell'icona e non la ripropone più da sola. */
+export async function chiudiGuidaIcona() {
+  app.guidaIconaVista = true;
+  await scriviMeta('guidaIcona', true);
+  vai(app.stato ? 'villaggio' : 'intro');
 }
 
 export function analizzaTesto(testo: string): Analisi {

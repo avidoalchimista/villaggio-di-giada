@@ -5,7 +5,7 @@
   import MenuCostruisci from '../componenti/MenuCostruisci.svelte';
   import frasi from '../dati/frasi.json';
   import {
-    app, chiudiMentreEriVia, dataDiOggi, insegnaQui, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, vai,
+    app, chiudiMentreEriVia, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, vai,
     type RigaDialogo,
   } from '../lib/app.svelte';
   import { giorniTra } from '../lib/date';
@@ -196,6 +196,9 @@
       primo = { righe: [corvo('primo_uovo')] };
     } else if (s.numeroVoci >= 5 && giorniTra(s.ultimoBackupRicordato ?? s.inizio, dataDiOggi()) >= 30) {
       primo = { righe: [corvo('backup')], tipo: 'backup' };
+    } else {
+      const c = prendiConsiglio();
+      if (c) primo = { righe: [corvo('', `Lo sapevi? ${c.testo}`)] };
     }
     if (primo && !primo.righe.length) primo = null;
     if (sorprese.length) {
@@ -354,7 +357,10 @@
     </div>
   {:else}
   <header class="hud-alto">
-    <div class="pillola nome-villaggio">{s.nomeVillaggio}</div>
+    <div class="sinistra">
+      <div class="pillola nome-villaggio">{s.nomeVillaggio}</div>
+      <button class="pillola aiuto-gioco" aria-label="Come si gioca" onclick={() => vai('guida')}>?</button>
+    </div>
     <div class="destra">
       <div class="pillola data">{NOME_METEO[tempo].icona} {dataTesto}</div>
       <div class="pillola castagne">🌰 {s.ghiande ?? 0}</div>
@@ -432,12 +438,14 @@
   .mondo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
   .errore { position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; background: var(--panna); padding: 16px; border-radius: 18px; }
   .hud-alto { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; pointer-events: none; }
+  .sinistra { display: flex; gap: 8px; align-items: flex-start; min-width: 0; max-width: 62%; }
+  .aiuto-gioco { flex: none; pointer-events: auto; padding: 5px 13px; font-weight: 900; text-shadow: none; }
   .pillola {
     background: var(--panna); border: 3px solid var(--legno); border-radius: 999px; padding: 5px 14px;
     font-weight: 800; color: var(--inchiostro); box-shadow: 0 4px 0 var(--legno-scuro); font-size: 0.95rem;
     animation: cade 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
   }
-  .nome-villaggio { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nome-villaggio { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .data { text-transform: capitalize; }
   @keyframes cade { from { transform: translateY(-40px); opacity: 0; } to { transform: none; opacity: 1; } }
   .sotto { position: absolute; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); }

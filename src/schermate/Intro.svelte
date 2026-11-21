@@ -3,7 +3,9 @@
   import Corvo3D from '../componenti/Corvo3D.svelte';
   import frasi from '../dati/frasi.json';
   import questionario from '../dati/questionario.json';
+  import { onMount } from 'svelte';
   import { app, iniziaPartita } from '../lib/app.svelte';
+  import { leggiMeta, scriviMeta } from '../lib/db';
   import { zeriForze, type Forza } from '../lib/tipi';
 
   type Passo = { tipo: 'corvo'; id: string } | { tipo: 'domanda'; n: number } | { tipo: 'nome' };
@@ -36,9 +38,24 @@
   const profilo = zeriForze();
   let nome = $state('');
 
+  // se Giada chiude a metà, alla riapertura riprende da dove era arrivata
+  interface InCorso { i: number; profilo: Record<Forza, number> }
+  onMount(async () => {
+    const r = await leggiMeta<InCorso | null>('introInCorso', null);
+    if (r && r.i > 0 && r.i < passi.length) {
+      Object.assign(profilo, r.profilo);
+      i = r.i;
+    }
+  });
+
+  function avanti() {
+    i += 1;
+    scriviMeta('introInCorso', { i, profilo: { ...profilo } } satisfies InCorso);
+  }
+
   function rispondi(f: Partial<Record<Forza, number>>) {
     for (const [k, v] of Object.entries(f) as [Forza, number][]) profilo[k] += v;
-    i += 1;
+    avanti();
   }
 </script>
 
@@ -53,7 +70,7 @@
   {#key i}
     {#if passo.tipo === 'corvo'}
       <div class="nuvola sotto-corvo appare">{battute[passo.id]}</div>
-      <button class="largo" onclick={() => (i += 1)}>Avanti</button>
+      <button class="largo" onclick={avanti}>Avanti</button>
     {:else if passo.tipo === 'domanda'}
       {@const d = domande[passo.n]}
       <div class="vignetta appare">
