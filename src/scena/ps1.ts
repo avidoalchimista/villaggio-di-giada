@@ -280,7 +280,10 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
   const uniform = {
     tErba: { value: erba }, tTerra: { value: terra }, tMacchie: { value: macchie },
     uConsumato: { value: 2.2 }, // raggio della zona calpestata al centro
-    uSentiero: { value: 0 }, // 1 quando c'è il sentiero
+    uSentiero: { value: 0 }, // 1 quando c'è il sentiero di base (anello + viale)
+    // sentiero disegnato da Giada: una maschera 128x128 (celle da mezzo metro), un canale per materiale
+    tSentiero: { value: mascheraSentiero() },
+    tSassi: { value: texSassi() }, tMattoni: { value: texMattoni() },
   };
   m.userData.uniform = uniform;
   m.onBeforeCompile = (shader) => {
@@ -296,6 +299,7 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
         `#include <common>
         uniform sampler2D tErba; uniform sampler2D tTerra; uniform sampler2D tMacchie;
         uniform float uConsumato; uniform float uSentiero;
+        uniform sampler2D tSentiero; uniform sampler2D tSassi; uniform sampler2D tMattoni;
         varying vec2 vMondo;`,
       )
       .replace(
@@ -305,6 +309,11 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
         vec3 eLontana = texture2D(tErba, vMondo * 0.061 + 0.37).rgb;
         float mac = texture2D(tMacchie, vMondo * 0.025).r;
         vec3 erbaCol = mix(eVicina, eLontana, 0.45) * (0.82 + mac * 0.36);
+        // prato più vivo: ondate di luce e d'ombra larghe (come nuvole che passano) e chiazze più calde
+        float onde = texture2D(tMacchie, vMondo * 0.011 + 0.21).r;
+        erbaCol *= 0.9 + onde * 0.2;
+        float caldo = smoothstep(0.58, 0.8, texture2D(tMacchie, vMondo * 0.034 + 0.63).r);
+        erbaCol = mix(erbaCol, erbaCol * vec3(1.12, 1.06, 0.82), caldo * 0.6);
         vec3 terraCol = texture2D(tTerra, vMondo * 0.45).rgb;
         float d = length(vMondo);
         // calpestato al centro, più netto quando c'è il sentiero ad anello
@@ -314,7 +323,18 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
         float chiazze = smoothstep(0.66, 0.74, texture2D(tMacchie, vMondo * 0.07 + 0.5).r) * 0.85;
         float rumore = texture2D(tMacchie, vMondo * 0.6).r;
         float t = clamp(max(max(centro * 0.55, anello), max(viale, chiazze)) + (rumore - 0.5) * 0.35, 0.0, 1.0);
-        diffuseColor.rgb *= mix(erbaCol, terraCol, smoothstep(0.35, 0.65, t));
+        vec3 suolo = mix(erbaCol, terraCol, smoothstep(0.35, 0.65, t));
+        // sentiero di Giada: bordi morbidi e un po' irregolari
+        vec4 sm = texture2D(tSentiero, vMondo / 64.0 + 0.5);
+        vec4 bordo = smoothstep(0.3, 0.62, sm + (rumore - 0.5) * 0.3);
+        suolo = mix(suolo, terraCol * 0.97, bordo.r);
+        vec3 sassi = texture2D(tSassi, vMondo * 0.55).rgb;
+        suolo = mix(suolo, sassi, bordo.g);
+        vec3 mattoni = texture2D(tMattoni, vMondo * 0.5).rgb;
+        suolo = mix(suolo, mattoni, bordo.b);
+        vec3 ghiaia = mix(vec3(0.86, 0.82, 0.72), vec3(0.72, 0.68, 0.6), texture2D(tMacchie, vMondo * 2.3).r);
+        suolo = mix(suolo, ghiaia, bordo.a);
+        diffuseColor.rgb *= suolo;
         `,
       );
   };
@@ -322,13 +342,54 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
   return m;
 }
 
+/** Maschera del sentiero disegnato: R terra, G sassi, B mattoni, A ghiaia. */
+export function mascheraSentiero(): THREE.DataTexture {
+  const L = 128;
+  const t = new THREE.DataTexture(new Uint8Array(L * L * 4), L, L, THREE.RGBAFormat);
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+
+/** Ciottoli tondi tra la terra. */
+function texSassi(): THREE.CanvasTexture {
+  return texture(128, (c, l) => {
+    c.fillStyle = '#7d6a55'; c.fillRect(0, 0, l, l);
+    const r = casuale(7);
+    for (let i = 0; i < 70; i++) {
+      const x = r() * l, y = r() * l, s = 6 + r() * 9;
+      const v = 140 + Math.floor(r() * 50);
+      for (const [dx, dy] of [[0, 0], [l, 0], [-l, 0], [0, l], [0, -l]]) {
+        c.fillStyle = `rgb(${v},${v - 6},${v - 14})`;
+        c.beginPath(); c.ellipse(x + dx, y + dy, s, s * 0.8, r() * 3, 0, Math.PI * 2); c.fill();
+      }
+    }
+  });
+}
+
+/** Mattoncini a spina di pesce semplificata (file sfalsate). */
+function texMattoni(): THREE.CanvasTexture {
+  return texture(128, (c, l) => {
+    c.fillStyle = '#d9c7a8'; c.fillRect(0, 0, l, l);
+    const r = casuale(3);
+    const h = l / 8, w = l / 4;
+    for (let y = 0; y < 8; y++)
+      for (let x = -1; x < 5; x++) {
+        const v = r();
+        c.fillStyle = `rgb(${180 + v * 30},${82 + v * 25},${56 + v * 15})`;
+        c.fillRect(x * w + (y % 2) * w / 2 + 2, y * h + 2, w - 4, h - 4);
+      }
+  });
+}
+
 /** Ombra morbida rotonda sotto gli oggetti (come nei giochi cozy). */
 let texOmbra: THREE.CanvasTexture | null = null;
 export function ombra(raggio: number): THREE.Mesh {
   texOmbra ??= texture(64, (c, l) => {
     const g = c.createRadialGradient(l / 2, l / 2, 0, l / 2, l / 2, l / 2);
-    g.addColorStop(0, 'rgba(40,30,60,0.45)');
-    g.addColorStop(0.6, 'rgba(40,30,60,0.25)');
+    g.addColorStop(0, 'rgba(30,24,50,0.58)');
+    g.addColorStop(0.55, 'rgba(30,24,50,0.32)');
     g.addColorStop(1, 'rgba(40,30,60,0)');
     c.fillStyle = g;
     c.fillRect(0, 0, l, l);

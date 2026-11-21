@@ -165,6 +165,20 @@ export async function insegnaQui(animale: string, abilita: string): Promise<Even
   return ev;
 }
 
+/**
+ * Arredo: applica una modifica allo stato e salva. Mentre si disegna il sentiero col dito
+ * arrivano tante modifiche di fila: il salvataggio aspetta che il dito si fermi un attimo.
+ */
+let timerArredo: ReturnType<typeof setTimeout> | undefined;
+export function cambiaArredo<T>(f: (s: StatoGioco, oggi: string) => T, subito = true): T | undefined {
+  if (!app.stato) return undefined;
+  const r = f(app.stato, dataDiOggi());
+  clearTimeout(timerArredo);
+  if (subito) salvaStato();
+  else timerArredo = setTimeout(salvaStato, 400);
+  return r;
+}
+
 /** Modalità prova: castagne extra. */
 export async function regalaCastagne(n: number) {
   if (!app.stato) return;

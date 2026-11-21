@@ -3,6 +3,8 @@
   import { onDestroy, onMount } from 'svelte';
   import Dialogo from '../componenti/Dialogo.svelte';
   import MenuCostruisci from '../componenti/MenuCostruisci.svelte';
+  import Arredo from '../componenti/Arredo.svelte';
+  import { leggiMeta, scriviMeta } from '../lib/db';
   import frasi from '../dati/frasi.json';
   import {
     app, chiudiMentreEriVia, dataDiOggi, insegnaQui, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, vai,
@@ -17,7 +19,7 @@
   import { Scena, type Bersaglio } from '../scena/scena';
 
   let canvas: HTMLCanvasElement;
-  let scena: Scena | null = null;
+  let scena = $state.raw<Scena | null>(null);
   let s = $derived(app.stato!);
 
   type Dialogo = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' };
@@ -27,6 +29,9 @@
   let nome = $state('');
   let erroreGrafica = $state(false);
   let menu = $state(false);
+  let arreda = $state(false);
+  let aiuolaDaAprire = $state<string | null>(null);
+  let quadroAperto = $state<string | null>(null);
   let tempo = $state<Meteo>('sole');
   let puoCostruire = $derived(REGOLE.costruzioni.some((c) => statoCostruzione(s, c) === 'pronta'));
   const simbolo = (a: Animale) => (a.sesso === 'f' ? '♀' : '♂');
@@ -89,6 +94,13 @@
       dialogo = { righe: conforto };
     } else if (s.numeroVoci === 0) {
       dialogo = { righe: [corvo('primo_uovo')] };
+    } else if (s.edifici.length + s.animali.filter((a) => a.mestiere).length >= 2 && !s.arredo?.oggetti?.some((o) => o.tipo === 'cartello')) {
+      // il villaggio si allarga: il corvo suggerisce (una volta sola) di mettere dei cartelli
+      leggiMeta('consiglioCartelli', false).then((visto) => {
+        if (visto || dialogo) return;
+        scriviMeta('consiglioCartelli', true);
+        dialogo = { righe: [corvo('', 'Il villaggio si sta allargando, cra! Le case sono lontane tra loro… Perché non metti dei cartelli per indicare la via? Tocca 🪴 Arreda, poi «Cose».')] };
+      });
     } else if (s.numeroVoci >= 5 && giorniTra(s.ultimoBackupRicordato ?? s.inizio, dataDiOggi()) >= 30) {
       dialogo = { righe: [corvo('backup')], tipo: 'backup' };
     }
@@ -112,6 +124,15 @@
     if (chiediNome || insegnaA) return;
     const n = s.numeroVoci + Math.floor(Date.now() / 1000);
     if (b.tipo === 'quaderno') return vai('diario');
+    if (b.tipo === 'aiuola') {
+      aiuolaDaAprire = b.id;
+      arreda = true;
+      return;
+    }
+    if (b.tipo === 'quadretto') {
+      quadroAperto = s.arredo?.quadretti.find((q) => q.id === b.id)?.disegno ?? null;
+      return;
+    }
     if (b.tipo === 'castagne') {
       const k = await raccogliQui();
       if (k) {
@@ -211,6 +232,14 @@
     <div class="errore">Questo telefono non riesce a disegnare il bosco in 3D.</div>
   {/if}
 
+  {#if quadroAperto}
+    <button class="quadro-grande" onclick={() => (quadroAperto = null)} aria-label="Chiudi">
+      <img src={quadroAperto} alt="Un quadretto di Giada" />
+    </button>
+  {/if}
+  {#if arreda && scena}
+    <Arredo scena={scena} apri={aiuolaDaAprire} onchiudi={() => { arreda = false; aiuolaDaAprire = null; }} />
+  {:else}
   <header class="hud-alto">
     <div class="pillola nome-villaggio">{s.nomeVillaggio}</div>
     <div class="destra">
@@ -278,14 +307,16 @@
         <button class="bottone-costruisci" onclick={() => (menu = true)} aria-label="Costruisci">
           🔨<span class="punto" class:visibile={puoCostruire}></span>
         </button>
+        <button class="bottone-costruisci arreda" onclick={() => (arreda = true)} aria-label="Arreda">🪴</button>
       </div>
       <p class="suggerimento">Tocca chi vuoi · 1 dito muove · 2 dita zoom e giro</p>
     {/if}
   </div>
+  {/if}
 </div>
 
 <style>
-  .gioco { position: fixed; inset: 0; max-width: 560px; margin: 0 auto; overflow: hidden; background: #bfe3f2; }
+  .gioco { user-select: none; -webkit-user-select: none; position: fixed; inset: 0; max-width: 560px; margin: 0 auto; overflow: hidden; background: #bfe3f2; }
   .mondo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
   .errore { position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; background: var(--panna); padding: 16px; border-radius: 18px; }
   .hud-alto { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; pointer-events: none; }
@@ -338,4 +369,7 @@
   .giorni { color: #ffe08a; }
   .vuoto, .aiuto { font-size: 0.85rem; color: #c4cff0; margin: 8px 2px; }
   .chiudi { align-self: center; }
+  .arreda { background: #3f7a4a; }
+  .quadro-grande { position: absolute; inset: 0; z-index: 10; background: rgba(10, 14, 40, 0.7); display: flex; align-items: center; justify-content: center; border: none; border-radius: 0; box-shadow: none; padding: 24px; }
+  .quadro-grande img { width: 100%; max-width: 420px; image-rendering: pixelated; border: 14px solid #9a6a40; border-radius: 6px; box-shadow: 0 10px 30px #0008; }
 </style>

@@ -1,4 +1,5 @@
 // Modello dati del Villaggio di Giada (vedi specifica, sezione 6).
+import type { Arredo } from './arredo';
 
 export const VIRTU = ['coraggio', 'umanita', 'saggezza', 'giustizia', 'temperanza', 'trascendenza'] as const;
 export type Virtu = (typeof VIRTU)[number];
@@ -71,6 +72,7 @@ export interface Animale {
   abilita: string[]; // cose che ha imparato (pescare, cantare...)
   aspetto: Aspetto; // com'è fatto: unico nel villaggio
   studio: { id: string; inizio: string; fine: string } | null; // cosa sta imparando ora
+  emozione?: Emozione; // l'emozione della pagina che l'ha fatto nascere: si vede nella sua casa
 }
 
 export interface Aspetto {
@@ -129,6 +131,7 @@ export interface StatoGioco {
   seme: number; // per la casualità deterministica
   contatore: number; // per gli id
   ultimoBackupRicordato: string | null;
+  arredo?: Arredo; // come Giada ha sistemato il villaggio (vedi arredo.ts)
 }
 
 export function zeriVirtu(): Record<Virtu, number> {

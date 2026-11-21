@@ -3,7 +3,7 @@
 // occhi grandi e bassi, guance piene, naso e bocca piccoli, zampe corte e tozze.
 import * as THREE from 'three';
 import { hash, rng } from '../lib/caso';
-import type { Animale, Specie } from '../lib/tipi';
+import type { Animale, Emozione, Fase, Specie } from '../lib/tipi';
 import { contorno, macchie, materiale, ombra, strisce, texture } from './ps1';
 
 const geo = {
@@ -1054,5 +1054,370 @@ export function creaBottegaMestiere(mestiere: string, colore: string): THREE.Gro
     c.fillStyle = '#4a3424'; c.fillText(simboli[mestiere] ?? '★', l / 2, l / 2 + 2);
   }), rim: 0 }), 0, 1.05, 0.58);
   g.add(insegna);
+  return contorno(g);
+}
+
+// ---------- arredo: aiuole con le piante di Giada, quadretti ----------
+
+/** Cassetta di legno con il terriccio: 3 posti per le piante, da sinistra a destra. */
+export const POSTI_CASSETTA = [-0.48, 0, 0.48];
+export function creaCassetta(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(ombra(0.95));
+  const legno = assi();
+  for (const z of [-0.3, 0.3]) g.add(mesh(geo.scatola(1.6, 0.26, 0.08), legno, 0, 0.13, z));
+  for (const x of [-0.78, 0.78]) g.add(mesh(geo.scatola(0.08, 0.26, 0.6), legno, x, 0.13, 0));
+  g.add(mesh(geo.scatola(1.5, 0.05, 0.52), mat('#5e3f26'), 0, 0.22, 0));
+  for (const x of POSTI_CASSETTA) {
+    const buca = mesh(geo.palla(0.1, 8), mat('#4a3020'), x, 0.24, 0);
+    buca.scale.y = 0.3;
+    g.add(buca);
+  }
+  return contorno(g);
+}
+
+/** Una pianta di Giada. fase 0 seme, 1 germoglio, 2 piantina, 3 fiorita/con i frutti. */
+export function creaPianta(specie: string, colore: string, fase: number): THREE.Group {
+  const g = new THREE.Group();
+  const verde = mat('#4f9a3c', { rim: 0.2 });
+  const foglia = (x: number, y: number, z: number, s: number, rot: number) => {
+    const f = mesh(geo.palla(0.07, 6), verde, x, y, z);
+    f.scale.set(s * 1.6, s * 0.4, s);
+    f.rotation.y = rot;
+    g.add(f);
+  };
+  if (fase === 0) {
+    const m = mesh(geo.palla(0.08, 6), mat('#7a5232'), 0, 0.02, 0);
+    m.scale.y = 0.5;
+    g.add(m);
+    g.add(mesh(geo.cil(0.01, 0.01, 0.12, 4), mat('#c8b080'), 0.06, 0.08, 0)); // bastoncino col cartellino
+    g.add(mesh(geo.scatola(0.08, 0.06, 0.01), mat(colore), 0.06, 0.15, 0));
+    return g;
+  }
+  if (fase === 1) {
+    g.add(mesh(geo.cil(0.012, 0.015, 0.12, 4), verde, 0, 0.06, 0));
+    foglia(0.04, 0.12, 0, 0.6, 0);
+    foglia(-0.04, 0.12, 0, 0.6, Math.PI);
+    return g;
+  }
+  const grande = fase === 3;
+  const k = grande ? 1 : 0.6;
+  switch (specie) {
+    case 'melo': {
+      g.add(mesh(geo.cil(0.04, 0.06, 0.7 * k, 6), mat('#8a5a36'), 0, 0.35 * k, 0));
+      g.add(mesh(geo.palla(0.38 * k, 10), chioma(2), 0, 0.85 * k, 0));
+      if (grande) for (let i = 0; i < 6; i++) {
+        const a = i * 1.1;
+        g.add(mesh(geo.palla(0.06, 6), mat(colore, { rim: 0.3 }), Math.cos(a) * 0.32, 0.8 + (i % 3) * 0.12, Math.sin(a) * 0.32));
+      }
+      break;
+    }
+    case 'zucca': {
+      for (let i = 0; i < 4; i++) foglia(Math.cos(i * 1.6) * 0.15, 0.05, Math.sin(i * 1.6) * 0.12, 1.4 * k, i);
+      if (grande) {
+        const z = mesh(geo.palla(0.17, 10), mat(colore, { rim: 0.3 }), 0.05, 0.13, 0.04);
+        z.scale.y = 0.75;
+        g.add(z);
+        g.add(mesh(geo.cil(0.015, 0.02, 0.07, 5), mat('#5e7a2e'), 0.05, 0.27, 0.04));
+      }
+      break;
+    }
+    case 'fragola': {
+      for (let i = 0; i < 5; i++) foglia(Math.cos(i * 1.25) * 0.1, 0.06, Math.sin(i * 1.25) * 0.1, 1.0 * k, i * 1.25);
+      if (grande) for (const [x, z] of [[0.12, 0.08], [-0.1, 0.1], [0.02, -0.12]]) {
+        const f = mesh(geo.cono(0.045, 0.08, 6), mat(colore, { rim: 0.3 }), x, 0.05, z);
+        f.rotation.x = Math.PI;
+        g.add(f);
+      }
+      break;
+    }
+    case 'lavanda': {
+      for (let i = 0; i < 7; i++) {
+        const a = i * 0.9, d = (i % 3) * 0.05;
+        g.add(mesh(geo.cil(0.008, 0.01, 0.35 * k, 4), verde, Math.cos(a) * d, 0.17 * k, Math.sin(a) * d));
+        if (grande) {
+          const spiga = mesh(geo.capsula(0.025, 0.1), mat(colore, { rim: 0.3 }), Math.cos(a) * d, 0.38, Math.sin(a) * d);
+          g.add(spiga);
+        }
+      }
+      break;
+    }
+    default: {
+      // fiori: uno stelo per ogni fiore (girasole e rosa più alti)
+      const def = { girasole: [1, 0.7, 0.13], rosa: [3, 0.45, 0.06], tulipano: [3, 0.32, 0.05], margherita: [4, 0.25, 0.05] }[specie] ?? [3, 0.3, 0.05];
+      const [n, h, r] = def;
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.1, d = n > 1 ? 0.09 : 0;
+        const x = Math.cos(a) * d, z = Math.sin(a) * d, hh = h * k * (1 - (i % 2) * 0.15);
+        g.add(mesh(geo.cil(0.012, 0.015, hh, 4), verde, x, hh / 2, z));
+        foglia(x + 0.04, hh * 0.4, z, 0.7, a);
+        if (!grande) continue;
+        if (specie === 'tulipano') {
+          const c = mesh(geo.palla(r, 8), mat(colore, { rim: 0.3 }), x, hh + 0.02, z);
+          c.scale.y = 1.4;
+          g.add(c);
+        } else if (specie === 'rosa') {
+          g.add(mesh(geo.palla(r * 1.2, 8), mat(colore, { rim: 0.3 }), x, hh, z));
+        } else {
+          const petali = mesh(geo.cil(r * 1.9, r * 1.9, 0.02, 10), mat(colore, { rim: 0.2 }), x, hh, z);
+          petali.rotation.x = specie === 'girasole' ? 1.1 : 0;
+          g.add(petali);
+          const cuore = mesh(geo.palla(r * 0.8, 8), mat(specie === 'girasole' ? '#6a3f1a' : '#ffd34d', { rim: 0 }), x, hh + (specie === 'girasole' ? 0.02 : 0.015), z + (specie === 'girasole' ? 0.02 : 0));
+          cuore.scale.y = 0.5;
+          if (specie === 'girasole') cuore.rotation.x = 1.1;
+          g.add(cuore);
+        }
+      }
+    }
+  }
+  return g;
+}
+
+export const CORNICI = [
+  { nome: 'Legno', colore: '#9a6a40' },
+  { nome: 'Oro', colore: '#e0b23c' },
+  { nome: 'Bianca', colore: '#f4efe6' },
+  { nome: 'Blu', colore: '#3f63b8' },
+];
+
+/** Un quadretto dipinto da Giada, su un cavalletto. */
+export function creaQuadretto(disegno: string, cornice: number): THREE.Group {
+  const g = new THREE.Group();
+  g.add(ombra(0.5));
+  const legno = mat('#8a5a36');
+  for (const x of [-0.3, 0.3]) {
+    const gamba = mesh(geo.cil(0.025, 0.03, 1.3, 5), legno, x, 0.62, 0);
+    gamba.rotation.z = x > 0 ? -0.12 : 0.12;
+    g.add(gamba);
+  }
+  const dietro = mesh(geo.cil(0.025, 0.03, 1.2, 5), legno, 0, 0.55, -0.22);
+  dietro.rotation.x = -0.35;
+  g.add(dietro);
+  g.add(mesh(geo.scatola(0.8, 0.05, 0.08), legno, 0, 0.55, 0.04));
+  const quadro = new THREE.Group();
+  quadro.position.set(0, 0.98, 0.03);
+  quadro.rotation.x = -0.12;
+  quadro.add(mesh(geo.scatola(0.84, 0.66, 0.05), mat(CORNICI[cornice]?.colore ?? CORNICI[0].colore, { rim: 0.2 })));
+  const tex = new THREE.TextureLoader().load(disegno);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.NearestFilter;
+  const tela = mesh(new THREE.PlaneGeometry(0.72, 0.54), mat('#ffffff', { map: tex, rim: 0 }), 0, 0, 0.03);
+  tela.userData.senzaContorno = true;
+  quadro.add(tela);
+  g.add(quadro);
+  return contorno(g);
+}
+
+// ---------- case degli animali ----------
+
+/** Colori e decorazione della casa secondo l'emozione con cui l'animale è nato. */
+const CASA_EMOZIONE: Record<Emozione, { tetto: string; porta: string; muro: string }> = {
+  gioia: { tetto: '#f2b43c', porta: '#e8584a', muro: '#fbecc4' },
+  fiducia: { tetto: '#5fa86a', porta: '#8a5a36', muro: '#f1ead2' },
+  paura: { tetto: '#3f4f8a', porta: '#6a4a8a', muro: '#e6e2ee' },
+  sorpresa: { tetto: '#ff8a3c', porta: '#3f8ad8', muro: '#fff1dc' },
+  tristezza: { tetto: '#5f8fc8', porta: '#3f5a8a', muro: '#e8eef4' },
+  disgusto: { tetto: '#7a9a3c', porta: '#5a3f6a', muro: '#eef0d8' },
+  rabbia: { tetto: '#c8463a', porta: '#4a2e20', muro: '#f4e2d0' },
+  attesa: { tetto: '#a58be0', porta: '#c87a3a', muro: '#f6eef8' },
+};
+
+const SIMBOLI_MESTIERE: Record<string, string> = { cuoco: '🍲', musicista: '♪', artigiano: '✂', fabbro: '⚒', taglialegna: '🪓', guardia: '🛡', guaritore: '✚', locandiere: '🍵', esploratore: '🧭', bibliotecario: '📚', costruttore: '🔨', capovillaggio: '★', mercante: '⚖', giardiniere: '🌱', 'custode delle scorte': '🧺', pittore: '🎨', cantastorie: '📜' };
+
+function insegnaMestiere(mestiere: string) {
+  return mesh(geo.scatola(0.55, 0.55, 0.04), mat('#ffffff', { map: texture(64, (c, l) => {
+    c.fillStyle = '#fff8e7'; c.fillRect(0, 0, l, l);
+    c.strokeStyle = '#8a5a36'; c.lineWidth = 6; c.strokeRect(3, 3, l - 6, l - 6);
+    c.font = `${l * 0.55}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = '#4a3424'; c.fillText(SIMBOLI_MESTIERE[mestiere] ?? '★', l / 2, l / 2 + 2);
+  }), rim: 0 }));
+}
+
+/**
+ * La casa di un animale: la forma dipende dalla specie, i colori e la decorazione dall'emozione
+ * della pagina con cui è nato. Crescendo la abbellisce (vasi, recinto, comignolo...).
+ * È grande: circa 2,5 metri di lato, porta davanti (verso +z).
+ */
+export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, mestiere: string | null): THREE.Group {
+  const g = new THREE.Group();
+  const c = CASA_EMOZIONE[emozione] ?? CASA_EMOZIONE.gioia;
+  const muro = mat('#ffffff', { map: texture(64, macchie([c.muro, '#' + new THREE.Color(c.muro).offsetHSL(0, 0, -0.06).getHexString(), c.muro], 0.6, specie.length + emozione.length)) });
+  const tetto = mat(c.tetto, { rim: 0.4 });
+  const porta = mat(c.porta);
+  const vetro = mat('#9fd3f0', { emissive: '#ffd27a', emissiveIntensity: 0.15 });
+  const legno = legnoMat();
+  g.add(ombra(1.9));
+  let fronte = 1.1; // z della facciata
+  let altPorta = 0;
+  switch (specie) {
+    case 'tasso': {
+      // collinetta erbosa con la porta tonda
+      const colle = mesh(geo.palla(1.5, 16), mat('#6ba552', { rim: 0.3 }), 0, 0, 0);
+      colle.scale.set(1.1, 0.85, 1);
+      g.add(colle);
+      const pd = mesh(geo.cil(0.5, 0.5, 0.1, 18), porta, 0, 0.55, 1.42);
+      pd.rotation.x = Math.PI / 2;
+      g.add(pd);
+      const cornice = mesh(new THREE.TorusGeometry(0.52, 0.07, 6, 18), mat('#8a7a6a'), 0, 0.55, 1.44);
+      g.add(cornice);
+      for (const x of [-0.95, 0.95]) {
+        const f = mesh(geo.cil(0.2, 0.2, 0.08, 12), vetro, x, 0.65, 1.12);
+        f.rotation.x = Math.PI / 2 - 0.5;
+        g.add(f);
+      }
+      fronte = 1.45;
+      altPorta = 0.55;
+      break;
+    }
+    case 'riccio': {
+      // capanna a cupola di foglie a scaglie
+      g.add(mesh(geo.cil(1.2, 1.25, 0.9, 14), muro, 0, 0.45, 0));
+      for (let i = 0; i < 4; i++) {
+        const strato = mesh(geo.cono(1.55 - i * 0.32, 0.6, 14), mat(i % 2 ? c.tetto : '#c8803a', { rim: 0.4 }), 0, 1.1 + i * 0.38, 0);
+        g.add(strato);
+      }
+      g.add(mesh(geo.scatola(0.6, 0.85, 0.08), porta, 0, 0.42, 1.21));
+      fronte = 1.25;
+      break;
+    }
+    case 'scoiattolo': {
+      // casetta sull'albero: tronco, piattaforma e scaletta
+      g.add(mesh(geo.cil(0.35, 0.5, 1.6, 10), mat('#ffffff', { map: texture(64, macchie(['#8a5a36', '#6d4428', '#a06a40'], 1, 11)) }), 0, 0.8, 0));
+      g.add(mesh(geo.cil(1.3, 1.3, 0.12, 12), legno, 0, 1.6, 0));
+      g.add(mesh(geo.scatola(1.6, 1.1, 1.4), muro, 0, 2.2, 0));
+      const t2 = mesh(geo.cono(1.35, 0.9, 4), tetto, 0, 3.2, 0);
+      t2.rotation.y = Math.PI / 4;
+      g.add(t2);
+      g.add(mesh(geo.scatola(0.5, 0.8, 0.06), porta, 0, 2.05, 0.72));
+      for (let i = 0; i < 5; i++) g.add(mesh(geo.scatola(0.5, 0.05, 0.06), legno, 0, 0.25 + i * 0.3, 1.25));
+      for (const x of [-0.25, 0.25]) {
+        const st = mesh(geo.cil(0.03, 0.03, 1.7, 5), legno, x, 0.8, 1.2);
+        st.rotation.x = -0.12;
+        g.add(st);
+      }
+      fronte = 0.73;
+      altPorta = 2.05;
+      break;
+    }
+    case 'lepre': {
+      // casa tonda di pietra con il tetto di paglia
+      g.add(mesh(geo.cil(1.15, 1.2, 1.3, 16), pietra(), 0, 0.65, 0));
+      g.add(mesh(geo.cono(1.55, 1.3, 16), mat('#e2c46a', { rim: 0.4 }), 0, 1.95, 0));
+      g.add(mesh(geo.palla(0.16, 8), tetto, 0, 2.65, 0));
+      g.add(mesh(geo.scatola(0.55, 0.9, 0.08), porta, 0, 0.45, 1.18));
+      fronte = 1.2;
+      break;
+    }
+    case 'daino': {
+      // casa alta di legno chiaro, due piani, tetto ripido
+      g.add(mesh(geo.scatola(2.0, 2.0, 1.6), muro, 0, 1.0, 0));
+      const t2 = mesh(geo.cono(1.75, 1.3, 4), tetto, 0, 2.65, 0);
+      t2.rotation.y = Math.PI / 4;
+      t2.scale.z = 0.8;
+      g.add(t2);
+      g.add(mesh(geo.scatola(0.55, 0.95, 0.08), porta, 0, 0.48, 0.82));
+      for (const x of [-0.6, 0.6]) g.add(mesh(geo.scatola(0.35, 0.35, 0.06), vetro, x, 1.5, 0.82));
+      fronte = 0.82;
+      break;
+    }
+    default: {
+      // volpe: casetta col tetto spiovente e il comignolo
+      g.add(mesh(geo.scatola(2.0, 1.4, 1.7), muro, 0, 0.7, 0));
+      const t2 = mesh(geo.cono(1.7, 1.1, 4), tetto, 0, 1.95, 0);
+      t2.rotation.y = Math.PI / 4;
+      g.add(t2);
+      g.add(mesh(geo.scatola(0.55, 0.9, 0.08), porta, 0, 0.45, 0.87));
+      for (const x of [-0.6, 0.6]) g.add(mesh(geo.scatola(0.35, 0.35, 0.06), vetro, x, 0.8, 0.87));
+      fronte = 0.87;
+    }
+  }
+  if (!altPorta) altPorta = 0.45;
+  g.add(mesh(geo.palla(0.04), mat('#f2c94c'), 0.15, altPorta, fronte + 0.04));
+
+  // insegna del mestiere sopra la porta
+  if (mestiere) {
+    const ins = insegnaMestiere(mestiere);
+    ins.position.set(0, altPorta + 0.75, fronte + 0.06);
+    g.add(ins);
+  }
+
+  // la decorazione dell'emozione, davanti a casa
+  const davanti = (x: number, o: THREE.Object3D) => { o.position.x += x; o.position.z += Math.max(fronte, 1.1) + 0.45; g.add(o); return o; };
+  switch (emozione) {
+    case 'gioia': for (const x of [-0.9, -0.65]) { const f = creaFiore('#ffcf33'); f.scale.setScalar(2.4); davanti(x, f); } break;
+    case 'fiducia': { const b = mesh(geo.scatola(0.9, 0.08, 0.3), legno, 0, 0.35, 0); b.add(mesh(geo.scatola(0.08, 0.35, 0.08), legno, -0.38, -0.17, 0)); b.add(mesh(geo.scatola(0.08, 0.35, 0.08), legno, 0.38, -0.17, 0)); davanti(-1.0, b); break; }
+    case 'paura': { const l = creaLanterna(); l.luce.material = mat('#ffe2a0', { emissive: '#ffb347', emissiveIntensity: 1.2, rim: 0 }); davanti(0.75, l.gruppo); break; }
+    case 'sorpresa': {
+      const filo = new THREE.Group();
+      const colori = ['#ff6f91', '#ffd166', '#7fc8f8', '#7ccf6a', '#b39ddb'];
+      for (let i = 0; i < 5; i++) { const b = mesh(geo.cono(0.09, 0.18, 3), mat(colori[i]), -0.8 + i * 0.4, 0, 0); b.rotation.x = Math.PI; filo.add(b); }
+      filo.position.set(0, altPorta + 0.45, fronte + 0.1);
+      g.add(filo);
+      break;
+    }
+    case 'tristezza': for (const x of [-0.9, 0.9]) { const v = mesh(geo.cil(0.16, 0.12, 0.25, 8), mat('#c8805a'), 0, 0.12, 0); for (let i = 0; i < 3; i++) { const f = creaFiore('#7fb4f8'); f.position.set((i - 1) * 0.07, 0.15, 0); v.add(f); } davanti(x, v); } break;
+    case 'disgusto': for (let i = 0; i < 3; i++) { const e = creaCiuffo(0.8); e.traverse((o) => { if (o instanceof THREE.Mesh) o.material = mat('#8fbf5a', { rim: 0.2, side: THREE.DoubleSide }); }); davanti(-0.9 + i * 0.3, e); } break;
+    case 'rabbia': { const leg = new THREE.Group(); for (let i = 0; i < 6; i++) { const t2 = mesh(geo.cil(0.09, 0.09, 0.6, 8), mat('#a06a40'), (i % 3) * 0.19 - 0.19, 0.09 + Math.floor(i / 3) * 0.17, 0); t2.rotation.z = Math.PI / 2; t2.rotation.y = Math.PI / 2; leg.add(t2); } davanti(1.0, leg); break; }
+    case 'attesa': { const p = mesh(geo.cil(0.04, 0.04, 0.9, 6), legno, 0, 0.45, 0); p.add(mesh(geo.scatola(0.32, 0.22, 0.4), mat(c.porta), 0, 0.5, 0)); davanti(1.0, p); break; }
+  }
+
+  // crescendo l'animale abbellisce la casa
+  const livello = { uovo: 0, cucciolo: 0, giovane: 1, adulto: 2, maestro: 3 }[fase];
+  if (livello >= 2) {
+    // un vialetto di sassi piatti fino alla porta
+    for (let i = 0; i < 3; i++) {
+      const s = mesh(geo.cil(0.18, 0.2, 0.05, 8), pietra(), (i % 2) * 0.12 - 0.06, 0.03, Math.max(fronte, 1.1) + 0.35 + i * 0.4);
+      s.userData.senzaContorno = true;
+      g.add(s);
+    }
+  }
+  if (livello >= 3) {
+    // un piccolo recinto basso intorno
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI * 0.15 + (i / 8) * Math.PI * 0.7;
+      g.add(mesh(geo.scatola(0.08, 0.45, 0.08), legno, Math.cos(a + Math.PI) * 1.9, 0.22, -Math.sin(a + Math.PI) * 1.9 * 0.8));
+    }
+  }
+  return contorno(g);
+}
+
+/** Cartello a freccia per indicare la via, con una scritta di Giada. */
+export function creaCartelloVia(testo: string): THREE.Group {
+  const g = new THREE.Group();
+  g.add(ombra(0.4));
+  const legno = assi();
+  g.add(mesh(geo.cil(0.05, 0.06, 1.5, 6), legno, 0, 0.75, 0));
+  const tav = texture(256, (c, l) => {
+    c.fillStyle = '#c4935e'; c.fillRect(0, 0, l, l);
+    c.fillStyle = '#a87a48'; for (let y = 0; y < l; y += 40) c.fillRect(0, y, l, 4);
+    c.fillStyle = '#4a3020'; c.font = `900 ${l * 0.2}px 'Nunito Variable', sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    const t = testo.length > 14 ? testo.slice(0, 13) + '…' : testo;
+    let size = l * 0.3;
+    c.font = `900 ${size}px 'Nunito Variable', sans-serif`;
+    while (c.measureText(t).width > l * 0.86 && size > 20) { size -= 4; c.font = `900 ${size}px 'Nunito Variable', sans-serif`; }
+    c.fillText(t, l * 0.45, l / 2);
+  });
+  tav.repeat.set(1, 1);
+  // la freccia: un'asse con la punta, che indica verso destra (ruotando il cartello si cambia direzione)
+  const forma = new THREE.Shape();
+  forma.moveTo(-0.5, -0.17); forma.lineTo(0.38, -0.17); forma.lineTo(0.55, 0); forma.lineTo(0.38, 0.17); forma.lineTo(-0.5, 0.17); forma.closePath();
+  const geoF = new THREE.ExtrudeGeometry(forma, { depth: 0.05, bevelEnabled: false });
+  // coordinate uv da -0.5..0.55 → 0..1
+  const uv = geoF.getAttribute('uv') as THREE.BufferAttribute;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + 0.5) / 1.05, uv.getY(i) / 1.05 + 0.5);
+  const freccia = mesh(geoF, mat('#ffffff', { map: tav, rim: 0 }), 0.05, 1.25, -0.025);
+  g.add(freccia);
+  return contorno(g);
+}
+
+/** Un pezzo di recinto lungo 2 metri: si mettono in fila e si girano come si vuole. */
+export function creaRecinto(): THREE.Group {
+  const g = new THREE.Group();
+  const legno = assi();
+  for (const x of [-1, 0, 1]) {
+    g.add(mesh(geo.scatola(0.11, 0.75, 0.11), legno, x, 0.37, 0));
+    g.add(mesh(geo.cono(0.08, 0.12, 4), legno, x, 0.8, 0));
+  }
+  for (const y of [0.3, 0.58]) g.add(mesh(geo.scatola(2.05, 0.09, 0.05), legno, 0, y, 0.06));
   return contorno(g);
 }

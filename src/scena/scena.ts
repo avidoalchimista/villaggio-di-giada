@@ -2,15 +2,17 @@
 // Il villaggio si allarga quando arrivano nuovi abitanti e nascono nuovi mestieri.
 import * as THREE from 'three';
 import { COLORE_VIRTU } from '../lib/etichette';
-import { REGOLE } from '../lib/gioco';
+import { emozioneDellaPagina, REGOLE } from '../lib/gioco';
+import { arredoVuoto, fasePianta, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arredo, type Posto } from '../lib/arredo';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
-  aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaBottegaMestiere, creaCartello, creaChiosco, creaCorvo, creaFalo,
+  aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo,
   creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, creaCastagno, creaCastagna, creaCanna,
   creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
+  creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto,
 } from './modelli';
-import { CURVA, materialeTerreno, spriteTesto } from './ps1';
+import { CURVA, materialeTerreno, spriteTesto, ombra } from './ps1';
 import type { Meteo } from '../lib/meteo';
 
 export type Bersaglio =
@@ -20,7 +22,24 @@ export type Bersaglio =
   | { tipo: 'uovo'; id: string }
   | { tipo: 'edificio'; tipo_edificio: string }
   | { tipo: 'bottega'; id: string }
-  | { tipo: 'castagne' };
+  | { tipo: 'castagne' }
+  | { tipo: 'aiuola'; id: string }
+  | { tipo: 'quadretto'; id: string };
+
+/** Cosa sta facendo Giada quando arreda il villaggio. */
+export type ModoArredo = 'sposta' | 'togli' | 'sentiero' | 'orto' | 'quadri';
+
+/** Quello che succede arredando: la schermata lo salva nello stato. */
+export type EventoArredo =
+  | { tipo: 'seleziona'; chiave: string | null }
+  | { tipo: 'sposta'; chiave: string; posto: Posto }
+  | { tipo: 'togli'; x: number; z: number; costo: number; cosa: string }
+  | { tipo: 'poche'; costo: number; cosa: string }
+  | { tipo: 'dipingi'; x: number; z: number }
+  | { tipo: 'apri'; chiave: string };
+
+/** Cose che non si possono spostare (sono sparse, o seguono altro). */
+const FISSE = new Set(['sentiero', 'lanterne']);
 
 const POSTO_CASTAGNO: [number, number] = [-7.5, -3.5];
 
@@ -80,6 +99,39 @@ const POSTI_COSTRUZIONI: Record<string, [number, number, number]> = {
   mulino: [5.8, -3.6, -0.8],
 };
 
+/**
+ * Posti automatici per edifici e botteghe: un arco dietro la radura e poi i lati,
+ * almeno 5 metri l'uno dall'altro; quando non c'è più posto, un secondo giro più largo.
+ * Il viale d'ingresso (davanti, verso la telecamera) resta sempre libero.
+ */
+export function postiCase(n: number, raggio: number): [number, number][] {
+  const out: [number, number][] = [];
+  const giri = [Math.min(10, raggio - 2.5), Math.min(15.5, raggio - 0.5)];
+  for (const [g, d] of giri.entries()) {
+    if (d < 6) continue;
+    const passo = 5.4 / d; // angolo per stare a ~5,4 m di distanza
+    const offset = g * passo * 0.5;
+    for (let k = 0; out.length < n; k++) {
+      const lato = k === 0 ? 0 : Math.ceil(k / 2) * (k % 2 ? 1 : -1);
+      const a = Math.PI * 1.5 + lato * passo + offset;
+      // fino a ~50° dal viale d'ingresso (che è a 90°): oltre si torna verso il davanti
+      const dalViale = Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2)));
+      if (Math.abs(lato * passo) > Math.PI) break;
+      if (dalViale < 0.9) continue;
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (out.some(([px, pz]) => Math.hypot(x - px, z - pz) < 5)) continue;
+      out.push([x, z]);
+    }
+    if (out.length >= n) break;
+  }
+  // se proprio non c'è posto (tantissime case), si stringono sul giro esterno
+  while (out.length < n) {
+    const a = Math.PI * 1.5 + (out.length * 0.61) % (Math.PI * 1.4) - Math.PI * 0.7;
+    out.push([Math.cos(a) * 15, Math.sin(a) * 15]);
+  }
+  return out;
+}
+
 export class Scena {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -116,7 +168,8 @@ export class Scena {
   private zoom = 1;
   private centro = new THREE.Vector3(); // punto guardato dalla telecamera
   private centroVoluto = new THREE.Vector3();
-  private trascina: { x: number; y: number; mosso: number } | null = null;
+  private trascina: { x: number; y: number; mosso: number; dipinge?: boolean; ultimo?: THREE.Vector3 } | null = null;
+  private mezzoDita: { x: number; y: number } | null = null;
   private dita = new Map<number, { x: number; y: number }>();
   private distanzaPizzico = 0;
   private angoloDita = 0;
@@ -125,6 +178,28 @@ export class Scena {
   private effimeri: { o: THREE.Object3D; vita: number; vel: THREE.Vector3 }[] = [];
   private resizeObs: ResizeObserver;
   onTocco: (b: Bersaglio) => void = () => {};
+
+  // ---------- arredo ----------
+  private castagno!: THREE.Group;
+  private selvatici = new THREE.Group(); // sassi e albero grande dell'inizio: si possono togliere
+  private arredo: Arredo = arredoVuoto();
+  private aiuole = new Map<string, THREE.Group>();
+  private quadri = new Map<string, THREE.Group>();
+  private oggetti = new Map<string, THREE.Group>();
+  private ghiande = 0;
+  private chiaveBosco = '';
+  private chiaveSentiero = '';
+  private oggi = '';
+  private selezionato: string | null = null;
+  private anelloSel!: THREE.Mesh;
+  private vistaAlta = 0;
+  private spostando: string | null = null;
+  private aiuoleCaricate = false; // oggetto trascinato col dito
+  /** null = si gioca; altrimenti Giada sta arredando */
+  modo: ModoArredo | null = null;
+  /** materiale del sentiero (0 = gomma) */
+  pennello = 1;
+  onArredo: (e: EventoArredo) => void = () => {};
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -142,6 +217,7 @@ export class Scena {
     this.lucciole = this.creaLucciole();
     this.scene.add(this.lucciole);
     this.allarga(5.5);
+    this.scene.add(this.selvatici);
 
     this.resizeObs = new ResizeObserver(() => this.ridimensiona());
     this.resizeObs.observe(canvas);
@@ -164,12 +240,20 @@ export class Scena {
     for (const [x, z, s] of [[3.4, -1.2, 0.6], [-2.2, -3.0, 0.45], [2.4, 3.6, 0.5], [-4.6, 3.2, 0.7]]) {
       const sasso = creaSasso(s);
       sasso.position.set(x, sasso.position.y, z);
-      this.scene.add(sasso);
+      this.selvatici.add(sasso);
     }
 
     const grande = creaAlbero(1.5, 2);
     grande.position.set(-4.1, 0, 0.2);
-    this.scene.add(grande);
+    this.selvatici.add(grande);
+
+    // anello giallo sotto la cosa scelta quando si arreda
+    this.anelloSel = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.15, 32), new THREE.MeshBasicMaterial({ color: '#ffd166', transparent: true, opacity: 0.9, depthWrite: false }));
+    this.anelloSel.rotation.x = -Math.PI / 2;
+    this.anelloSel.position.y = 0.05;
+    this.anelloSel.visible = false;
+    this.anelloSel.raycast = () => {};
+    this.scene.add(this.anelloSel);
     this.nido.scale.setScalar(1.3);
     this.nido.position.set(-2.8, 0, 1.6);
     this.scene.add(this.nido);
@@ -191,6 +275,7 @@ export class Scena {
     // il castagno: le castagne mature cadono qui sotto e si raccolgono toccandole
     const castagno = creaCastagno();
     castagno.position.set(POSTO_CASTAGNO[0], 0, POSTO_CASTAGNO[1]);
+    this.castagno = castagno;
     this.scene.add(castagno);
     this.castagne.position.copy(castagno.position);
     this.castagne.userData.bersaglio = { tipo: 'castagne' };
@@ -275,9 +360,16 @@ export class Scena {
   /** Ricostruisce il bosco intorno alla radura quando il villaggio si allarga. */
   private allarga(r: number) {
     const arrotondato = Math.round(r * 2) / 2;
-    if (arrotondato === this.raggio) return;
+    const occupati = this.occupati();
+    const chiave = arrotondato + '|' + JSON.stringify(this.arredo.tolti) + '|' + occupati.map(([x, z, d]) => `${x.toFixed(1)},${z.toFixed(1)},${d}`).join(';');
+    if (chiave === this.chiaveBosco) return;
+    this.chiaveBosco = chiave;
+    r = arrotondato;
     this.raggio = arrotondato;
     this.bosco.clear();
+    // dove Giada ha tolto qualcosa non ricresce niente
+    const tolto = (x: number, z: number, d = 0.9) => this.arredo.tolti.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < d);
+    for (const o of this.selvatici.children) o.visible = !tolto(o.position.x, o.position.z, 1.2);
     let k = 0;
     for (let anello = 0; anello < 3; anello++) {
       const ra = r + 1.5 + anello * 2.6;
@@ -289,16 +381,18 @@ export class Scena {
         const vicino = anello === 0;
         const albero = (i + anello) % 3 === 0 ? creaPino(0.95 + ((i * 7) % 5) * 0.12, vicino) : creaAlbero(0.9 + ((i * 5) % 4) * 0.12, k++, vicino);
         const jitter = ((i * 13) % 7) / 10 - 0.3;
-        albero.position.set(Math.cos(a) * (ra + jitter), 0, Math.sin(a) * (ra + jitter));
+        const x = Math.cos(a) * (ra + jitter), z = Math.sin(a) * (ra + jitter);
+        if (tolto(x, z, 1.1)) continue;
+        albero.position.set(x, 0, z);
         albero.rotation.y = i;
+        albero.userData.cosa = 'albero';
         this.bosco.add(albero);
       }
     }
     // natura selvatica: fiori, ciuffi d'erba alta, cespugli con bacche, funghi, tronchi caduti, sassi
     // (lontano dal centro e dai posti delle costruzioni, sempre negli stessi punti)
     const libero = (x: number, z: number) =>
-      Math.hypot(x, z) > 3.2 && Math.hypot(x - POSTO_CASTAGNO[0], z - POSTO_CASTAGNO[1]) > 2.6 &&
-      Object.values(POSTI_COSTRUZIONI).every(([px, pz]) => Math.hypot(x - px, z - pz) > 2.2);
+      Math.hypot(x, z) > 3.2 && !tolto(x, z, 0.7) && occupati.every(([px, pz, d]) => Math.hypot(x - px, z - pz) > d) && !this.suSentiero(x, z);
     const colori = ['#ff8fb1', '#ffd166', '#ffffff', '#b39ddb', '#ff7b6b', '#8fd3ff'];
     const area = r * r;
     const metti = (n: number, f: (i: number) => THREE.Object3D, seme: number, min = 3.2) => {
@@ -307,14 +401,16 @@ export class Scena {
         const x = Math.cos(a) * d, z = Math.sin(a) * d;
         if (!libero(x, z)) continue;
         const o = f(i);
+        o.userData.cosa = seme === 3 || seme === 5 ? 'cespuglio' : seme === 6 ? 'sasso' : 'piccolo';
         o.position.set(x, o.position.y, z);
         o.rotation.y = i * 1.7;
         this.bosco.add(o);
       }
     };
-    metti(Math.round(area * 0.22), (i) => { const f = creaFiore(colori[i % colori.length]); f.scale.setScalar(1 + (i % 3) * 0.2); return f; }, 1);
-    metti(Math.round(area * 0.12), (i) => creaCiuffo(0.9 + (i % 4) * 0.2), 2);
-    metti(Math.round(area * 0.035), (i) => creaCespuglio(0.8 + (i % 3) * 0.25, i), 3, 5);
+    // (prima era tutto troppo fitto: meno fiori e ciuffi sparsi, così c'è spazio per arredare)
+    metti(Math.round(area * 0.11), (i) => { const f = creaFiore(colori[i % colori.length]); f.scale.setScalar(1 + (i % 3) * 0.2); return f; }, 1);
+    metti(Math.round(area * 0.06), (i) => creaCiuffo(0.9 + (i % 4) * 0.2), 2);
+    metti(Math.round(area * 0.025), (i) => creaCespuglio(0.8 + (i % 3) * 0.25, i), 3, 5);
     metti(Math.round(area * 0.02), (i) => creaFungo(1 + (i % 3) * 0.4), 4, 4);
     metti(Math.round(area * 0.012), () => creaTronco(), 5, 6);
     metti(Math.round(area * 0.02), (i) => creaSasso(0.4 + (i % 4) * 0.15), 6, 4);
@@ -371,6 +467,7 @@ export class Scena {
       g.position.set(pos[0], 0, pos[1]);
       g.rotation.y = pos[2];
     }
+    if (!FISSE.has(id)) g.userData.chiave = 'c:' + id;
     this.strutture.set(id, g);
     this.scene.add(g);
     if (nuova && id !== 'sentiero') {
@@ -381,7 +478,9 @@ export class Scena {
   }
 
   aggiorna(s: StatoGioco) {
-    this.allarga(raggioVillaggio(s));
+    this.arredo = s.arredo ?? arredoVuoto();
+    this.oggi = s.ultimoAccesso;
+    this.ghiande = s.ghiande;
     this.aggiornaCastagne(s.castagneMature ?? 0);
     this.conRichiesta = s.richiesta?.animale ?? null;
     const primaVolta = this.strutture.size === 0 && !this.giaAggiornata;
@@ -431,43 +530,226 @@ export class Scena {
       aggiornaMestiere(ab.m, a.mestiere);
       this.aggiornaSonno(ab);
 
-      // chi ha un mestiere si costruisce la sua bottega ai margini della radura
-      if (a.mestiere && !this.botteghe.has(a.id)) {
-        const b = creaBottegaMestiere(a.mestiere, COLORE_VIRTU[this.virtuMestiere(a.mestiere)]);
-        b.userData.bersaglio = { tipo: 'bottega', id: a.id };
-        this.botteghe.set(a.id, b);
-        this.scene.add(b);
-        this.coriandoli(new THREE.Vector3(0, 1, 0), ['#f2c94c', '#ffffff']);
+      // chi ha un mestiere si costruisce la sua casa ai margini della radura: forma della sua specie,
+      // colori della sua emozione, e crescendo la abbellisce
+      if (a.mestiere) {
+        const emo = a.emozione ?? emozioneDellaPagina(null, a);
+        const firma = `${a.specie}|${emo}|${a.fase}|${a.mestiere}`;
+        const vecchia = this.botteghe.get(a.id);
+        if (!vecchia || vecchia.userData.firma !== firma) {
+          const b = creaCasaAnimale(a.specie, emo, a.fase, a.mestiere);
+          b.userData.bersaglio = { tipo: 'bottega', id: a.id };
+          b.userData.firma = firma;
+          if (vecchia) {
+            b.position.copy(vecchia.position);
+            b.rotation.copy(vecchia.rotation);
+            this.scene.remove(vecchia);
+          } else if (this.giaAggiornata) this.coriandoli(new THREE.Vector3(0, 1, 0), ['#f2c94c', '#ffffff']);
+          this.botteghe.set(a.id, b);
+          this.scene.add(b);
+        }
       }
     });
     for (const id of [...this.abitanti.keys()]) if (!visti.has(id)) this.togliAbitante(id);
 
-    // posti degli edifici e delle botteghe: in cerchio, dietro la radura, con il villaggio che si allarga
-    const posti = [...s.edifici.map((e) => ({ k: 'e:' + e.tipo })), ...[...this.botteghe.keys()].map((id) => ({ k: 'b:' + id }))];
-    posti.forEach((p, i) => {
-      const n = posti.length;
-      const ang = Math.PI * 1.5 + (i - (n - 1) / 2) * Math.min(0.75, 4.2 / Math.max(n, 1));
-      const d = Math.min(9.5, this.raggio - 2);
-      const x = Math.cos(ang) * d, z = Math.sin(ang) * d;
-      if (p.k.startsWith('e:')) {
-        const tipo = p.k.slice(2);
-        let g = this.edifici.get(tipo);
-        if (!g) {
-          g = tipo === 'chiosco' ? creaChiosco() : creaPiazzaMusica();
-          g.userData.bersaglio = { tipo: 'edificio', tipo_edificio: tipo };
-          this.edifici.set(tipo, g);
-          this.scene.add(g);
+    // posti degli edifici e delle botteghe: ben distanziati, dietro e ai lati della radura (mai sul viale d'ingresso)
+    const raggio = raggioVillaggio(s);
+    const posti = [...s.edifici.map((e) => 'e:' + e.tipo), ...[...this.botteghe.keys()].map((id) => 'b:' + id)];
+    const automatici = postiCase(posti.length, raggio);
+    posti.forEach((k, i) => {
+      let g: THREE.Group;
+      if (k.startsWith('e:')) {
+        const tipo = k.slice(2);
+        let e3 = this.edifici.get(tipo);
+        if (!e3) {
+          e3 = tipo === 'chiosco' ? creaChiosco() : creaPiazzaMusica();
+          e3.userData.bersaglio = { tipo: 'edificio', tipo_edificio: tipo };
+          this.edifici.set(tipo, e3);
+          this.scene.add(e3);
         }
-        g.position.set(x, 0, z);
-        g.lookAt(0, 0, 0);
+        g = e3;
         const e = s.edifici.find((x) => x.tipo === tipo)!;
-        g.rotation.z = e.stato === 'fermo' ? 0.04 : 0;
-      } else {
-        const g = this.botteghe.get(p.k.slice(2))!;
-        g.position.set(x, 0, z);
-        g.lookAt(0, 0, 0);
-      }
+        g.userData.storto = e.stato === 'fermo' ? 0.04 : 0;
+      } else g = this.botteghe.get(k.slice(2))!;
+      g.userData.chiave = k;
+      const [x, z] = automatici[i];
+      this.posiziona(g, k, { x, z, r: Math.atan2(-x, -z) });
+      g.rotation.z = (g.userData.storto as number) ?? 0;
     });
+
+    // cose di Giada: il castagno, le costruzioni spostate, le aiuole, i quadretti, il sentiero
+    this.castagno.userData.chiave = 'castagno';
+    this.posiziona(this.castagno, 'castagno', { x: POSTO_CASTAGNO[0], z: POSTO_CASTAGNO[1], r: 0 });
+    this.castagne.position.copy(this.castagno.position);
+    for (const [id, g] of this.strutture) {
+      if (FISSE.has(id)) continue;
+      const d = POSTI_COSTRUZIONI[id] ?? [0, 0, 0];
+      // il ponticello segue il laghetto, se non l'ha spostato a parte
+      const base = id === 'ponticello' && this.arredo.posti['c:laghetto'] && !this.arredo.posti['c:ponticello']
+        ? { ...this.arredo.posti['c:laghetto'], r: this.arredo.posti['c:laghetto'].r + 0.2 } : { x: d[0], z: d[1], r: d[2] };
+      this.posiziona(g, 'c:' + id, base);
+    }
+    this.aggiornaAiuole();
+    this.aggiornaQuadri();
+    this.aggiornaOggetti();
+    this.aggiornaSentiero(s);
+    this.allarga(raggio);
+  }
+
+  /** Mette un oggetto dove l'ha voluto Giada, oppure al suo posto di sempre. */
+  private posiziona(g: THREE.Object3D, chiave: string, base: Posto) {
+    const p = this.arredo.posti[chiave] ?? base;
+    if (this.spostando === chiave) return; // lo sta trascinando col dito
+    g.position.set(p.x, 0, p.z);
+    g.rotation.y = p.r;
+  }
+
+  private aggiornaAiuole() {
+    const viste = new Set<string>();
+    for (const a of this.arredo.aiuole) {
+      viste.add(a.id);
+      const firma = a.piante.map((p) => (p ? p.specie + fasePianta(p, this.oggi) : '-')).join(',');
+      let g = this.aiuole.get(a.id);
+      if (g && g.userData.firma !== firma) {
+        this.scene.remove(g);
+        g = undefined;
+      }
+      if (!g) {
+        const nuova = this.aiuoleCaricate && !this.aiuole.has(a.id);
+        g = creaCassetta();
+        a.piante.forEach((p, i) => {
+          if (!p) return;
+          const def = PIANTE.find((d) => d.id === p.specie);
+          const pi = creaPianta(p.specie, def?.colore ?? '#ffffff', fasePianta(p, this.oggi));
+          pi.position.set(POSTI_CASSETTA[i], 0.24, 0);
+          g!.add(pi);
+        });
+        g.userData = { firma, chiave: 'a:' + a.id, bersaglio: { tipo: 'aiuola', id: a.id } };
+        this.aiuole.set(a.id, g);
+        this.scene.add(g);
+        if (nuova) this.coriandoli(new THREE.Vector3(a.x, 0.8, a.z), ['#7ccf6a', '#ffd166']);
+      }
+      if (this.spostando !== 'a:' + a.id) {
+        g.position.set(a.x, 0, a.z);
+        g.rotation.y = a.r;
+      }
+    }
+    for (const [id, g] of this.aiuole) if (!viste.has(id)) { this.scene.remove(g); this.aiuole.delete(id); }
+    this.aiuoleCaricate = true;
+  }
+
+  private aggiornaQuadri() {
+    const visti = new Set<string>();
+    for (const q of this.arredo.quadretti) {
+      visti.add(q.id);
+      let g = this.quadri.get(q.id);
+      if (!g) {
+        g = creaQuadretto(q.disegno, q.cornice);
+        g.userData.chiave = 'q:' + q.id;
+        g.userData.bersaglio = { tipo: 'quadretto', id: q.id };
+        this.quadri.set(q.id, g);
+        this.scene.add(g);
+      }
+      if (this.spostando !== 'q:' + q.id) {
+        g.position.set(q.x, 0, q.z);
+        g.rotation.y = q.r;
+      }
+    }
+    for (const [id, g] of this.quadri) if (!visti.has(id)) { this.scene.remove(g); this.quadri.delete(id); }
+  }
+
+  private aggiornaOggetti() {
+    const visti = new Set<string>();
+    for (const o of this.arredo.oggetti ?? []) {
+      visti.add(o.id);
+      let g = this.oggetti.get(o.id);
+      if (g && g.userData.testo !== (o.testo ?? '')) { this.scene.remove(g); g = undefined; }
+      if (!g) {
+        g = o.tipo === 'cartello' ? creaCartelloVia(o.testo ?? '') : creaRecinto();
+        g.userData.chiave = 'o:' + o.id;
+        g.userData.testo = o.testo ?? '';
+        this.oggetti.set(o.id, g);
+        this.scene.add(g);
+      }
+      if (this.spostando !== 'o:' + o.id) {
+        g.position.set(o.x, 0, o.z);
+        g.rotation.y = o.r;
+      }
+    }
+    for (const [id, g] of this.oggetti) if (!visti.has(id)) { this.scene.remove(g); this.oggetti.delete(id); }
+  }
+
+  /** Il sentiero: quello di base (anello + viale) o quello disegnato da Giada. */
+  private aggiornaSentiero(s: StatoGioco) {
+    const u = this.matTerreno.userData.uniform as { uSentiero: { value: number }; tSentiero: { value: THREE.DataTexture } };
+    const sent = this.arredo.sentiero;
+    u.uSentiero.value = !sent && s.costruzioni.some((c) => c.id === 'sentiero') ? 1 : 0;
+    const chiave = sent ? Object.keys(sent).length + ':' + JSON.stringify(sent).length + ':' + JSON.stringify(sent).slice(-60) : '';
+    if (chiave === this.chiaveSentiero) return;
+    this.chiaveSentiero = chiave;
+    const tex = u.tSentiero.value;
+    const dati = tex.image.data as Uint8Array;
+    dati.fill(0);
+    const h = LATO_SENTIERO / 2;
+    for (const [k, m] of Object.entries(sent ?? {})) {
+      const [i, j] = k.split(',').map(Number);
+      const idx = ((j + h) * LATO_SENTIERO + (i + h)) * 4 + (m - 1);
+      if (m >= 1 && m <= 4 && idx >= 0 && idx < dati.length) dati[idx] = 255;
+    }
+    tex.needsUpdate = true;
+  }
+
+  /** C'è il sentiero disegnato in questo punto? (lì non spuntano fiori e sassi) */
+  private suSentiero(x: number, z: number): boolean {
+    const sent = this.arredo.sentiero;
+    if (!sent) return false;
+    return !!sent[`${Math.floor(x / CELLA)},${Math.floor(z / CELLA)}`];
+  }
+
+  /** Tutte le cose che Giada può spostare, con la loro chiave. */
+  private mobili(): Map<string, THREE.Object3D> {
+    const m = new Map<string, THREE.Object3D>();
+    m.set('castagno', this.castagno);
+    for (const [id, g] of this.strutture) if (!FISSE.has(id)) m.set('c:' + id, g);
+    for (const [tipo, g] of this.edifici) m.set('e:' + tipo, g);
+    for (const [id, g] of this.botteghe) m.set('b:' + id, g);
+    for (const [id, g] of this.aiuole) m.set('a:' + id, g);
+    for (const [id, g] of this.quadri) m.set('q:' + id, g);
+    for (const [id, g] of this.oggetti) m.set('o:' + id, g);
+    return m;
+  }
+
+  /** Dove le cose occupano spazio: lì non crescono fiori e cespugli. [x, z, distanza] */
+  private occupati(): [number, number, number][] {
+    const out: [number, number, number][] = [];
+    for (const [k, o] of this.mobili()) {
+      const d = k.startsWith('o:') ? 0.8 : k.startsWith('q:') ? 0.9 : k.startsWith('a:') ? 1.3 : k === 'castagno' ? 2.6 : k.startsWith('b:') || k.startsWith('e:') ? 3 : 2.2;
+      out.push([o.position.x, o.position.z, d]);
+    }
+    return out;
+  }
+
+  /** Posto attuale di una cosa (per i pulsanti "ruota" della schermata). */
+  postoDi(chiave: string): Posto | null {
+    const o = this.mobili().get(chiave);
+    return o ? { x: o.position.x, z: o.position.z, r: o.rotation.y } : null;
+  }
+
+  /** Sceglie (o toglie la scelta) di una cosa da spostare. */
+  seleziona(chiave: string | null) {
+    this.selezionato = chiave;
+  }
+
+  /** Un punto libero davanti alla telecamera, per mettere una cosa nuova. */
+  puntoLibero(): { x: number; z: number } {
+    const occ = this.occupati();
+    for (let giro = 0; giro < 40; giro++) {
+      const a = giro * 2.4, d = giro * 0.35;
+      const x = Math.round((this.centro.x + Math.cos(a) * d) * 2) / 2, z = Math.round((this.centro.z + Math.sin(a) * d) * 2) / 2;
+      if (Math.hypot(x, z) < 2.6 || Math.hypot(x, z) > this.raggio - 1.5) continue;
+      if (occ.every(([px, pz, dd]) => Math.hypot(x - px, z - pz) > Math.min(dd, 1.8))) return { x, z };
+    }
+    return { x: 1.5, z: 2.5 };
   }
 
   private virtuMestiere(m: string): Virtu {
@@ -559,10 +841,15 @@ export class Scena {
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => {
       this.dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (this.dita.size === 1) this.trascina = { x: e.clientX, y: e.clientY, mosso: 0 };
-      else {
+      if (this.dita.size === 1) {
+        this.trascina = { x: e.clientX, y: e.clientY, mosso: 0 };
+        this.iniziaArredo(e.clientX, e.clientY);
+      } else {
         this.distanzaPizzico = this.distanzaDita();
         this.angoloDita = this.angoloTraDita();
+        this.mezzoDita = this.mezzo();
+        if (this.trascina) this.trascina.dipinge = false;
+        this.finisciSpostamento();
       }
       c.setPointerCapture(e.pointerId);
     });
@@ -579,6 +866,10 @@ export class Scena {
         this.angolo -= da;
         this.angoloDita = a;
         if (this.trascina) this.trascina.mosso = 99;
+        // con due dita si sposta anche la vista (serve quando un dito disegna il sentiero)
+        const m = this.mezzo();
+        if (this.mezzoDita) this.panoramica(m.x - this.mezzoDita.x, m.y - this.mezzoDita.y);
+        this.mezzoDita = m;
         return;
       }
       if (!this.trascina) return;
@@ -586,20 +877,36 @@ export class Scena {
       this.trascina.mosso += Math.abs(dx) + Math.abs(dy);
       this.trascina.x = e.clientX;
       this.trascina.y = e.clientY;
-      // sposto il punto guardato sul terreno, nella direzione del dito
-      const k = 0.022 * this.zoom * (12 / Math.max(300, this.canvas.clientWidth)) * 30;
-      const destra = new THREE.Vector3(Math.cos(this.angolo), 0, -Math.sin(this.angolo));
-      const avanti = new THREE.Vector3(-Math.sin(this.angolo), 0, -Math.cos(this.angolo));
-      this.centroVoluto.addScaledVector(destra, -dx * k).addScaledVector(avanti, dy * k);
-      const lim = this.raggio - 1;
-      if (this.centroVoluto.length() > lim) this.centroVoluto.setLength(lim);
+      if (this.trascina.dipinge) {
+        const p = this.puntoSuolo(e.clientX, e.clientY);
+        if (p && (!this.trascina.ultimo || p.distanceTo(this.trascina.ultimo) > 0.2)) {
+          this.trascina.ultimo = p;
+          this.onArredo({ tipo: 'dipingi', x: p.x, z: p.z });
+        }
+        return;
+      }
+      if (this.spostando) {
+        const p = this.puntoSuolo(e.clientX, e.clientY);
+        const o = this.mobili().get(this.spostando);
+        if (p && o) {
+          this.limita(p);
+          o.position.set(Math.round(p.x * 2) / 2, 0, Math.round(p.z * 2) / 2);
+        }
+        return;
+      }
+      this.panoramica(dx, dy);
     });
     const fine = (e: PointerEvent) => {
       this.dita.delete(e.pointerId);
       const t = this.trascina;
+      if (this.dita.size < 2) this.mezzoDita = null;
       if (this.dita.size === 0) {
         this.trascina = null;
-        if (t && t.mosso < 8 && e.type === 'pointerup') this.tocca(e.clientX, e.clientY);
+        this.finisciSpostamento();
+        if (t && t.mosso < 8 && e.type === 'pointerup' && !t.dipinge) {
+          if (this.modo) this.toccaArredo(e.clientX, e.clientY);
+          else this.tocca(e.clientX, e.clientY);
+        }
       }
     };
     c.addEventListener('pointerup', fine);
@@ -607,6 +914,140 @@ export class Scena {
     c.addEventListener('wheel', (e) => {
       this.zoom = THREE.MathUtils.clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.5, 2.4);
     }, { passive: true });
+  }
+
+  /** Sposta il punto guardato sul terreno, nella direzione del dito. */
+  private panoramica(dx: number, dy: number) {
+    const k = 0.022 * this.zoom * (12 / Math.max(300, this.canvas.clientWidth)) * 30;
+    const destra = new THREE.Vector3(Math.cos(this.angolo), 0, -Math.sin(this.angolo));
+    const avanti = new THREE.Vector3(-Math.sin(this.angolo), 0, -Math.cos(this.angolo));
+    this.centroVoluto.addScaledVector(destra, -dx * k).addScaledVector(avanti, dy * k);
+    const lim = this.raggio - 1;
+    if (this.centroVoluto.length() > lim) this.centroVoluto.setLength(lim);
+  }
+
+  private mezzo() {
+    const [a, b] = [...this.dita.values()];
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+
+  private limita(p: THREE.Vector3) {
+    const lim = Math.max(3, this.raggio - 1);
+    if (p.length() > lim) p.setLength(lim);
+  }
+
+  /**
+   * Il punto del prato sotto il dito. Il mondo è curvato nello shader (si abbassa con la distanza
+   * dalla telecamera): correggo con qualche iterazione, così il dito e il sentiero coincidono.
+   */
+  private puntoSuolo(x: number, y: number): THREE.Vector3 | null {
+    const r = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const piano = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const p = new THREE.Vector3();
+    if (!ray.ray.intersectPlane(piano, p)) return null;
+    const vista = this.camera.matrixWorldInverse;
+    const rot = new THREE.Matrix4().extractRotation(this.camera.matrixWorld);
+    for (let i = 0; i < 4; i++) {
+      const v = p.clone().applyMatrix4(vista);
+      const giu = new THREE.Vector3(0, -v.z * v.z * CURVA.valore, 0).applyMatrix4(rot); // spostamento del disegno
+      const r2 = new THREE.Ray(ray.ray.origin.clone().sub(giu), ray.ray.direction);
+      if (!r2.intersectPlane(piano, p)) break;
+    }
+    return p;
+  }
+
+  /** Inizio di un tocco mentre si arreda: si disegna il sentiero o si trascina la cosa scelta. */
+  private iniziaArredo(x: number, y: number) {
+    if (!this.modo || !this.trascina) return;
+    const p = this.puntoSuolo(x, y);
+    if (!p) return;
+    if (this.modo === 'sentiero') {
+      this.trascina.dipinge = true;
+      this.trascina.ultimo = p;
+      this.onArredo({ tipo: 'dipingi', x: p.x, z: p.z });
+      return;
+    }
+    if (this.modo === 'sposta' && this.selezionato) {
+      const o = this.mobili().get(this.selezionato);
+      if (o && Math.hypot(o.position.x - p.x, o.position.z - p.z) < 1.6) {
+        this.spostando = this.selezionato;
+        this.trascina.mosso = 99;
+      }
+    }
+  }
+
+  private finisciSpostamento() {
+    if (!this.spostando) return;
+    const k = this.spostando;
+    this.spostando = null;
+    const o = this.mobili().get(k);
+    if (o) this.onArredo({ tipo: 'sposta', chiave: k, posto: { x: o.position.x, z: o.position.z, r: o.rotation.y } });
+  }
+
+  /** Quale cosa c'è sotto il dito (o vicinissima), tra quelle date. */
+  private cosaSotto<T extends THREE.Object3D>(x: number, y: number, cose: Iterable<[string, T]>, vicino = 1.3): string | null {
+    const r = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const lista = [...cose];
+    const hit = ray.intersectObjects(lista.map(([, o]) => o), true)[0];
+    if (hit) {
+      let o: THREE.Object3D | null = hit.object;
+      while (o) {
+        const trovato = lista.find(([, c]) => c === o);
+        if (trovato) return trovato[0];
+        o = o.parent;
+      }
+    }
+    const p = this.puntoSuolo(x, y);
+    if (!p) return null;
+    let meglio: string | null = null, dm = vicino;
+    for (const [k, o] of lista) {
+      const d = Math.hypot(o.position.x - p.x, o.position.z - p.z);
+      if (d < dm) { dm = d; meglio = k; }
+    }
+    return meglio;
+  }
+
+  /** Tocco mentre si arreda. */
+  private toccaArredo(x: number, y: number) {
+    const p = this.puntoSuolo(x, y);
+    if (this.modo === 'togli') {
+      const natura: [string, THREE.Object3D][] = [
+        ...this.bosco.children.map((o, i) => ['b' + i, o] as [string, THREE.Object3D]),
+        ...this.selvatici.children.filter((o) => o.visible).map((o, i) => ['s' + i, o] as [string, THREE.Object3D]),
+      ];
+      const k = this.cosaSotto(x, y, natura, 1.0);
+      const o = natura.find(([kk]) => kk === k)?.[1];
+      if (!o) return;
+      const cosa = (o.userData.cosa as string) ?? (o instanceof THREE.Mesh ? 'sasso' : 'albero');
+      const costo = cosa === 'albero' ? PREZZI.albero : cosa === 'piccolo' ? PREZZI.piccolo : PREZZI.cespuglio;
+      if (this.ghiande < costo) return this.onArredo({ tipo: 'poche', costo, cosa });
+      this.ghiande -= costo;
+      this.coriandoli(o.position.clone().setY(0.8), ['#7ccf6a', '#a07a4a', '#ffffff']);
+      o.visible = false;
+      this.onArredo({ tipo: 'togli', x: o.position.x, z: o.position.z, costo, cosa });
+      return;
+    }
+    const k = this.cosaSotto(x, y, this.mobili());
+    if (this.modo === 'orto' || this.modo === 'quadri') {
+      if (k && (k.startsWith('a:') || k.startsWith('q:') || k.startsWith('o:'))) this.onArredo({ tipo: 'apri', chiave: k });
+      else if (k) this.onArredo({ tipo: 'seleziona', chiave: k });
+      return;
+    }
+    if (k && k !== this.selezionato) {
+      this.onArredo({ tipo: 'seleziona', chiave: k });
+    } else if (this.selezionato && p && k !== this.selezionato) {
+      this.limita(p);
+      const o = this.mobili().get(this.selezionato);
+      this.onArredo({ tipo: 'sposta', chiave: this.selezionato, posto: { x: p.x, z: p.z, r: o?.rotation.y ?? 0 } });
+    } else if (k === this.selezionato) {
+      this.onArredo({ tipo: 'seleziona', chiave: null });
+    }
   }
 
   private angoloTraDita() {
@@ -642,6 +1083,7 @@ export class Scena {
     ray.setFromCamera(ndc, this.camera);
     const candidati: THREE.Object3D[] = [
       this.corvo.gruppo, this.quaderno, this.castagne, ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
+      ...this.aiuole.values(), ...this.quadri.values(),
       ...[...this.abitanti.values()].map((a) => a.m.gruppo),
     ];
     const hit = ray.intersectObjects(candidati, true)[0];
@@ -718,8 +1160,10 @@ export class Scena {
     this.raggioMostrato += (this.raggio - this.raggioMostrato) * Math.min(1, dt * 1.5);
     const verticale = this.camera.aspect < 0.8;
     const r = 8.5;
-    const dist = (verticale ? 1.6 : 1.3) * r * this.zoom + 1.5;
-    const alt = (verticale ? 1.05 : 0.75) * r * this.zoom + 1;
+    // arredando la telecamera si alza un po', per vedere meglio dove si mettono le cose
+    this.vistaAlta += ((this.modo ? 1 : 0) - this.vistaAlta) * Math.min(1, dt * 3);
+    const dist = ((verticale ? 1.6 : 1.3) - this.vistaAlta * 0.45) * r * this.zoom + 1.5;
+    const alt = ((verticale ? 1.05 : 0.75) + this.vistaAlta * 0.5) * r * this.zoom + 1;
     CURVA.valore = 0.0022 / Math.max(0.6, this.zoom);
 
     if (!this.trascina) {
@@ -789,6 +1233,14 @@ export class Scena {
     if (conR) {
       this.esclamativo.position.copy(conR.m.gruppo.position);
       this.esclamativo.position.y = 2.1 * conR.m.gruppo.scale.x + Math.abs(Math.sin(t * 3)) * 0.2;
+    }
+
+    const scelto = this.modo && this.selezionato ? this.mobili().get(this.selezionato) : undefined;
+    this.anelloSel.visible = !!scelto;
+    if (scelto) {
+      const grande = this.selezionato!.startsWith('o:') ? 0.8 : this.selezionato!.startsWith('q:') ? 0.6 : this.selezionato!.startsWith('a:') ? 1 : this.selezionato === 'castagno' ? 1.8 : 1.6;
+      this.anelloSel.position.set(scelto.position.x, 0.06, scelto.position.z);
+      this.anelloSel.scale.setScalar(grande * (1 + Math.sin(t * 5) * 0.06));
     }
 
     const brilla = this.quaderno.getObjectByName('brilla');
@@ -976,11 +1428,19 @@ export class Scena {
       const a = Math.random() * Math.PI * 2;
       return new THREE.Vector3(x + Math.cos(a) * r, 0, z + Math.sin(a) * r);
     };
-    const posto = (k: string) => POSTI_COSTRUZIONI[k];
+    const posto = (k: string): [number, number] => {
+      const g = this.strutture.get(k);
+      return g ? [g.position.x, g.position.z] : [POSTI_COSTRUZIONI[k][0], POSTI_COSTRUZIONI[k][1]];
+    };
     switch (id) {
-      case 'raccogliere': return intorno(POSTO_CASTAGNO[0], POSTO_CASTAGNO[1], 1.6);
+      case 'raccogliere': return intorno(this.castagno.position.x, this.castagno.position.z, 1.6);
       case 'pescare': { const p = posto('laghetto'); return intorno(p[0], p[1], 2.1); }
-      case 'fiori': { const p = posto('aiuola'); return intorno(p[0], p[1], 1.0); }
+      case 'fiori': {
+        // cura l'aiuola dei fiori o una delle aiuole di Giada
+        const tutte = [posto('aiuola'), ...this.arredo.aiuole.map((a) => [a.x, a.z] as [number, number])];
+        const p = tutte[Math.floor(Math.random() * tutte.length)];
+        return intorno(p[0], p[1], 1.0);
+      }
       case 'storie': { const p = posto('falo'); return intorno(p[0], p[1], 1.3); }
       case 'stelle': { const p = posto('torretta'); return intorno(p[0], p[1], 1.4); }
       default: return null;
@@ -1016,7 +1476,8 @@ export class Scena {
         ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(t * 8 + i) * 0.8));
         break;
       case 'pescare': {
-        const p = POSTI_COSTRUZIONI.laghetto;
+        const lg = this.strutture.get('laghetto');
+        const p = lg ? [lg.position.x, lg.position.z] : POSTI_COSTRUZIONI.laghetto;
         guardaVerso(p[0], p[1]);
         if (!ab.canna) {
           ab.canna = creaCanna();
@@ -1029,7 +1490,7 @@ export class Scena {
       case 'fiori':
         ab.m.corpo.rotation.x = 0.35 + Math.sin(t * 2.5) * 0.12;
         ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -0.8 + Math.sin(t * 5 + i * 2) * 0.4));
-        if (att.id === 'raccogliere') guardaVerso(POSTO_CASTAGNO[0], POSTO_CASTAGNO[1]);
+        if (att.id === 'raccogliere') guardaVerso(this.castagno.position.x, this.castagno.position.z);
         break;
       case 'intagliare':
         ab.m.corpo.position.y = -0.08;
@@ -1037,7 +1498,8 @@ export class Scena {
         ab.m.testa.rotation.x = 0.3;
         break;
       case 'storie': {
-        const p = POSTI_COSTRUZIONI.falo;
+        const fl = this.strutture.get('falo');
+        const p = fl ? [fl.position.x, fl.position.z] : POSTI_COSTRUZIONI.falo;
         guardaVerso(p[0], p[1]);
         ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -0.5 - Math.abs(Math.sin(t * 2.5 + i * 1.3)) * 0.8));
         ab.m.testa.rotation.x = Math.sin(t * 4) * 0.1;

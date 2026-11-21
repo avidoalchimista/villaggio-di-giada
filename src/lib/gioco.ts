@@ -4,6 +4,7 @@
 
 import regoleJson from '../dati/regole.json';
 import storiaJson from '../dati/storia.json';
+import { arredoDi, arredoVuoto } from './arredo';
 import { rng } from './caso';
 import { aggiungiGiorni, giorniTra } from './date';
 import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './etichette';
@@ -192,6 +193,7 @@ export function nuovoStato(data: string, profilo: Record<Forza, number>, nomeVil
     seme: seme >>> 0,
     contatore: 0,
     ultimoBackupRicordato: null,
+    arredo: arredoVuoto(),
   };
   const uovo = nuovoUovo(s, speciePrimoUovo(profilo), data, REGOLE.vociPrimoUovo);
   s.eventi.push({ data, tipo: 'uovo', testo: `Nel bosco è comparso un uovo: dentro c'è ${conArticolo(uovo)}.` });
@@ -246,6 +248,7 @@ export function applicaVoce(s: StatoGioco, voce: VoceDiario): Evento[] {
       a.vociPerSchiudersi -= 1;
       if (a.vociPerSchiudersi <= 0) {
         a.fase = 'cucciolo';
+        a.emozione = emozioneDellaPagina(voce, a);
         const f = a.sesso === 'f';
         evento(s, data, 'schiusa', `L'uovo si è schiuso: è nat${f ? 'a' : 'o'} ${conArticolo(a)}! Puoi ${f ? 'darle' : 'dargli'} un nome.`, out);
       }
@@ -280,6 +283,16 @@ export function applicaVoce(s: StatoGioco, voce: VoceDiario): Evento[] {
   aggiornaEdifici(s, data, out);
   sbloccaStoria(s, data, out);
   return out;
+}
+
+/** L'emozione più forte della pagina (se non ce n'è nessuna, una tranquilla che dipende dall'animale). */
+export function emozioneDellaPagina(voce: Pick<VoceDiario, 'emozioni'> | null, a: Pick<Animale, 'id'>): Emozione {
+  const lista = Object.entries(voce?.emozioni ?? {}).filter(([, v]) => (v ?? 0) > 0).sort((x, y) => (y[1] ?? 0) - (x[1] ?? 0));
+  if (lista.length) return lista[0][0] as Emozione;
+  const tranquille: Emozione[] = ['gioia', 'fiducia', 'attesa', 'sorpresa'];
+  let h = 0;
+  for (const c of a.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return tranquille[h % tranquille.length];
 }
 
 function cap(t: string) {
@@ -622,6 +635,7 @@ export function normalizzaStato(s: StatoGioco): StatoGioco {
   if ((s.versioneSchema ?? 1) < 4) {
     for (const a of s.animali) if (!a.aspetto) a.aspetto = nuovoAspetto(s, a.specie, a.sesso, a);
   }
+  arredoDi(s); // arredo (anche per i salvataggi di prima)
   s.versioneSchema = SCHEMA;
   return s;
 }
