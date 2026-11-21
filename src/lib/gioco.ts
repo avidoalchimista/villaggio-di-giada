@@ -5,6 +5,7 @@
 import regoleJson from '../dati/regole.json';
 import storiaJson from '../dati/storia.json';
 import { rng } from './caso';
+import { aggiornaGuardaroba } from './vestiti';
 import { aggiungiGiorni, giorniTra } from './date';
 import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './etichette';
 import {
@@ -20,6 +21,9 @@ export const TRATTI = [
   'orecchio piegato', 'occhi di due colori', 'ciuffo ribelle', 'macchia a cuore', 'lentiggini', 'stellina in fronte',
   'calzini bianchi', 'coda extra folta', 'fiocco rosso', 'bandana blu', 'occhiali tondi', 'collana di bacche',
   'cappellino di foglia', 'campanellino', 'macchia sull\'occhio', 'punta della coda scura',
+  'nasino a cuore', 'fiore all\'orecchio', 'corona di margherite', 'sciarpa a righe', 'baffi lunghi', 'dentino sporgente',
+  'neo sulla guancia', 'sopracciglia folte', 'zainetto', 'nastro sulla coda', 'una zampa bianca', 'pancia a pois',
+  'orecchino d\'oro', 'ghianda al collo', 'cappellino a fungo', 'striscia sul dorso',
 ] as const;
 export const NUMERO_MANTI = 4;
 export const NOME_MANTO: Record<Specie, string[]> = {
@@ -314,6 +318,11 @@ function cresci(s: StatoGioco, a: Animale, data: string, out: Evento[]) {
       evento(s, data, 'crescita', `${cap(nomeAnimale(a))} è cresciut${a.sesso === 'f' ? 'a' : 'o'}: ora è ${fase === 'giovane' ? 'giovane' : fase}.`, out, a.id);
       if (fase === 'adulto' && !a.mestiere) scegliMestiere(s, a, data, out);
     }
+  }
+  // crescendo si fa da solo qualcosa da mettersi, secondo il suo carattere
+  const f = a.sesso === 'f';
+  for (const k of aggiornaGuardaroba(a)) {
+    evento(s, data, 'crescita', `${cap(nomeAnimale(a))} si è fatt${f ? 'a' : 'o'} da sol${f ? 'a' : 'o'} ${k.nome}.`, out);
   }
 }
 

@@ -2,8 +2,10 @@
 // Cuccioli secondo lo schema infantile (Lorenz): testa più grande del corpo, fronte alta,
 // occhi grandi e bassi, guance piene, naso e bocca piccoli, zampe corte e tozze.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hash, rng } from '../lib/caso';
 import type { Animale, Specie } from '../lib/tipi';
+import { aggiornaGuardaroba, indossati, type Capo, type Parte } from '../lib/vestiti';
 import { contorno, macchie, materiale, ombra, strisce, texture } from './ps1';
 
 const geo = {
@@ -33,6 +35,37 @@ function pelo(colore: string) {
   const m = materiale({ color: '#ffffff', map: texture(128, macchie([colore, chiaro, scuro, colore], 0.8, colore.length * 31), 2), rim: 0.45 });
   cachePelo.set(colore, m);
   return m;
+}
+
+/** Margheritina: petali intorno a un bottone giallo. */
+function fiore(petalo: string, centro: string) {
+  const f = new THREE.Group();
+  for (let k = 0; k < 6; k++) {
+    const ang = (k / 6) * Math.PI * 2;
+    const pe = mesh(geo.palla(0.035, 8), mat(petalo, { rim: 0.2 }), Math.cos(ang) * 0.05, Math.sin(ang) * 0.05, 0);
+    pe.scale.set(1, 1, 0.4);
+    f.add(pe);
+  }
+  f.add(mesh(geo.palla(0.032, 8), mat(centro, { rim: 0.2 }), 0, 0, 0.01));
+  f.traverse((c) => (c.userData.senzaContorno = true));
+  f.scale.setScalar(1.6);
+  return f;
+}
+
+function fiocco(colore: string) {
+  const f = new THREE.Group();
+  for (const s of [-1, 1]) {
+    const ala = mesh(geo.cono(0.08, 0.16, 8), mat(colore), s * 0.08, 0, 0);
+    ala.rotation.z = -s * Math.PI / 2;
+    f.add(ala);
+  }
+  f.add(mesh(geo.palla(0.045, 8), mat(varia(colore, 0, -0.1)), 0, 0, 0));
+  return f;
+}
+
+/** Tante piccole forme in una sola (meno lavoro per il telefono). */
+function unisci(parti: THREE.BufferGeometry[]) {
+  return mergeGeometries(parti.map((g) => { g.deleteAttribute('uv'); return g; })) ?? parti[0];
 }
 
 function mesh(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) {
@@ -148,7 +181,7 @@ export function creaAnimale(a: Animale): ModelloAnimale {
   cranio.scale.set(1.08, 0.98, 1);
   testa.add(cranio);
   // muso piccolo e basso; volpe e daino lo hanno un po' più a punta, così si riconoscono subito
-  const aPunta = a.specie === 'volpe' ? 1.6 : a.specie === 'daino' ? 1.35 : 1;
+  const aPunta = ({ volpe: 1.6, daino: 1.35, tasso: 1.3, riccio: 1.45 } as Partial<Record<Specie, number>>)[a.specie] ?? 1;
   const muso = mesh(geo.palla(0.17), mat(p.muso, { rim: 0.15 }), 0, -0.16, 0.32 + (aPunta - 1) * 0.08);
   muso.scale.set(aPunta > 1 ? 1.05 : 1.25, 0.8, 0.85 * aPunta);
   muso.userData.senzaContorno = true; // con il contorno sembrava un grugno
@@ -157,11 +190,23 @@ export function creaAnimale(a: Animale): ModelloAnimale {
   naso.scale.set(1.3, 0.9, 1);
   naso.userData.senzaContorno = true;
   testa.add(naso);
+  // boccuccia a "ω" sotto il naso: piccola, sorridente
+  const davantiMuso = muso.position.z + 0.17 * muso.scale.z;
+  const bocca = new THREE.Group();
+  for (const s of [-1, 1]) {
+    const arco = mesh(new THREE.TorusGeometry(0.028, 0.008, 4, 10, Math.PI), mat('#3a2418', { rim: 0 }), s * 0.028, 0, 0);
+    arco.rotation.z = Math.PI;
+    arco.userData.senzaContorno = true;
+    bocca.add(arco);
+  }
+  bocca.position.set(0, -0.2 - (aPunta - 1) * 0.03, davantiMuso - 0.035);
+  bocca.rotation.x = -0.35;
+  testa.add(bocca);
   // occhi grandi, bassi e lucidi
   const occhi: THREE.Object3D[] = [];
   for (const x of [-0.19, 0.19]) {
     const g = new THREE.Group();
-    g.position.set(x, -0.02, 0.37);
+    g.position.set(x, -0.02, a.specie === 'tasso' ? 0.43 : 0.37);
     g.rotation.y = x * 1.4;
     // occhi di due colori: uno azzurro
     const coloreOcchio = t.segno === 'occhi di due colori' && Math.sign(x) === t.lato ? '#3f86c8' : p.occhi;
@@ -224,16 +269,27 @@ export function creaAnimale(a: Animale): ModelloAnimale {
       }
       // guance bianche a ciuffo, tipiche della volpe
       for (const x of [-0.3, 0.3]) {
-        const c = mesh(geo.cono(0.12, 0.22, 8), mat(p.extra), x, -0.2, 0.18);
-        c.rotation.z = Math.sign(x) * 1.9;
+        const c = mesh(geo.palla(0.13), mat(p.extra, { rim: 0.2 }), x, -0.2, 0.2);
+        c.scale.set(1.2, 0.75, 0.8);
         testa.add(c);
       }
+      // pettorina bianca
+      const petto = mesh(geo.palla(0.17), mat(p.extra, { rim: 0.2 }), 0, 0.62, 0.22);
+      petto.scale.set(1.1, 0.8, 0.5);
+      petto.userData.senzaContorno = true;
+      corpo.add(petto);
+      // coda gonfia che gira di lato, così si vede anche da davanti, con la punta bianca
       const c = new THREE.Group();
-      c.position.set(0, 0.42, -0.3);
-      const pennacchio = mesh(geo.palla(0.22), pelo(p.corpo), 0, 0.14, -0.2);
-      pennacchio.scale.set(0.85, 0.85, 1.55);
-      c.add(pennacchio);
-      c.add(mesh(geo.palla(0.13), mat(p.extra), 0, 0.2, -0.5));
+      c.position.set(0, 0.36, -0.3);
+      const giro = new THREE.Group();
+      giro.rotation.y = a.sesso === 'm' ? 0.85 : -0.85;
+      const pennacchio = mesh(geo.palla(0.22), pelo(p.corpo), 0, 0.06, -0.26);
+      pennacchio.scale.set(0.9, 0.85, 1.7);
+      giro.add(pennacchio);
+      const bianca = mesh(geo.palla(0.15), mat(p.extra), 0, 0.08, -0.58);
+      bianca.scale.set(1, 1, 1.2);
+      giro.add(bianca);
+      c.add(giro);
       corpo.add(c);
       coda = c;
       break;
@@ -255,7 +311,9 @@ export function creaAnimale(a: Animale): ModelloAnimale {
         orecchieDi.push(g);
       }
       // macchie bianche sulla schiena e sulla fronte
-      for (const [x, y, z, r] of [[-0.14, 0.7, -0.02, 0.055], [0.13, 0.72, 0.04, 0.05], [0.22, 0.6, -0.14, 0.045], [-0.03, 0.72, -0.18, 0.05], [-0.24, 0.58, -0.12, 0.045], [0.06, 0.66, -0.28, 0.04]]) {
+      // da cucciolo pieno di macchie, da grande ne restano poche e sbiadite
+      const tutte = [[-0.14, 0.7, -0.02, 0.055], [0.13, 0.72, 0.04, 0.05], [0.22, 0.6, -0.14, 0.045], [-0.03, 0.72, -0.18, 0.05], [-0.24, 0.58, -0.12, 0.045], [0.06, 0.66, -0.28, 0.04], [0.27, 0.48, 0.02, 0.04], [-0.28, 0.46, 0.04, 0.04], [-0.12, 0.6, -0.3, 0.04]];
+      for (const [x, y, z, r] of a.fase === 'cucciolo' ? tutte : tutte.slice(0, 5)) {
         const m = mesh(geo.palla(r), mat(p.extra, { rim: 0 }), x, y, z);
         m.scale.y = 0.6;
         m.userData.senzaContorno = true;
@@ -276,58 +334,213 @@ export function creaAnimale(a: Animale): ModelloAnimale {
       break;
     }
     case 'tasso': {
-      orecchio(-0.32, 0.08, 0.1, p.extra, 1.0);
-      orecchio(0.32, 0.08, 0.1, p.extra, 1.0);
-      // maschera: due bande scure dagli occhi alle orecchie e fronte bianca
-      // due bande scure dagli occhi in su, ben visibili, e la striscia bianca in mezzo
-      for (const x of [-0.19, 0.19]) {
-        const banda = mesh(geo.palla(0.2), mat(p.extra, { rim: 0.15 }), x, 0.1, 0.33);
-        banda.scale.set(0.55, 1.35, 0.6);
-        banda.rotation.z = -x * 0.6;
-        banda.userData.senzaContorno = true;
-        testa.add(banda);
+      // Come un peluche di tasso: testa bianca a cuneo, due strisce scure che partono vicino al naso,
+      // passano sugli occhi e vanno fino alla nuca; orecchiette tonde orlate di bianco; corpo largo e basso.
+      cranio.scale.set(1.16, 0.93, 1.02);
+      // davanti la faccia bianca, dietro la nuca del colore del corpo
+      const faccia = mesh(geo.palla(0.44, 22), pelo(p.muso), 0, -0.01, 0.05);
+      faccia.scale.set(1.13, 0.92, 1.0);
+      faccia.userData.senzaContorno = true;
+      testa.add(faccia);
+      // da cucciolo le strisce sono più morbide, da adulto nette (come nel documento delle specie)
+      const scura = a.fase === 'cucciolo' ? varia(p.extra, 0, 0.1) : p.extra;
+      for (const s of [-1, 1]) {
+        const arco = new THREE.Group();
+        arco.position.x = s * 0.18;
+        arco.rotation.y = -Math.PI / 2;
+        arco.scale.y = 0.93;
+        const striscia = mesh(new THREE.TorusGeometry(0.425, 0.055, 8, 28, 2.75), mat(scura, { rim: 0.15 }));
+        striscia.rotation.z = -0.45;
+        striscia.scale.z = 1.75;
+        striscia.userData.senzaContorno = true;
+        arco.add(striscia);
+        testa.add(arco);
+        // orecchietta tonda, scura con l'orlo bianco, in fondo alla striscia
+        const g = new THREE.Group();
+        g.position.set(s * 0.37, 0.24, -0.12);
+        g.rotation.z = -s * 0.7;
+        const orlo = mesh(geo.palla(0.1), mat('#fbf8f2', { rim: 0.2 }), 0, 0.04, 0);
+        orlo.scale.set(1, 0.85, 0.45);
+        g.add(orlo);
+        const dentro = mesh(geo.palla(0.075), mat(scura, { rim: 0 }), 0, 0.03, 0.025);
+        dentro.scale.set(1, 0.85, 0.4);
+        dentro.userData.senzaContorno = true;
+        g.add(dentro);
+        testa.add(g);
+        orecchieDi.push(g);
       }
-      const fronte = mesh(geo.palla(0.15), mat('#ffffff', { rim: 0.2 }), 0, 0.16, 0.38);
-      fronte.scale.set(0.6, 1.5, 0.55);
-      fronte.userData.senzaContorno = true;
-      testa.add(fronte);
-      busto.scale.set(1.15 - asp.forma * 0.16, 0.9 * (1 + asp.forma * 0.1), 1.15 - asp.forma * 0.1);
-      const c = mesh(geo.palla(0.1), pelo(p.corpo), 0, 0.42, -0.36);
-      c.scale.set(0.8, 0.8, 1.3);
+      // corpo largo e basso, da scavatore
+      busto.scale.set(1.22 - asp.forma * 0.14, 0.86 * (1 + asp.forma * 0.1), 1.18 - asp.forma * 0.1);
+      pancia.scale.set(1.3, 1.0, 0.85);
+      // da grande: unghie da scavo chiare sulle zampe davanti
+      if (a.fase !== 'cucciolo') for (const z of zampe.slice(0, 2)) for (const dx of [-0.04, 0, 0.04]) {
+        const unghia = mesh(geo.cono(0.017, 0.07, 5), mat('#f4ead8', { rim: 0 }), dx, -0.19, 0.12);
+        unghia.rotation.x = Math.PI / 2;
+        z.add(unghia);
+      }
+      const c = new THREE.Group();
+      c.position.set(0, 0.36, -0.36);
+      const ciuffo = mesh(geo.palla(0.11), pelo(p.corpo), 0, 0, -0.02);
+      ciuffo.scale.set(0.9, 0.75, 1.1);
+      c.add(ciuffo);
+      c.add(mesh(geo.palla(0.06), mat(p.pancia), 0, 0.01, -0.12));
       corpo.add(c);
       coda = c;
       break;
     }
     case 'riccio': {
-      orecchio(-0.27, 0.07, 0.08, p.corpo, 1.0);
-      orecchio(0.27, 0.07, 0.08, p.corpo, 1.0);
-      const aculei = mesh(new THREE.IcosahedronGeometry(0.4, 1), mat(p.extra), 0, 0.55, -0.12);
-      aculei.scale.set(1.05, 0.95, 1.1);
-      corpo.add(aculei);
+      // Come un riccio di peluche: cupola di aculei pettinati all'indietro, dalla fronte (a punta, come una frangetta)
+      // fino al sedere; aculei a due colori (scuri con la punta chiara); faccina chiara a cuore,
+      // musetto a punta con il nasone a bottone e orecchiette tonde che spuntano ai lati.
+      // Da cucciolo gli aculei sono corti, morbidi e chiari; da grande più lunghi e scuri.
+      const piccolo = a.fase === 'cucciolo';
+      const coloreAculei = piccolo ? varia(p.extra, 0, 0.14) : p.extra;
+      const punta = piccolo ? '#fbf3e6' : varia(p.muso, 0, 0.04);
+      const lung = piccolo ? 0.12 : 0.19;
+      const r = rng(hash(a.id + 'aculei'));
+      cranio.material = pelo(p.muso);
+      naso.scale.set(1.6, 1.25, 1.3);
+      // orecchiette tonde
+      for (const s of [-1, 1]) {
+        const g = new THREE.Group();
+        g.position.set(s * 0.38, 0.13, 0.3);
+        g.rotation.set(0, s * 0.7, -s * 0.3);
+        g.scale.setScalar(1.2);
+        const o = mesh(geo.palla(0.075), pelo(p.muso), 0, 0, 0);
+        o.scale.set(1, 1, 0.5);
+        g.add(o);
+        const i = mesh(geo.palla(0.045), mat('#f4b0b0', { rim: 0 }), 0, 0, 0.03);
+        i.scale.set(1, 1, 0.4);
+        i.userData.senzaContorno = true;
+        g.add(i);
+        testa.add(g);
+        orecchieDi.push(g);
+      }
+      /** Aculei su un ellissoide, pettinati all'indietro; `tiene` sceglie dove crescono. */
+      const aculei = (rx: number, ry: number, rz: number, quanti: number, tiene: (d: THREE.Vector3) => boolean, davantiSu = false) => {
+        const scuri: THREE.BufferGeometry[] = [];
+        const chiari: THREE.BufferGeometry[] = [];
+        for (let k = 0; k < quanti; k++) {
+          const y = 1 - (k + 0.5) / quanti * 2;
+          const rr = Math.sqrt(1 - y * y);
+          const th = k * 2.39996;
+          const d = new THREE.Vector3(Math.cos(th) * rr, y, Math.sin(th) * rr);
+          if (!tiene(d)) continue;
+          const pos = new THREE.Vector3(d.x * rx, d.y * ry, d.z * rz);
+          // sulla fronte gli aculei stanno più dritti, così il bordo è frastagliato e non sembra un caschetto
+          const pettine = davantiSu ? 0.65 * (1 - Math.max(0, d.z) * 0.9) : 0.65;
+          const verso = d.clone().add(new THREE.Vector3(0, 0.05, -pettine)).normalize();
+          const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), verso);
+          const l = lung * (0.85 + r() * 0.3);
+          const c = new THREE.ConeGeometry(0.06, l, 6);
+          c.translate(0, l / 2 - 0.02, 0);
+          c.applyQuaternion(q);
+          c.translate(pos.x, pos.y, pos.z);
+          scuri.push(c.toNonIndexed());
+          const t = new THREE.ConeGeometry(0.026, l * 0.36, 6);
+          t.translate(0, l * 0.82, 0);
+          t.applyQuaternion(q);
+          t.translate(pos.x, pos.y, pos.z);
+          chiari.push(t.toNonIndexed());
+        }
+        const g = new THREE.Group();
+        g.add(mesh(unisci(scuri), mat(coloreAculei, { rim: 0.3 })));
+        const tips = mesh(unisci(chiari), mat(punta, { rim: 0.2 }));
+        tips.userData.senzaContorno = true;
+        g.add(tips);
+        return g;
+      };
+      // la schiena: una cupola sola dal collo alla coda
+      const schiena = mesh(geo.palla(0.42, 20), pelo(coloreAculei), 0, 0.55, -0.1);
+      schiena.scale.set(1.05, 0.98, 1.12);
+      corpo.add(schiena);
+      const dorso = aculei(0.44, 0.41, 0.47, 260, (d) => d.z < 0.3 && d.y > -0.35 - Math.max(0, -d.z) * 0.3);
+      dorso.position.set(0, 0.55, -0.1);
+      corpo.add(dorso);
+      // la testa: un cappuccio che lascia scoperta la faccina e scende a punta in mezzo alla fronte
+      const fuori = (d: THREE.Vector3) => {
+        if (d.z > 0.88) return false;
+        const fronte = 0.0 + Math.abs(d.x) * 0.5; // a "V": più basso al centro
+        return d.y > fronte - Math.max(0, -d.z) * 1.4 || d.z < -0.2;
+      };
+      const cappuccio = mesh(geo.palla(0.47, 22), pelo(coloreAculei), 0, 0.12, -0.07);
+      cappuccio.scale.set(1.1, 0.98, 1);
+      testa.add(cappuccio);
+      const testaAculei = aculei(0.5, 0.45, 0.47, 300, fuori, true);
+      testaAculei.position.set(0, 0.1, -0.03);
+      testa.add(testaAculei);
+      // frangetta a punta sulla fronte
+      const frangetta = mesh(geo.cono(0.1, 0.18, 8), pelo(coloreAculei), 0, 0.22, 0.42);
+      frangetta.rotation.set(Math.PI - 0.7, 0, 0);
+      frangetta.scale.z = 0.5;
+      testa.add(frangetta);
       break;
     }
     case 'scoiattolo': {
       orecchio(-0.22, 0.09, 0.22, p.corpo, 0.15, '#f2b9a0');
       orecchio(0.22, 0.09, 0.22, p.corpo, 0.15, '#f2b9a0');
+      // da grande: i ciuffi in punta alle orecchie
+      if (a.fase !== 'cucciolo') for (const o of orecchieDi) {
+        const ciuffo = mesh(geo.cono(0.05, 0.14, 6), pelo(varia(p.corpo, 0, -0.08)), 0, 0.27, 0);
+        o.add(ciuffo);
+      }
+      // la coda enorme a "S" che sale dietro la schiena e si arriccia sopra la testa
       const c = new THREE.Group();
       c.position.set(0, 0.4, -0.3);
-      const q = mesh(geo.palla(0.26), pelo(p.extra), 0, 0.4, -0.1);
-      q.scale.set(0.75, 1.5, 0.8);
-      c.add(q);
+      c.rotation.y = a.sesso === 'm' ? -0.5 : 0.5;
+      const sottile = a.fase === 'cucciolo' ? 0.75 : 1;
+      const linea = new THREE.CatmullRomCurve3([[0.02, -0.12], [0.3, -0.32], [0.62, -0.38], [0.92, -0.3], [1.1, -0.1], [1.12, 0.08]].map(([y, z]) => new THREE.Vector3(0, y, z)));
+      const raggi = [0.15, 0.2, 0.24, 0.26, 0.25, 0.23, 0.2, 0.16];
+      for (let k = 0; k < 14; k++) {
+        const u = k / 13;
+        const pt = linea.getPoint(u);
+        const r = raggi[Math.min(7, Math.floor(u * 7.99))];
+        const q = mesh(geo.palla(r * sottile), pelo(p.extra), pt.x, pt.y, pt.z);
+        q.scale.x = 0.8;
+        c.add(q);
+      }
       corpo.add(c);
       coda = c;
+      // guanciotte piene (le scorte!)
+      for (const x of [-1, 1]) {
+        const g = mesh(geo.palla(0.12), mat(p.pancia, { rim: 0.2 }), x * 0.2, -0.17, 0.27);
+        g.userData.senzaContorno = true;
+        testa.add(g);
+      }
       break;
     }
     case 'lepre': {
-      for (const x of [-0.12, 0.12]) {
+      // orecchie: da cucciolo corte e tonde, da grande lunghissime con la punta scura
+      const piccola = a.fase === 'cucciolo';
+      const lunghe = piccola ? 0.18 : 0.42;
+      for (const x of [-0.13, 0.13]) {
         const g = new THREE.Group();
         g.position.set(x, 0.32, -0.04);
-        g.rotation.z = -x;
-        g.add(mesh(geo.capsula(0.08, 0.36), pelo(p.corpo), 0, 0.2, 0));
+        g.rotation.z = -x * 1.3;
+        const o = mesh(geo.capsula(0.085, lunghe), pelo(p.corpo), 0, lunghe / 2 + 0.06, 0);
+        o.scale.z = 0.65;
+        g.add(o);
+        const i = mesh(geo.capsula(0.05, lunghe * 0.8), mat(p.extra, { rim: 0 }), 0, lunghe / 2 + 0.06, 0.04);
+        i.scale.z = 0.4;
+        i.userData.senzaContorno = true;
+        g.add(i);
+        if (!piccola) {
+          const punta = mesh(geo.palla(0.075), mat('#2e2420'), 0, lunghe + 0.1, 0);
+          punta.scale.set(1.1, 1.2, 0.7);
+          g.add(punta);
+        }
         testa.add(g);
         orecchieDi.push(g);
       }
-      const c = mesh(geo.palla(0.11), mat('#ffffff'), 0, 0.42, -0.36);
+      // dentini davanti
+      for (const x of [-0.022, 0.022]) {
+        const d = mesh(geo.scatola(0.038, 0.05, 0.02), mat('#ffffff', { rim: 0 }), x, -0.27, 0.44);
+        d.rotation.x = -0.3;
+        testa.add(d);
+      }
+      // zampe di dietro grandi
+      for (const z of zampe.slice(2)) z.children[1].scale.set(1.15, 0.9, 1.9);
+      const c = mesh(geo.palla(0.13), mat('#ffffff'), 0, 0.42, -0.37);
       corpo.add(c);
       coda = c;
       break;
@@ -335,7 +548,7 @@ export function creaAnimale(a: Animale): ModelloAnimale {
   }
 
   // maschi: ciuffo di pelo in testa (e bozzetti delle corna per i daini piccoli)
-  if (a.sesso === 'm') {
+  if (a.sesso === 'm' && a.specie !== 'riccio') {
     for (const [x, rz] of [[-0.06, 0.4], [0.02, 0], [0.09, -0.4]]) {
       const ciuffo = mesh(geo.cono(0.05, 0.16, 6), pelo(p.corpo), x, 0.46, 0.06);
       ciuffo.rotation.z = rz;
@@ -457,7 +670,178 @@ export function creaAnimale(a: Animale): ModelloAnimale {
     case 'punta della coda scura':
       if (coda) coda.add(mesh(geo.palla(0.1), mat('#2e1c12'), 0, 0.2, -0.52));
       break;
+    case 'nasino a cuore': {
+      naso.visible = false;
+      const cuore = new THREE.Group();
+      const rosa = mat('#e8607a', { rim: 0 });
+      for (const x of [-0.028, 0.028]) cuore.add(mesh(geo.palla(0.037, 10), rosa, x, 0.015, 0));
+      const punta = mesh(geo.cono(0.054, 0.07, 10), rosa, 0, -0.03, 0);
+      punta.rotation.z = Math.PI;
+      cuore.add(punta);
+      cuore.scale.z = 0.6;
+      cuore.position.copy(naso.position);
+      cuore.position.z += 0.01;
+      cuore.traverse((c) => (c.userData.senzaContorno = true));
+      testa.add(cuore);
+      break;
+    }
+    case 'fiore all\'orecchio': {
+      const f = fiore('#ffffff', '#f2c230');
+      f.position.set(t.lato * 0.3, 0.3, 0.16);
+      f.rotation.set(-0.3, t.lato * 0.5, 0);
+      testa.add(f);
+      break;
+    }
+    case 'corona di margherite':
+      for (let k = 0; k < 7; k++) {
+        const ang = -1.3 + (k / 6) * 2.6;
+        const f = fiore(k % 2 ? '#ffffff' : '#ffd6e4', '#f2c230');
+        f.scale.setScalar(1.05);
+        f.position.set(Math.sin(ang) * 0.34, 0.37 + Math.cos(ang) * 0.06, Math.cos(ang) * 0.14 - 0.02);
+        f.rotation.set(-1.1, ang * 0.6, 0);
+        testa.add(f);
+      }
+      break;
+    case 'sciarpa a righe': {
+      const righe = mat('#ffffff', { map: texture(64, strisce('#f2c230', '#e05a4a', 6)) });
+      const sc = mesh(new THREE.TorusGeometry(0.25, 0.065, 8, 18), righe, 0, 0, 0.02);
+      sc.rotation.x = Math.PI / 2;
+      collo(sc);
+      const lembo = mesh(geo.scatola(0.11, 0.24, 0.05), righe, -t.lato * 0.12, -0.58, 0.24);
+      lembo.rotation.z = t.lato * 0.25;
+      testa.add(lembo);
+      break;
+    }
+    case 'baffi lunghi': {
+      const davanti = muso.position.z + 0.17 * muso.scale.z;
+      for (const s of [-1, 1]) for (let k = 0; k < 3; k++) {
+        const b = mesh(geo.capsula(0.006, 0.2), mat('#3a2418', { rim: 0 }), s * 0.2, -0.16 + (k - 1) * 0.03, davanti - 0.08);
+        b.rotation.z = s * (Math.PI / 2 + (k - 1) * 0.18);
+        b.userData.senzaContorno = true;
+        testa.add(b);
+      }
+      break;
+    }
+    case 'dentino sporgente': {
+      const d = mesh(geo.scatola(0.045, 0.055, 0.02), mat('#ffffff', { rim: 0 }), t.lato * 0.025, -0.25 - (a.specie === 'volpe' ? 0.02 : 0), muso.position.z + 0.17 * muso.scale.z - 0.03);
+      d.rotation.x = -0.3;
+      testa.add(d);
+      break;
+    }
+    case 'neo sulla guancia': {
+      const scuro = new THREE.Color(base.corpo).getHSL({ h: 0, s: 0, l: 0 }).l < 0.35;
+      const n = mesh(geo.palla(0.026, 8), mat(scuro ? '#f4e6d6' : '#5a3424', { rim: 0 }), t.lato * 0.24, -0.2, 0.38);
+      n.userData.senzaContorno = true;
+      testa.add(n);
+      break;
+    }
+    case 'sopracciglia folte':
+      for (const x of [-0.19, 0.19]) {
+        const s = mesh(geo.capsula(0.03, 0.1), pelo(varia(p.corpo, 0, -0.18)), x, 0.13, 0.4);
+        s.rotation.z = Math.PI / 2 + Math.sign(x) * 0.2;
+        s.scale.z = 0.6;
+        testa.add(s);
+      }
+      break;
+    case 'zainetto': {
+      const z = new THREE.Group();
+      const sacca = mesh(geo.capsula(0.17, 0.08), mat('#5a8a3a', { rim: 0.3 }), 0, 0, 0);
+      sacca.scale.z = 0.55;
+      z.add(sacca);
+      const tasca = mesh(geo.scatola(0.2, 0.1, 0.06), mat('#477030'), 0, -0.06, -0.08);
+      z.add(tasca);
+      for (const x of [-0.17, 0.17]) {
+        const cinghia = mesh(new THREE.TorusGeometry(0.13, 0.018, 4, 12, Math.PI), mat('#7a5232'), x, 0.04, 0.12);
+        cinghia.rotation.set(0, Math.PI / 2, -Math.PI / 2);
+        z.add(cinghia);
+      }
+      z.position.set(0, -0.68, -0.38);
+      testa.add(z);
+      // le bretelle si vedono anche da davanti
+      for (const x of [-0.15, 0.15]) {
+        const b = mesh(geo.scatola(0.045, 0.2, 0.03), mat('#7a5232'), x, -0.58, 0.37);
+        b.rotation.x = -0.35;
+        testa.add(b);
+      }
+      break;
+    }
+    case 'nastro sulla coda': {
+      const f = fiocco('#4a8ad8');
+      if (coda) {
+        f.scale.setScalar(1.3);
+        f.position.set(0, 0.12, -0.3);
+        coda.add(f);
+      } else {
+        f.position.set(t.lato * 0.24, 0.36, 0.12);
+        testa.add(f);
+      }
+      break;
+    }
+    case 'una zampa bianca': {
+      const z = zampe[t.lato > 0 ? 1 : 0];
+      for (const c of z.children) if (c instanceof THREE.Mesh) c.material = mat('#fbf8f2');
+      break;
+    }
+    case 'pancia a pois':
+      for (const [x, y] of [[-0.09, 0.08], [0.08, 0.12], [0.0, -0.02], [-0.07, -0.12], [0.1, -0.08]]) {
+        const d = mesh(geo.palla(0.035, 8), mat(varia(p.pancia, 0, -0.14), { rim: 0 }), x, y, 0.225);
+        d.scale.z = 0.4;
+        d.userData.senzaContorno = true;
+        pancia.add(d);
+      }
+      break;
+    case 'orecchino d\'oro': {
+      const o = orecchieDi.find((e) => Math.sign(e.position.x) === t.lato) ?? orecchieDi[0];
+      const anello = mesh(new THREE.TorusGeometry(0.055, 0.015, 6, 14), mat('#f2c230', { rim: 0.6, emissive: '#806010', emissiveIntensity: 0.2 }), 0, 0.03, 0.08);
+      anello.userData.senzaContorno = true;
+      anello.scale.setScalar(1.3);
+      (o ?? testa).add(anello);
+      break;
+    }
+    case 'ghianda al collo': {
+      const filo = mesh(new THREE.TorusGeometry(0.25, 0.01, 4, 20), mat('#7a5232', { rim: 0 }), 0, 0, 0.02);
+      filo.rotation.x = Math.PI / 2;
+      collo(filo);
+      const g = new THREE.Group();
+      const frutto = mesh(geo.palla(0.06, 10), mat('#c8893e', { rim: 0.4 }), 0, -0.02, 0);
+      frutto.scale.y = 1.25;
+      g.add(frutto);
+      const cappello = mesh(geo.palla(0.065, 10), mat('#6a4428'), 0, 0.04, 0);
+      cappello.scale.y = 0.6;
+      g.add(cappello);
+      g.position.set(0, -0.53, 0.29);
+      testa.add(g);
+      break;
+    }
+    case 'cappellino a fungo': {
+      const c = new THREE.Group();
+      const cappa = mesh(geo.palla(0.2, 16), mat('#d8344a', { rim: 0.3 }), 0, 0.06, 0);
+      cappa.scale.set(1, 0.6, 1);
+      c.add(cappa);
+      for (const [x, z] of [[0.08, 0.1], [-0.1, 0.05], [0.02, -0.12], [0.13, -0.06], [-0.05, 0.15]]) {
+        const pois = mesh(geo.palla(0.03, 6), mat('#ffffff', { rim: 0 }), x, 0.15, z);
+        pois.scale.y = 0.5;
+        pois.userData.senzaContorno = true;
+        c.add(pois);
+      }
+      c.position.set(t.lato * 0.12, 0.42, 0.02);
+      c.rotation.z = -t.lato * 0.3;
+      testa.add(c);
+      break;
+    }
+    case 'striscia sul dorso':
+      for (let k = 0; k < 5; k++) {
+        const ang = 0.5 + k * 0.32;
+        const m = mesh(geo.palla(0.07, 8), mat(varia(p.corpo, 0, -0.18), { rim: 0 }), 0, Math.cos(ang) * 0.335, -Math.sin(ang) * 0.335);
+        m.scale.set(1, 1, 0.4);
+        m.lookAt(0, 0, 0);
+        m.userData.senzaContorno = true;
+        busto.add(m);
+      }
+      break;
   }
+
+  vesti(a, { testa, busto, corpo, collo, fiore, fiocco });
 
   contorno(corpo);
   gruppo.userData.taglia = t.taglia;
@@ -472,6 +856,214 @@ export function creaAnimale(a: Animale): ModelloAnimale {
   aggiornaMestiere(m, a.mestiere);
   gruppo.userData.id = a.id;
   return m;
+}
+
+// ---------- vestiti che si fanno da soli ----------
+
+/** Dove c'è già qualcosa per via del segno particolare o del mestiere. */
+function partiOccupate(a: Animale): Set<Parte> {
+  const o = new Set<Parte>();
+  const tr = a.aspetto?.tratto ?? '';
+  if (['cappellino di foglia', 'cappellino a fungo', 'corona di margherite', 'fiocco rosso', 'ciuffo ribelle'].includes(tr)) o.add('testa');
+  if (['bandana blu', 'collana di bacche', 'campanellino', 'sciarpa a righe', 'ghianda al collo'].includes(tr)) o.add('collo');
+  if (tr === 'pancia a pois') o.add('corpo');
+  if (tr === 'zainetto') o.add('schiena');
+  if (a.mestiere === 'cuoco') o.add('testa');
+  else if (a.mestiere === 'musicista') o.add('collo');
+  else if (a.mestiere) o.add('corpo'); // il grembiule
+  if (a.specie === 'riccio') o.add('schiena'); // gli aculei!
+  return o;
+}
+
+/** Calotta di sfera (per berretti e cappucci). */
+function calotta(r: number, apertura: number) {
+  return new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, 0, apertura);
+}
+
+interface Attacchi {
+  testa: THREE.Group;
+  busto: THREE.Mesh;
+  corpo: THREE.Group;
+  collo: (o: THREE.Object3D) => void;
+  fiore: (petalo: string, centro: string) => THREE.Group;
+  fiocco: (colore: string) => THREE.Group;
+}
+
+function vesti(a: Animale, at: Attacchi) {
+  const copia = { ...a };
+  if (!copia.vestiti) aggiornaGuardaroba(copia);
+  const occupate = partiOccupate(a);
+  // i cappelli stanno sopra gli aculei del riccio e tra le orecchie lunghe
+  const cappelli = new THREE.Group();
+  if (a.specie === 'riccio') { cappelli.position.set(0, 0.12, -0.04); cappelli.scale.setScalar(1.1); }
+  at.testa.add(cappelli);
+  for (const k of indossati(copia)) if (!occupate.has(k.parte)) mettiCapo(k, { ...at, testa: k.parte === 'testa' ? cappelli : at.testa });
+}
+
+function mettiCapo(k: Capo, { testa, busto, collo, fiore, fiocco }: Attacchi) {
+  const tinta = mat(k.colore, { rim: 0.3 });
+  const scuro = mat(varia(k.colore, 0, -0.15), { rim: 0.2 });
+  const piatto = (o: THREE.Object3D) => { o.traverse((c) => (c.userData.senzaContorno = true)); return o; };
+  switch (k.id) {
+    // ---- collo ----
+    case 'sciarpa-rosa': case 'sciarpa-viola': case 'sciarpa-menta': {
+      const sc = mesh(new THREE.TorusGeometry(0.25, 0.07, 8, 18), tinta, 0, 0, 0.02);
+      sc.rotation.x = Math.PI / 2;
+      collo(sc);
+      for (const [x, rz, l] of [[0.1, 0.2, 0.26], [0.17, 0.35, 0.2]] as const) {
+        const lembo = mesh(geo.scatola(0.1, l, 0.05), k.id === 'sciarpa-rosa' ? tinta : scuro, x, -0.58, 0.25);
+        lembo.rotation.z = rz;
+        testa.add(lembo);
+      }
+      break;
+    }
+    case 'bandana-rossa': {
+      const b = mesh(new THREE.TorusGeometry(0.25, 0.05, 8, 18), tinta, 0, 0, 0.02);
+      b.rotation.x = Math.PI / 2;
+      collo(b);
+      const tri = mesh(geo.cono(0.14, 0.22, 3), tinta, 0, -0.55, 0.23);
+      tri.rotation.set(0.3, 0, Math.PI);
+      testa.add(tri);
+      for (const [x, y] of [[-0.05, -0.5], [0.04, -0.56], [0, -0.62]]) testa.add(piatto(mesh(geo.palla(0.018, 6), mat('#ffffff', { rim: 0 }), x, y, 0.3)));
+      break;
+    }
+    case 'papillon': {
+      const f = fiocco(k.colore);
+      f.scale.setScalar(0.8);
+      f.position.set(0, -0.46, 0.3);
+      testa.add(f);
+      break;
+    }
+    case 'ghirlanda-fiori':
+      for (let i = 0; i < 9; i++) {
+        const ang = -1.5 + (i / 8) * 3;
+        const f = fiore(i % 3 === 0 ? '#ffffff' : i % 3 === 1 ? '#ffd166' : '#ffb0c8', '#f29a30');
+        f.scale.setScalar(0.9);
+        f.position.set(Math.sin(ang) * 0.27, -0.44 - Math.cos(ang) * 0.02, Math.cos(ang) * 0.27 + 0.04);
+        f.rotation.y = ang;
+        testa.add(f);
+      }
+      break;
+    // ---- testa ----
+    case 'berretto-lana': case 'berretto-punta': {
+      const cap = mesh(calotta(0.5, 1.15), tinta, 0, 0.04, -0.02);
+      cap.scale.set(1.08, 0.95, 1.02);
+      testa.add(cap);
+      const bordo = mesh(new THREE.TorusGeometry(0.46, 0.05, 6, 24), scuro, 0, 0.24, -0.02);
+      bordo.rotation.x = Math.PI / 2;
+      bordo.scale.set(1.07, 1, 1);
+      testa.add(bordo);
+      if (k.id === 'berretto-punta') {
+        const punta = mesh(geo.cono(0.26, 0.5, 12), tinta, 0.08, 0.7, -0.06);
+        punta.rotation.z = -0.45;
+        testa.add(punta);
+        testa.add(mesh(geo.palla(0.07, 8), mat('#ffffff'), 0.3, 0.88, -0.06));
+      } else {
+        testa.add(mesh(geo.palla(0.11, 10), mat('#fff4e8'), 0, 0.58, -0.02));
+      }
+      break;
+    }
+    case 'cappello-punta': {
+      const tesa = mesh(geo.cil(0.4, 0.4, 0.03, 20), tinta, 0, 0.36, -0.02);
+      tesa.rotation.x = -0.12;
+      testa.add(tesa);
+      const cono = mesh(geo.cono(0.26, 0.62, 14), tinta, 0, 0.68, -0.06);
+      cono.rotation.x = -0.25;
+      testa.add(cono);
+      for (const [x, y, z] of [[0.1, 0.6, 0.12], [-0.08, 0.75, 0.06], [0.03, 0.88, -0.02]]) testa.add(piatto(mesh(geo.palla(0.025, 6), mat('#ffd166', { emissive: '#806010', emissiveIntensity: 0.3 }), x, y, z)));
+      break;
+    }
+    case 'cappello-tesa': {
+      const tesa = mesh(geo.cil(0.44, 0.44, 0.03, 20), tinta, 0, 0.34, -0.03);
+      tesa.rotation.x = -0.15;
+      testa.add(tesa);
+      testa.add(mesh(geo.cil(0.26, 0.28, 0.24, 16), tinta, 0, 0.47, -0.05));
+      testa.add(mesh(geo.cil(0.285, 0.285, 0.06, 16), mat('#d8443a'), 0, 0.4, -0.05));
+      break;
+    }
+    case 'coroncina-fiori':
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2;
+        const f = fiore(i % 2 ? '#ffffff' : k.colore, '#f2c230');
+        f.position.set(Math.sin(ang) * 0.33, 0.38, Math.cos(ang) * 0.3 - 0.02);
+        f.rotation.set(-1.2, ang, 0);
+        testa.add(f);
+      }
+      break;
+    case 'coroncina-stelle':
+      for (let i = 0; i < 7; i++) {
+        const ang = (i / 7) * Math.PI * 2;
+        const st = mesh(new THREE.CircleGeometry(0.07, 5), mat(k.colore, { rim: 0.5, emissive: '#806010', emissiveIntensity: 0.4, side: THREE.DoubleSide }), Math.sin(ang) * 0.3, 0.44, Math.cos(ang) * 0.28 - 0.02);
+        st.rotation.y = ang;
+        testa.add(piatto(st));
+      }
+      testa.add(piatto((() => { const r = mesh(new THREE.TorusGeometry(0.3, 0.015, 4, 24), mat(k.colore), 0, 0.4, -0.02); r.rotation.x = Math.PI / 2; return r; })()));
+      break;
+    // ---- corpo: sopra il busto, così segue la posa ----
+    case 'maglione-rosa': case 'maglione-blu': case 'maglione-stella': case 'maglione-righe': {
+      const tessuto = k.id === 'maglione-righe' ? mat('#ffffff', { map: texture(64, (c, l) => { for (let i = 0; i < 6; i++) { c.fillStyle = i % 2 ? '#f4f0e0' : k.colore; c.fillRect(0, (i * l) / 6, l, l / 6); } }) }) : tinta;
+      const mg = mesh(geo.palla(0.355, 20), tessuto, 0, -0.01, 0.0);
+      busto.add(mg);
+      const colletto = mesh(new THREE.TorusGeometry(0.2, 0.05, 6, 16), scuro, 0, 0.28, 0.02);
+      colletto.rotation.x = Math.PI / 2;
+      busto.add(colletto);
+      if (k.id === 'maglione-rosa') {
+        const cuore = new THREE.Group();
+        for (const x of [-0.04, 0.04]) cuore.add(mesh(geo.palla(0.05, 8), mat('#e0405a', { rim: 0 }), x, 0.02, 0));
+        const pt = mesh(geo.cono(0.072, 0.09, 8), mat('#e0405a', { rim: 0 }), 0, -0.035, 0);
+        pt.rotation.z = Math.PI;
+        cuore.add(pt);
+        cuore.scale.z = 0.35;
+        cuore.position.set(0, 0.05, 0.35);
+        busto.add(piatto(cuore));
+      }
+      if (k.id === 'maglione-stella') {
+        const st = mesh(new THREE.CircleGeometry(0.08, 5), mat('#ffd166', { rim: 0, emissive: '#806010', emissiveIntensity: 0.3 }), 0, 0.04, 0.357);
+        busto.add(piatto(st));
+      }
+      break;
+    }
+    case 'gilet-pelle': case 'gilet-verde': {
+      // aperto davanti: si vede la pancia
+      const gl = mesh(new THREE.SphereGeometry(0.356, 20, 14, Math.PI / 2 + 0.55, Math.PI * 2 - 1.1), mat(k.colore, { rim: 0.3, side: THREE.DoubleSide }), 0, -0.01, 0);
+      busto.add(gl);
+      if (k.id === 'gilet-verde') for (const y of [0.08, -0.04, -0.16]) busto.add(piatto(mesh(geo.palla(0.025, 6), mat('#f2c230'), 0.17, y, 0.3)));
+      break;
+    }
+    // ---- schiena ----
+    case 'mantello-rosso': case 'mantella-blu': case 'mantella-stelle': {
+      const m = mesh(new THREE.CylinderGeometry(0.24, 0.42, 0.46, 18, 1, true, Math.PI / 2 - 0.3, Math.PI + 0.6), mat(k.colore, { rim: 0.3, side: THREE.DoubleSide }), 0, -0.64, -0.05);
+      testa.add(m);
+      testa.add(mesh(geo.palla(0.045, 8), mat('#f2c230'), 0, -0.42, 0.27));
+      if (k.id === 'mantella-stelle') for (const [x, y] of [[0.15, -0.6], [-0.2, -0.75], [0.05, -0.8]]) {
+        const st = mesh(new THREE.CircleGeometry(0.045, 5), mat('#ffd166', { rim: 0, side: THREE.DoubleSide }), x, y, -0.4);
+        st.rotation.y = Math.PI;
+        testa.add(piatto(st));
+      }
+      break;
+    }
+    case 'borsa-tracolla': case 'borsa-bacche': {
+      const cinghia = mesh(new THREE.TorusGeometry(0.36, 0.02, 4, 24), scuro, 0, 0.02, 0);
+      cinghia.rotation.set(0, Math.PI / 2, 0.75);
+      cinghia.scale.set(1, 1, 1);
+      busto.add(cinghia);
+      const borsa = mesh(geo.scatola(0.2, 0.18, 0.09), tinta, 0.33, -0.2, 0.08);
+      borsa.rotation.y = 0.4;
+      busto.add(borsa);
+      if (k.id === 'borsa-bacche') for (const [x, z] of [[-0.04, 0], [0.04, 0.02], [0, -0.02]]) busto.add(piatto(mesh(geo.palla(0.03, 6), mat('#d8344a'), 0.33 + x, -0.1, 0.08 + z)));
+      break;
+    }
+    case 'cestino': {
+      const c = mesh(geo.cil(0.17, 0.14, 0.26, 12), mat('#ffffff', { map: texture(32, (cx, l) => { cx.fillStyle = '#b8925a'; cx.fillRect(0, 0, l, l); cx.strokeStyle = '#8a6a3a'; cx.lineWidth = 3; for (let i = 0; i < l; i += 8) { cx.beginPath(); cx.moveTo(i, 0); cx.lineTo(i, l); cx.stroke(); cx.beginPath(); cx.moveTo(0, i); cx.lineTo(l, i); cx.stroke(); } }) }), 0, -0.62, -0.4);
+      testa.add(c);
+      for (const x of [-0.15, 0.15]) {
+        const b = mesh(geo.scatola(0.04, 0.2, 0.03), mat('#7a5232'), x, -0.58, 0.37);
+        b.rotation.x = -0.35;
+        testa.add(b);
+      }
+      break;
+    }
+  }
 }
 
 /**
@@ -535,6 +1127,9 @@ export function aggiornaMestiere(m: ModelloAnimale, mestiere: string | null) {
   }
   m.accessorio = g;
 }
+
+/** Il simbolo di ogni mestiere (insegna della bottega e fumetti mentre lavora). */
+export const SIMBOLI_MESTIERE: Record<string, string> = { cuoco: '🍲', musicista: '♪', artigiano: '✂', fabbro: '⚒', taglialegna: '🪓', guardia: '🛡', guaritore: '✚', locandiere: '🍵', esploratore: '🧭', bibliotecario: '📚', costruttore: '🔨', capovillaggio: '★', mercante: '⚖', giardiniere: '🌱', 'custode delle scorte': '🧺', pittore: '🎨', cantastorie: '📜' };
 
 // ---------- uovo e nido ----------
 
@@ -1047,7 +1642,7 @@ export function creaBottegaMestiere(mestiere: string, colore: string): THREE.Gro
     g.add(mesh(geo.scatola(0.26, 0.26, 0.05), mat('#9fd3f0', { emissive: '#ffd27a', emissiveIntensity: 0.1 }), x, 0.6, 0.56));
   }
   // insegna con il simbolo del mestiere
-  const simboli: Record<string, string> = { cuoco: '🍲', musicista: '♪', artigiano: '✂', fabbro: '⚒', taglialegna: '🪓', guardia: '🛡', guaritore: '✚', locandiere: '🍵', esploratore: '🧭', bibliotecario: '📚', costruttore: '🔨', capovillaggio: '★', mercante: '⚖', giardiniere: '🌱', 'custode delle scorte': '🧺', pittore: '🎨', cantastorie: '📜' };
+  const simboli = SIMBOLI_MESTIERE;
   const insegna = mesh(geo.scatola(0.5, 0.5, 0.04), mat('#ffffff', { map: texture(64, (c, l) => {
     c.fillStyle = '#fff8e7'; c.fillRect(0, 0, l, l);
     c.strokeStyle = '#8a5a36'; c.lineWidth = 6; c.strokeRect(3, 3, l - 6, l - 6);

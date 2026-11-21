@@ -1,11 +1,12 @@
 // La radura del villaggio in 3D. Gli animali girano liberi, dormono, festeggiano.
 // Il villaggio si allarga quando arrivano nuovi abitanti e nascono nuovi mestieri.
 import * as THREE from 'three';
+import { hash } from '../lib/caso';
 import { COLORE_VIRTU } from '../lib/etichette';
 import { REGOLE } from '../lib/gioco';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
-  aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaBottegaMestiere, creaCartello, creaChiosco, creaCorvo, creaFalo,
+  aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaBottegaMestiere, creaCartello, creaChiosco, creaCorvo, creaFalo, SIMBOLI_MESTIERE,
   creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, creaCastagno, creaCastagna, creaCanna,
   creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
@@ -95,6 +96,7 @@ interface Abitante {
   incontro: number; // secondi di chiacchierata rimasti
   prossimoBalloon: number;
   balloon: THREE.Sprite | null;
+  sveglio: number; // di notte: secondi di veglia dopo una carezza
 }
 
 /** Grandezza della radura: cresce con gli abitanti, i mestieri e le costruzioni. */
@@ -470,13 +472,30 @@ export class Scena {
         ab = {
           m, dati: a, meta: this.puntoCasuale(), pausa: 1 + Math.random() * 2, passo: Math.random() * 6, salto: uovo ? 1 : 0,
           ammicca: Math.random() * 4, z: [], eretto: 0, amico: null, incontro: 0, prossimoBalloon: 0, balloon: null,
-          attivita: null, canna: null,
+          attivita: null, canna: null, sveglio: 0,
         };
         this.abitanti.set(a.id, ab);
       }
       ab.dati = a;
-      // i cuccioli sono piccoli e con la testa enorme; crescendo il corpo si allunga
-      const scala = ({ cucciolo: 1.15, giovane: 1.35, adulto: 1.55, maestro: 1.65, uovo: 1 } as const)[a.fase];
+      // crescendo cambia il modello (corna, unghie, orecchie) e arrivano i vestiti: lo rifacciamo
+      const chiave = `${a.fase}|${(a.vestiti ?? []).join(',')}|${a.mestiere ?? ''}`;
+      if (ab.m.gruppo.userData.chiave !== undefined && ab.m.gruppo.userData.chiave !== chiave) {
+        const vecchio = ab.m.gruppo;
+        const m = creaAnimale(a);
+        m.gruppo.position.copy(vecchio.position);
+        m.gruppo.rotation.copy(vecchio.rotation);
+        m.gruppo.userData.bersaglio = vecchio.userData.bersaglio;
+        if (ab.canna) { ab.canna.parent?.remove(ab.canna); ab.canna = null; }
+        for (const z of ab.z) z.parent?.remove(z);
+        ab.z = [];
+        this.scene.remove(vecchio);
+        this.scene.add(m.gruppo);
+        ab.m = m;
+      }
+      ab.m.gruppo.userData.chiave = chiave;
+      // i cuccioli sono piccoli e con la testa enorme; crescendo il corpo si allunga in piedi,
+      // ma la grandezza cresce poco: un adulto è un cucciolo cresciuto, non un gigante
+      const scala = ({ cucciolo: 1.15, giovane: 1.22, adulto: 1.28, maestro: 1.32, uovo: 1 } as const)[a.fase];
       ab.m.gruppo.scale.setScalar(scala * ((ab.m.gruppo.userData.taglia as number) ?? 1));
       const proporzione = ({ cucciolo: 1.12, giovane: 1.0, adulto: 0.9, maestro: 0.9, uovo: 1 } as const)[a.fase];
       ab.m.testa.scale.setScalar(proporzione);
@@ -545,6 +564,59 @@ export class Scena {
     } else if (!dorme && ab.z.length) {
       ab.z.forEach((z) => ab.m.gruppo.remove(z));
       ab.z = [];
+    }
+  }
+
+  private zeta(ab: Abitante, accese: boolean) {
+    if (accese && !ab.z.length) {
+      for (let i = 0; i < 3; i++) {
+        const z = spriteTesto('z', '#ffffff');
+        z.scale.setScalar(0.25 + i * 0.07);
+        ab.m.gruppo.add(z);
+        ab.z.push(z);
+      }
+    } else if (!accese && ab.z.length) {
+      ab.z.forEach((z) => ab.m.gruppo.remove(z));
+      ab.z = [];
+    }
+  }
+
+  private dormi(ab: Abitante, dt: number, t: number) {
+    ab.m.corpo.rotation.z = THREE.MathUtils.lerp(ab.m.corpo.rotation.z, 1.25, dt * 2);
+    ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, -0.05, dt * 2);
+    ab.m.corpo.scale.y = 1 + Math.sin(t * 1.5) * 0.03;
+    ab.z.forEach((z, i) => {
+      const f = (t * 0.5 + i / 3) % 1;
+      z.position.set(0.3 + f * 0.3, 0.9 + f * 0.9, 0);
+      z.material.opacity = 1 - f;
+    });
+  }
+
+  /** Che momento della giornata è (ora vera, o quella finta delle prove). */
+  momento(): 'mattina' | 'lavoro' | 'pranzo' | 'sera' | 'notte' {
+    const ora = new Date();
+    const h = this.oraFinta ?? ora.getHours() + ora.getMinutes() / 60;
+    if (h >= 21.5 || h < 7) return 'notte';
+    if (h < 9) return 'mattina';
+    if (h >= 12.5 && h < 14) return 'pranzo';
+    if (h >= 18) return 'sera';
+    return 'lavoro';
+  }
+
+  /** Dove dorme: davanti alla sua bottega se ce l'ha, altrimenti con i piccoli vicino al nido. */
+  private casa(ab: Abitante): THREE.Vector3 {
+    const b = this.botteghe.get(ab.dati.id);
+    if (b) return b.position.clone().add(b.position.clone().setY(0).normalize().multiplyScalar(-1.1)).setY(0);
+    const ang = (hash(ab.dati.id) % 360) * (Math.PI / 180);
+    return new THREE.Vector3(this.nido.position.x + Math.cos(ang) * 1.1, 0, this.nido.position.z + Math.sin(ang) * 1.1);
+  }
+
+  private fineAttivita(ab: Abitante) {
+    ab.attivita = null;
+    ab.m.corpo.rotation.x = 0;
+    if (ab.canna) {
+      ab.canna.parent?.remove(ab.canna);
+      ab.canna = null;
     }
   }
 
@@ -707,6 +779,7 @@ export class Scena {
     if (b.tipo === 'animale') {
       const ab = this.abitanti.get(b.id);
       if (ab && !ab.dati.addormentato) {
+        if (this.momento() === 'notte') ab.sveglio = 30; // una carezza lo sveglia per un po'
         ab.salto = 0.5;
         ab.pausa = 4;
         // si gira verso di te
@@ -900,16 +973,24 @@ export class Scena {
     for (const o of ab.m.occhi) o.scale.y = ab.dati.addormentato ? 0.12 : chiusi ? 0.15 : 1;
 
     if (ab.dati.addormentato) {
-      ab.m.corpo.rotation.z = THREE.MathUtils.lerp(ab.m.corpo.rotation.z, 1.25, dt * 2);
-      ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, -0.05, dt * 2);
-      ab.m.corpo.scale.y = 1 + Math.sin(t * 1.5) * 0.03;
-      ab.z.forEach((z, i) => {
-        const f = (t * 0.5 + i / 3) % 1;
-        z.position.set(0.3 + f * 0.3, 0.9 + f * 0.9, 0);
-        z.material.opacity = 1 - f;
-      });
+      this.dormi(ab, dt, t);
       return;
     }
+    // ---- la giornata: di notte ognuno torna a casa a dormire (una carezza lo sveglia un po') ----
+    ab.sveglio = Math.max(0, ab.sveglio - dt);
+    if (this.momento() === 'notte' && ab.sveglio <= 0) {
+      const casa = this.casa(ab);
+      if (g.position.distanceTo(casa) < 0.25) {
+        if (!ab.z.length) this.zeta(ab, true);
+        for (const o of ab.m.occhi) o.scale.y = 0.12;
+        this.dormi(ab, dt, t);
+        return;
+      }
+      if (ab.amico) { const b = this.abitanti.get(ab.amico); if (b) b.amico = null; ab.amico = null; }
+      if (ab.attivita) this.fineAttivita(ab);
+      ab.meta = casa;
+      ab.pausa = 0;
+    } else if (ab.z.length) this.zeta(ab, false);
     ab.m.corpo.rotation.z = THREE.MathUtils.lerp(ab.m.corpo.rotation.z, 0, dt * 4);
     if (!ab.attivita) ab.m.corpo.rotation.x = THREE.MathUtils.lerp(ab.m.corpo.rotation.x, 0, dt * 4);
 
@@ -1017,6 +1098,28 @@ export class Scena {
 
   /** Finita una pausa: a volte si va a trovare qualcuno, altrimenti si gironzola. */
   private scegliCosaFare(ab: Abitante) {
+    // la giornata: di giorno chi ha un mestiere va a lavorare nella sua bottega,
+    // a pranzo e la sera ci si siede insieme attorno al falò o sulla panchina
+    const momento = this.momento();
+    const bottega = this.botteghe.get(ab.dati.id);
+    if (momento === 'lavoro' && bottega && Math.random() < 0.6) {
+      ab.attivita = { id: 'lavoro', tempo: 10 + Math.random() * 10, prossimo: 1 };
+      ab.meta = this.casa(ab);
+      return;
+    }
+    const insieme = momento === 'pranzo' ? 0.65 : momento === 'sera' ? 0.5 : momento === 'mattina' ? 0.1 : 0.15;
+    if (Math.random() < insieme) {
+      ab.attivita = { id: 'seduto', tempo: 12 + Math.random() * 14, prossimo: 3 + Math.random() * 3 };
+      const panca = this.strutture.has('panchina') && Math.random() < 0.35 ? POSTI_COSTRUZIONI.panchina : null;
+      if (panca) {
+        const lato = Math.random() < 0.5 ? -0.35 : 0.35;
+        ab.meta = new THREE.Vector3(panca[0] + Math.cos(panca[2]) * lato, 0, panca[1] - Math.sin(panca[2]) * lato + 0.45);
+      } else {
+        const a = Math.random() * Math.PI * 2;
+        ab.meta = new THREE.Vector3(Math.cos(a) * 1.8, 0, Math.sin(a) * 1.8);
+      }
+      return;
+    }
     // chi ha imparato qualcosa, spesso va a farlo
     const sa = ab.dati.abilita ?? [];
     if (sa.length && Math.random() < 0.45) {
@@ -1124,14 +1227,37 @@ export class Scena {
       case 'stelle':
         ab.m.testa.rotation.x = -0.55;
         break;
+      case 'lavoro': {
+        // al lavoro davanti alla bottega: martella, mescola, scrive...
+        const b = this.botteghe.get(ab.dati.id);
+        if (b) guardaVerso(b.position.x, b.position.z);
+        ab.m.testa.rotation.x = 0.25;
+        ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -1.0 + Math.sin(t * 7 + i * Math.PI) * 0.35));
+        ab.m.corpo.position.y = Math.abs(Math.sin(t * 7)) * 0.02;
+        if (att.prossimo <= 0) {
+          att.prossimo = 1.8 + Math.random() * 1.5;
+          this.fumetto(ab, SIMBOLI_MESTIERE[ab.dati.mestiere ?? ''] ?? '★');
+        }
+        break;
+      }
+      case 'seduto': {
+        // seduti in cerchio: si guardano in mezzo, dondolano la testa, ogni tanto un sorriso
+        guardaVerso(0, 0);
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, -0.3, dt * 4)));
+        ab.m.testa.rotation.z = Math.sin(t * 0.9 + g.position.x) * 0.12;
+        if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(t * 1.5) * 0.25;
+        if (att.prossimo <= 0) {
+          att.prossimo = 3 + Math.random() * 4;
+          this.fumetto(ab, ['☺', '♪', '♥', '…', '✿'][Math.floor(Math.random() * 5)]);
+        }
+        break;
+      }
     }
     if (att.tempo <= 0) {
-      ab.attivita = null;
-      ab.m.corpo.rotation.x = 0;
-      if (ab.canna) {
-        ab.canna.parent?.remove(ab.canna);
-        ab.canna = null;
-      }
+      this.fineAttivita(ab);
+      ab.m.corpo.position.y = 0;
       ab.pausa = 1.5 + Math.random() * 2;
     }
   }

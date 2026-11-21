@@ -71,6 +71,7 @@ export interface Animale {
   abilita: string[]; // cose che ha imparato (pescare, cantare...)
   aspetto: Aspetto; // com'è fatto: unico nel villaggio
   studio: { id: string; inizio: string; fine: string } | null; // cosa sta imparando ora
+  vestiti?: string[]; // capi che si è fatto da solo crescendo (vedi vestiti.ts)
 }
 
 export interface Aspetto {
