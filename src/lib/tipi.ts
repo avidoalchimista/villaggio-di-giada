@@ -71,6 +71,7 @@ export interface Animale {
   abilita: string[]; // cose che ha imparato (pescare, cantare...)
   aspetto: Aspetto; // com'è fatto: unico nel villaggio
   studio: { id: string; inizio: string; fine: string } | null; // cosa sta imparando ora
+  vestiti?: string[]; // capi che si è fatto da solo crescendo (vedi vestiti.ts)
 }
 
 export interface Aspetto {
@@ -106,6 +107,7 @@ export interface Evento {
   data: string;
   tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne';
   testo: string;
+  animale?: string; // di chi parla (per inquadrarlo)
 }
 
 export interface StatoGioco {
@@ -129,6 +131,7 @@ export interface StatoGioco {
   seme: number; // per la casualità deterministica
   contatore: number; // per gli id
   ultimoBackupRicordato: string | null;
+  sorprese: Evento[]; // eventi importanti non ancora mostrati in primo piano
 }
 
 export function zeriVirtu(): Record<Virtu, number> {
