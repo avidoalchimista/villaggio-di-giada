@@ -4,6 +4,7 @@ import {
   applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, REGOLE, requisitiCapitolo, riassunto,
   SCHEMA, simula, simulaGiorniConDiario, speciePrimoUovo, STORIA,
 } from './gioco';
+import { virtuMestiere } from './mestieri';
 import { meteo } from './meteo';
 import { zeriForze, type Forza, type Punteggi, type StatoGioco, type VoceDiario } from './tipi';
 
@@ -55,7 +56,7 @@ describe('crescita', () => {
     }
     const volpe = s.animali[0];
     expect(volpe.fase).toBe('adulto');
-    expect(volpe.mestiere).toBe('cuoco'); // nutrita soprattutto di umanità
+    expect(virtuMestiere(volpe.mestiere)).toBe('umanita'); // nutrita soprattutto di umanità: cuoca, fornaia, postina...
   });
 
   it('non supera la fase massima della versione di Natale', () => {

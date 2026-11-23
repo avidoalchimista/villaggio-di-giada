@@ -4,6 +4,7 @@
 // Nel villaggio (al massimo 7 abitanti) ognuno ha un carattere diverso dagli altri.
 
 import { hash } from './caso';
+import { nomeMestiere } from './mestieri';
 import type { Animale, Specie, StatoGioco } from './tipi';
 
 export type Momento = 'mattina' | 'lavoro' | 'pranzo' | 'sera' | 'notte';
@@ -349,7 +350,7 @@ export function cosaFaInCasa(a: Animale, momento: Momento, turno = 0): AttivitaC
   if (a.addormentato || momento === 'notte') att = { gesto: 'dorme', posto: 'letto', testo: 'dorme nel suo lettino', fumetto: 'z' };
   else if (momento === 'pranzo') att = c.pranzo;
   else if (momento === 'lavoro') {
-    if (a.mestiere) att = { gesto: 'lavora', posto: 'lavoro', testo: `lavora al suo banco da ${a.mestiere}` };
+    if (a.mestiere) att = { gesto: 'lavora', posto: 'lavoro', testo: `lavora al suo banco da ${nomeMestiere(a)}` };
     else att = c.gioco;
   } else {
     const l = momento === 'mattina' ? c.mattina : c.sera;

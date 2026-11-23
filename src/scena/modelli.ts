@@ -5,10 +5,13 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hash, rng } from '../lib/caso';
 import type { Animale, Emozione, Fase, Specie } from '../lib/tipi';
-import { aggiornaGuardaroba, indossati, type Capo, type Parte } from '../lib/vestiti';
+import { aggiornaGuardaroba, capo, conDivisa, indossati, type Parte } from '../lib/vestiti';
+import { defMestiere, simboloMestiere, MESTIERI } from '../lib/mestieri';
+import { creaAttrezzoInMano, mettiCapo, mettiOcchiali, type Attacchi } from './sartoria';
+import { creaAttrezziMestiere, creaInsegnaMestiere } from './botteghe';
 import { contorno, macchie, materiale, ombra, strisce, texture } from './ps1';
 
-const geo = {
+export const geo = {
   palla: (r: number, s = 18) => new THREE.SphereGeometry(r, s, Math.round(s * 0.75)),
   cono: (r: number, h: number, s = 12) => new THREE.ConeGeometry(r, h, s),
   cil: (r1: number, r2: number, h: number, s = 12) => new THREE.CylinderGeometry(r1, r2, h, s),
@@ -68,7 +71,7 @@ function unisci(parti: THREE.BufferGeometry[]) {
   return mergeGeometries(parti.map((g) => { g.deleteAttribute('uv'); return g; })) ?? parti[0];
 }
 
-function mesh(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) {
+export function mesh(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) {
   const o = new THREE.Mesh(g, m);
   o.position.set(x, y, z);
   return o;
@@ -130,7 +133,7 @@ export interface ModelloAnimale {
   mestiere: string | null;
 }
 
-function varia(colore: string, tinta: number, luce: number) {
+export function varia(colore: string, tinta: number, luce: number) {
   return '#' + new THREE.Color(colore).offsetHSL(tinta, 0, luce).getHexString();
 }
 
@@ -140,7 +143,8 @@ function aspettoDiRiserva(a: Animale) {
   return { manto: Math.floor(r() * 4), tratto: 'lentiggini', forma: r() * 2 - 1, occhi: r(), orecchie: r(), taglia: 1, lato: 1 };
 }
 
-export function creaAnimale(a: Animale): ModelloAnimale {
+/** divisa: se sta lavorando, con la divisa del suo mestiere. */
+export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
   const asp = a.aspetto ?? aspettoDiRiserva(a);
   const base = MANTI[a.specie][asp.manto % MANTI[a.specie].length];
   const t = { segno: asp.tratto, lato: asp.lato, taglia: asp.taglia };
@@ -841,7 +845,8 @@ export function creaAnimale(a: Animale): ModelloAnimale {
       break;
   }
 
-  vesti(a, { testa, busto, pancia, corpo, collo, fiore, fiocco });
+  vesti(a, { testa, busto, pancia, corpo, collo, fiore, fiocco }, divisa);
+  gruppo.userData.divisa = divisa;
 
   contorno(corpo);
   gruppo.userData.taglia = t.taglia;
@@ -858,9 +863,9 @@ export function creaAnimale(a: Animale): ModelloAnimale {
   return m;
 }
 
-// ---------- vestiti che si fanno da soli ----------
+// ---------- vestiti che si fanno da soli (e la divisa da lavoro) ----------
 
-/** Dove c'è già qualcosa per via del segno particolare o del mestiere. */
+/** Dove c'è già qualcosa per via del segno particolare. */
 function partiOccupate(a: Animale): Set<Parte> {
   const o = new Set<Parte>();
   const tr = a.aspetto?.tratto ?? '';
@@ -868,204 +873,24 @@ function partiOccupate(a: Animale): Set<Parte> {
   if (['bandana blu', 'collana di bacche', 'campanellino', 'sciarpa a righe', 'ghianda al collo'].includes(tr)) o.add('collo');
   if (tr === 'pancia a pois') o.add('corpo');
   if (tr === 'zainetto') o.add('schiena');
-  if (a.mestiere === 'cuoco') o.add('testa');
-  else if (a.mestiere === 'musicista') o.add('collo');
-  if (a.specie === 'riccio') o.add('schiena'); // gli aculei!
   return o;
 }
 
-/** Calotta di sfera (per berretti e cappucci). */
-function calotta(r: number, apertura: number) {
-  return new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, 0, apertura);
-}
-
-interface Attacchi {
-  testa: THREE.Group;
-  busto: THREE.Mesh;
-  pancia: THREE.Mesh;
-  corpo: THREE.Group;
-  collo: (o: THREE.Object3D) => void;
-  fiore: (petalo: string, centro: string) => THREE.Group;
-  fiocco: (colore: string) => THREE.Group;
-}
-
-function vesti(a: Animale, at: Attacchi) {
+/** Veste l'animale: i suoi vestiti e, se sta lavorando, la divisa del suo mestiere al posto loro. */
+function vesti(a: Animale, at: Omit<Attacchi, 'testaVera'>, divisa: boolean) {
   const copia = { ...a };
-  if (!copia.vestiti) aggiornaGuardaroba(copia);
+  if (!copia.vestiti || copia.vestiti.some((id) => !capo(id))) aggiornaGuardaroba(copia);
+  const def = divisa ? defMestiere(a.mestiere) : undefined;
   const occupate = partiOccupate(a);
+  // la divisa si mette sempre, anche sopra il segno particolare
+  for (const p of Object.keys(def?.divisa ?? {})) occupate.delete(p as Parte);
+  if (a.specie === 'riccio') occupate.add('schiena'); // gli aculei!
   // i cappelli stanno sopra gli aculei del riccio e tra le orecchie lunghe
   const cappelli = new THREE.Group();
   if (a.specie === 'riccio') { cappelli.position.set(0, 0.12, -0.04); cappelli.scale.setScalar(1.1); }
   at.testa.add(cappelli);
-  for (const k of indossati(copia)) if (!occupate.has(k.parte)) mettiCapo(k, { ...at, testa: k.parte === 'testa' ? cappelli : at.testa });
-}
-
-function mettiCapo(k: Capo, { testa, busto, pancia, collo, fiore, fiocco }: Attacchi) {
-  const tinta = mat(k.colore, { rim: 0.3 });
-  const scuro = mat(varia(k.colore, 0, -0.15), { rim: 0.2 });
-  const piatto = (o: THREE.Object3D) => { o.traverse((c) => (c.userData.senzaContorno = true)); return o; };
-  switch (k.id) {
-    // ---- collo ----
-    case 'sciarpa-rosa': case 'sciarpa-viola': case 'sciarpa-menta': {
-      const sc = mesh(new THREE.TorusGeometry(0.25, 0.07, 8, 18), tinta, 0, 0, 0.02);
-      sc.rotation.x = Math.PI / 2;
-      collo(sc);
-      for (const [x, rz, l] of [[0.1, 0.2, 0.26], [0.17, 0.35, 0.2]] as const) {
-        const lembo = mesh(geo.scatola(0.1, l, 0.05), k.id === 'sciarpa-rosa' ? tinta : scuro, x, -0.58, 0.25);
-        lembo.rotation.z = rz;
-        testa.add(lembo);
-      }
-      break;
-    }
-    case 'bandana-rossa': {
-      const b = mesh(new THREE.TorusGeometry(0.25, 0.05, 8, 18), tinta, 0, 0, 0.02);
-      b.rotation.x = Math.PI / 2;
-      collo(b);
-      const tri = mesh(geo.cono(0.14, 0.22, 3), tinta, 0, -0.55, 0.23);
-      tri.rotation.set(0.3, 0, Math.PI);
-      testa.add(tri);
-      for (const [x, y] of [[-0.05, -0.5], [0.04, -0.56], [0, -0.62]]) testa.add(piatto(mesh(geo.palla(0.018, 6), mat('#ffffff', { rim: 0 }), x, y, 0.3)));
-      break;
-    }
-    case 'papillon': {
-      const f = fiocco(k.colore);
-      f.scale.setScalar(0.8);
-      f.position.set(0, -0.46, 0.3);
-      testa.add(f);
-      break;
-    }
-    case 'ghirlanda-fiori':
-      for (let i = 0; i < 9; i++) {
-        const ang = -1.5 + (i / 8) * 3;
-        const f = fiore(i % 3 === 0 ? '#ffffff' : i % 3 === 1 ? '#ffd166' : '#ffb0c8', '#f29a30');
-        f.scale.setScalar(0.9);
-        f.position.set(Math.sin(ang) * 0.27, -0.44 - Math.cos(ang) * 0.02, Math.cos(ang) * 0.27 + 0.04);
-        f.rotation.y = ang;
-        testa.add(f);
-      }
-      break;
-    // ---- testa ----
-    case 'berretto-lana': case 'berretto-punta': {
-      const cap = mesh(calotta(0.5, 1.15), tinta, 0, 0.04, -0.02);
-      cap.scale.set(1.08, 0.95, 1.02);
-      testa.add(cap);
-      const bordo = mesh(new THREE.TorusGeometry(0.46, 0.05, 6, 24), scuro, 0, 0.24, -0.02);
-      bordo.rotation.x = Math.PI / 2;
-      bordo.scale.set(1.07, 1, 1);
-      testa.add(bordo);
-      if (k.id === 'berretto-punta') {
-        const punta = mesh(geo.cono(0.26, 0.5, 12), tinta, 0.08, 0.7, -0.06);
-        punta.rotation.z = -0.45;
-        testa.add(punta);
-        testa.add(mesh(geo.palla(0.07, 8), mat('#ffffff'), 0.3, 0.88, -0.06));
-      } else {
-        testa.add(mesh(geo.palla(0.11, 10), mat('#fff4e8'), 0, 0.58, -0.02));
-      }
-      break;
-    }
-    case 'cappello-punta': {
-      const tesa = mesh(geo.cil(0.4, 0.4, 0.03, 20), tinta, 0, 0.36, -0.02);
-      tesa.rotation.x = -0.12;
-      testa.add(tesa);
-      const cono = mesh(geo.cono(0.26, 0.62, 14), tinta, 0, 0.68, -0.06);
-      cono.rotation.x = -0.25;
-      testa.add(cono);
-      for (const [x, y, z] of [[0.1, 0.6, 0.12], [-0.08, 0.75, 0.06], [0.03, 0.88, -0.02]]) testa.add(piatto(mesh(geo.palla(0.025, 6), mat('#ffd166', { emissive: '#806010', emissiveIntensity: 0.3 }), x, y, z)));
-      break;
-    }
-    case 'cappello-tesa': {
-      const tesa = mesh(geo.cil(0.44, 0.44, 0.03, 20), tinta, 0, 0.34, -0.03);
-      tesa.rotation.x = -0.15;
-      testa.add(tesa);
-      testa.add(mesh(geo.cil(0.26, 0.28, 0.24, 16), tinta, 0, 0.47, -0.05));
-      testa.add(mesh(geo.cil(0.285, 0.285, 0.06, 16), mat('#d8443a'), 0, 0.4, -0.05));
-      break;
-    }
-    case 'coroncina-fiori':
-      for (let i = 0; i < 8; i++) {
-        const ang = (i / 8) * Math.PI * 2;
-        const f = fiore(i % 2 ? '#ffffff' : k.colore, '#f2c230');
-        f.position.set(Math.sin(ang) * 0.33, 0.38, Math.cos(ang) * 0.3 - 0.02);
-        f.rotation.set(-1.2, ang, 0);
-        testa.add(f);
-      }
-      break;
-    case 'coroncina-stelle':
-      for (let i = 0; i < 7; i++) {
-        const ang = (i / 7) * Math.PI * 2;
-        const st = mesh(new THREE.CircleGeometry(0.07, 5), mat(k.colore, { rim: 0.5, emissive: '#806010', emissiveIntensity: 0.4, side: THREE.DoubleSide }), Math.sin(ang) * 0.3, 0.44, Math.cos(ang) * 0.28 - 0.02);
-        st.rotation.y = ang;
-        testa.add(piatto(st));
-      }
-      testa.add(piatto((() => { const r = mesh(new THREE.TorusGeometry(0.3, 0.015, 4, 24), mat(k.colore), 0, 0.4, -0.02); r.rotation.x = Math.PI / 2; return r; })()));
-      break;
-    // ---- corpo: sopra il busto, così segue la posa ----
-    case 'maglione-rosa': case 'maglione-blu': case 'maglione-stella': case 'maglione-righe': {
-      const tessuto = k.id === 'maglione-righe' ? mat('#ffffff', { map: texture(64, (c, l) => { for (let i = 0; i < 6; i++) { c.fillStyle = i % 2 ? '#f4f0e0' : k.colore; c.fillRect(0, (i * l) / 6, l, l / 6); } }) }) : tinta;
-      // il maglione copre anche la pancia, ed è un po' più largo: si vede bene
-      const mg = mesh(geo.palla(0.375, 20), tessuto, 0, -0.01, 0.0);
-      busto.add(mg);
-      pancia.visible = false;
-      const colletto = mesh(new THREE.TorusGeometry(0.2, 0.05, 6, 16), scuro, 0, 0.28, 0.02);
-      colletto.rotation.x = Math.PI / 2;
-      busto.add(colletto);
-      if (k.id === 'maglione-rosa') {
-        const cuore = new THREE.Group();
-        for (const x of [-0.04, 0.04]) cuore.add(mesh(geo.palla(0.05, 8), mat('#e0405a', { rim: 0 }), x, 0.02, 0));
-        const pt = mesh(geo.cono(0.072, 0.09, 8), mat('#e0405a', { rim: 0 }), 0, -0.035, 0);
-        pt.rotation.z = Math.PI;
-        cuore.add(pt);
-        cuore.scale.z = 0.35;
-        cuore.position.set(0, 0.05, 0.37);
-        busto.add(piatto(cuore));
-      }
-      if (k.id === 'maglione-stella') {
-        const st = mesh(new THREE.CircleGeometry(0.08, 5), mat('#ffd166', { rim: 0, emissive: '#806010', emissiveIntensity: 0.3 }), 0, 0.04, 0.377);
-        busto.add(piatto(st));
-      }
-      break;
-    }
-    case 'gilet-pelle': case 'gilet-verde': {
-      // aperto davanti: si vede la pancia
-      const gl = mesh(new THREE.SphereGeometry(0.356, 20, 14, Math.PI / 2 + 0.55, Math.PI * 2 - 1.1), mat(k.colore, { rim: 0.3, side: THREE.DoubleSide }), 0, -0.01, 0);
-      busto.add(gl);
-      if (k.id === 'gilet-verde') for (const y of [0.08, -0.04, -0.16]) busto.add(piatto(mesh(geo.palla(0.025, 6), mat('#f2c230'), 0.17, y, 0.3)));
-      break;
-    }
-    // ---- schiena ----
-    case 'mantello-rosso': case 'mantella-blu': case 'mantella-stelle': {
-      const m = mesh(new THREE.CylinderGeometry(0.24, 0.42, 0.46, 18, 1, true, Math.PI / 2 - 0.3, Math.PI + 0.6), mat(k.colore, { rim: 0.3, side: THREE.DoubleSide }), 0, -0.64, -0.05);
-      testa.add(m);
-      testa.add(mesh(geo.palla(0.045, 8), mat('#f2c230'), 0, -0.42, 0.27));
-      if (k.id === 'mantella-stelle') for (const [x, y] of [[0.15, -0.6], [-0.2, -0.75], [0.05, -0.8]]) {
-        const st = mesh(new THREE.CircleGeometry(0.045, 5), mat('#ffd166', { rim: 0, side: THREE.DoubleSide }), x, y, -0.4);
-        st.rotation.y = Math.PI;
-        testa.add(piatto(st));
-      }
-      break;
-    }
-    case 'borsa-tracolla': case 'borsa-bacche': {
-      const cinghia = mesh(new THREE.TorusGeometry(0.36, 0.02, 4, 24), scuro, 0, 0.02, 0);
-      cinghia.rotation.set(0, Math.PI / 2, 0.75);
-      cinghia.scale.set(1, 1, 1);
-      busto.add(cinghia);
-      const borsa = mesh(geo.scatola(0.2, 0.18, 0.09), tinta, 0.33, -0.2, 0.08);
-      borsa.rotation.y = 0.4;
-      busto.add(borsa);
-      if (k.id === 'borsa-bacche') for (const [x, z] of [[-0.04, 0], [0.04, 0.02], [0, -0.02]]) busto.add(piatto(mesh(geo.palla(0.03, 6), mat('#d8344a'), 0.33 + x, -0.1, 0.08 + z)));
-      break;
-    }
-    case 'cestino': {
-      const c = mesh(geo.cil(0.17, 0.14, 0.26, 12), mat('#ffffff', { map: texture(32, (cx, l) => { cx.fillStyle = '#b8925a'; cx.fillRect(0, 0, l, l); cx.strokeStyle = '#8a6a3a'; cx.lineWidth = 3; for (let i = 0; i < l; i += 8) { cx.beginPath(); cx.moveTo(i, 0); cx.lineTo(i, l); cx.stroke(); cx.beginPath(); cx.moveTo(0, i); cx.lineTo(l, i); cx.stroke(); } }) }), 0, -0.62, -0.4);
-      testa.add(c);
-      for (const x of [-0.15, 0.15]) {
-        const b = mesh(geo.scatola(0.04, 0.2, 0.03), mat('#7a5232'), x, -0.58, 0.37);
-        b.rotation.x = -0.35;
-        testa.add(b);
-      }
-      break;
-    }
-  }
+  for (const k of conDivisa(indossati(copia), def?.divisa)) if (!occupate.has(k.parte)) mettiCapo(k, { ...at, testaVera: at.testa, testa: k.parte === 'testa' ? cappelli : at.testa });
+  if (def?.occhiali) mettiOcchiali(at.testa, a.specie === 'tasso');
 }
 
 /**
@@ -1097,44 +922,29 @@ export function posa(m: ModelloAnimale, e: number) {
   }
 }
 
-/** Cappello da cuoco, sciarpa da musicista, grembiule da artigiano... */
+/**
+ * L'attrezzo del mestiere in mano (martello, mestolo, pennello...): si vede solo mentre lavora.
+ * (La divisa invece è nel modello: vedi creaAnimale(a, divisa).)
+ */
 export function aggiornaMestiere(m: ModelloAnimale, mestiere: string | null) {
   if (m.mestiere === mestiere) return;
   if (m.accessorio) m.accessorio.parent?.remove(m.accessorio);
   m.accessorio = null;
   m.mestiere = mestiere;
-  if (!mestiere) return;
-  const g = new THREE.Group();
-  if (mestiere === 'cuoco') {
-    g.add(mesh(geo.cil(0.2, 0.18, 0.14), mat('#ffffff'), 0, 0.44, -0.04));
-    const sbuffo = mesh(geo.palla(0.26), mat('#ffffff'), 0, 0.6, -0.04);
-    sbuffo.scale.set(1, 0.7, 1);
-    g.add(sbuffo);
-    m.testa.add(contorno(g));
-  } else if (mestiere === 'musicista') {
-    // sciarpa al collo: attaccata alla testa, così segue anche la posa in piedi
-    const s = mesh(new THREE.TorusGeometry(0.24, 0.07, 8, 16), mat('#d64545'), 0, -0.4, 0.02);
-    s.rotation.x = Math.PI / 2;
-    g.add(s);
-    const coda = mesh(geo.scatola(0.12, 0.26, 0.05), mat('#d64545'), 0.12, -0.56, 0.22);
-    coda.rotation.z = 0.3;
-    g.add(coda);
-    m.testa.add(contorno(g));
-  } else {
-    const gr = mesh(geo.scatola(0.38, 0.34, 0.05), mat('#8a5a36'), 0, 0.38, 0.3);
-    gr.rotation.x = -0.15;
-    g.add(gr);
-    g.add(mesh(geo.palla(0.05), mat('#f2c94c'), 0.1, 0.42, 0.33));
-    m.corpo.add(contorno(g));
-    // il grembiule si mette solo per lavorare: il resto del tempo si vedono i vestiti suoi
-    g.userData.grembiule = true;
-    g.visible = false;
-  }
+  const id = defMestiere(mestiere)?.inMano;
+  if (!id) return;
+  const g = contorno(creaAttrezzoInMano(id));
+  g.position.set(0, -0.12, 0.02);
+  m.zampe[0].add(g);
+  // si tiene in mano solo per lavorare (il nome "grembiule" è rimasto da quando era un grembiule)
+  g.userData.grembiule = true;
+  g.visible = false;
   m.accessorio = g;
 }
 
-/** Il simbolo di ogni mestiere (insegna della bottega e fumetti mentre lavora). */
-export const SIMBOLI_MESTIERE: Record<string, string> = { cuoco: '🍲', musicista: '♪', artigiano: '✂', fabbro: '⚒', taglialegna: '🪓', guardia: '🛡', guaritore: '✚', locandiere: '🍵', esploratore: '🧭', bibliotecario: '📚', costruttore: '🔨', capovillaggio: '★', mercante: '⚖', giardiniere: '🌱', 'custode delle scorte': '🧺', pittore: '🎨', cantastorie: '📜' };
+/** Il simbolo di ogni mestiere (fumetti mentre lavora). */
+export const SIMBOLI_MESTIERE: Record<string, string> = Object.fromEntries(MESTIERI.map((x) => [x.id, x.simbolo]));
+export { simboloMestiere };
 
 // ---------- uovo e nido ----------
 
@@ -1824,15 +1634,6 @@ const CASA_EMOZIONE: Record<Emozione, { tetto: string; porta: string; muro: stri
 };
 
 
-function insegnaMestiere(mestiere: string) {
-  return mesh(geo.scatola(0.55, 0.55, 0.04), mat('#ffffff', { map: texture(64, (c, l) => {
-    c.fillStyle = '#fff8e7'; c.fillRect(0, 0, l, l);
-    c.strokeStyle = '#8a5a36'; c.lineWidth = 6; c.strokeRect(3, 3, l - 6, l - 6);
-    c.font = `${l * 0.55}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillStyle = '#4a3424'; c.fillText(SIMBOLI_MESTIERE[mestiere] ?? '★', l / 2, l / 2 + 2);
-  }), rim: 0 }));
-}
-
 /**
  * La casa di un animale: la forma dipende dalla specie, i colori e la decorazione dall'emozione
  * della pagina con cui è nato. Crescendo la abbellisce (vasi, recinto, comignolo...).
@@ -1934,11 +1735,18 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
   if (!altPorta) altPorta = 0.45;
   g.add(mesh(geo.palla(0.04), mat('#f2c94c'), 0.15, altPorta, fronte + 0.04));
 
-  // insegna del mestiere sopra la porta
+  // insegna del mestiere sopra la porta, con la scritta; davanti il bancone e gli attrezzi del mestiere
   if (mestiere) {
-    const ins = insegnaMestiere(mestiere);
-    ins.position.set(0, altPorta + 0.75, fronte + 0.06);
+    const ins = creaInsegnaMestiere(mestiere);
+    // sopra la porta; dove il tetto sporge (riccio, lepre) appoggiata sul tetto, sullo scoiattolo appesa sotto la piattaforma
+    const dove: Partial<Record<Specie, [number, number, number, number]>> = {
+      riccio: [0, 1.32, 1.34, -0.35], lepre: [0, 1.85, 1.1, -0.6], scoiattolo: [1.15, 1.22, 1.08, 0], tasso: [0, altPorta + 0.8, fronte + 0.12, -0.15],
+    };
+    const [xi, yi, zi, ri] = dove[specie] ?? [0, altPorta + 0.68, fronte + 0.1, 0];
+    ins.position.set(xi, yi, zi);
+    ins.rotation.x = ri;
     g.add(ins);
+    g.add(creaAttrezziMestiere(mestiere, fronte));
   }
 
   // la decorazione dell'emozione, davanti a casa

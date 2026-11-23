@@ -20,15 +20,7 @@
   "quotaAltreVirtu": 0.3,
   "umore": { "iniziale": 70, "perVoce": 15, "caloGiorno": 4, "minimo": 10, "giorniPerAddormentarsi": 5 },
   "edificio": { "giorniLento": 10, "giorniFermo": 21 },
-  "mestieri": {
-    "coraggio": ["fabbro", "taglialegna", "guardia"],
-    "umanita": ["cuoco", "guaritore", "locandiere"],
-    "saggezza": ["artigiano", "esploratore", "bibliotecario"],
-    "giustizia": ["costruttore", "capovillaggio", "mercante"],
-    "temperanza": ["giardiniere", "custode delle scorte"],
-    "trascendenza": ["musicista", "pittore", "cantastorie"]
-  },
-  "mestieriAttivi": ["cuoco", "musicista", "artigiano"],
+  "_mestieri": "I mestieri (37) sono in src/lib/mestieri.ts: insegna, attrezzi, divisa, attività.",
   "ghiande": { "perPagina": 3, "perPuntoForza": 0.5, "massimoPerPagina": 10 },
   "castagno": { "perGiorno": 1, "massimo": 8, "giorniSenzaDiario": 5 },
   "richieste": { "probabilitaAlGiorno": 0.35, "durataGiorni": 7, "premio": 5 },
