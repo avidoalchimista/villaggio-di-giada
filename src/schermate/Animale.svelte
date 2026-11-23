@@ -7,6 +7,7 @@
   import { accorda, conArticolo, NOME_MANTO, REGOLE } from '../lib/gioco';
   import { VIRTU } from '../lib/tipi';
   import { indossati } from '../lib/vestiti';
+  import { carattereDi, descrizioneCarattere, nomeCarattere } from '../lib/carattere';
 
   let a = $derived(app.stato!.animali.find((x) => x.id === app.animaleAperto)!);
   let nome = $state('');
@@ -40,6 +41,16 @@
         </div>
       {/if}
     </div>
+
+    {#if a.nome && a.fase !== 'uovo'}
+      {@const c = carattereDi(a)}
+      <div class="vignetta carattere">
+        <span class="didascalia">Il suo carattere</span>
+        <h2>{c.emoji} {nomeCarattere(a)}</h2>
+        <p>{descrizioneCarattere(a, a.nome)}</p>
+        <p class="tenue"><strong>Ama:</strong> {c.ama}.<br /><strong>Non sopporta:</strong> {c.nonSopporta}.<br /><strong>Dice sempre:</strong> «{c.intercalare}»</p>
+      </div>
+    {/if}
 
     {#if a.addormentato}
       <div class="nuvola">{accorda(frasi.animali.addormentato[0], a)}</div>
@@ -82,6 +93,8 @@
 <style>
   .sesso { font-size: 1.2rem; color: var(--testo-tenue); }
   .segno { margin: 6px 0 2px; }
+  .carattere h2 { margin: 4px 0 6px; }
+  .carattere p { margin: 6px 0; }
   .barra-riga { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 8px; margin: 6px 0; font-size: 0.95rem; }
   .barra { height: 12px; border: 2px solid var(--inchiostro); border-radius: 3px; background: #fffaf0; overflow: hidden; }
   .barra div { height: 100%; }
