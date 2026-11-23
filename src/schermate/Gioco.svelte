@@ -1,7 +1,9 @@
 <script lang="ts">
   // Schermata principale: la radura in 3D. Si tocca un animale, il corvo, il quaderno, le uova, le castagne.
   import { onDestroy, onMount } from 'svelte';
+  import Casa from '../componenti/Casa.svelte';
   import Dialogo from '../componenti/Dialogo.svelte';
+  import { fraseCarattere } from '../lib/carattere';
   import MenuCostruisci from '../componenti/MenuCostruisci.svelte';
   import frasi from '../dati/frasi.json';
   import {
@@ -27,6 +29,18 @@
   let nome = $state('');
   let erroreGrafica = $state(false);
   let menu = $state(false);
+  // sbirciare dentro una casa (o nella tana dei piccoli sotto il grande albero)
+  let casa = $state<{ proprietario: Animale | null; abitanti: Animale[] } | null>(null);
+  function entra(proprietario: Animale | null) {
+    const abitanti = proprietario ? [proprietario] : s.animali.filter((a) => a.fase !== 'uovo' && !a.mestiere);
+    dialogo = null;
+    casa = { proprietario, abitanti: JSON.parse(JSON.stringify(abitanti)) };
+    scena?.sospendi(true);
+  }
+  function esci() {
+    casa = null;
+    scena?.sospendi(false);
+  }
   let tempo = $state<Meteo>('sole');
   let puoCostruire = $derived(REGOLE.costruzioni.some((c) => statoCostruzione(s, c) === 'pronta'));
   const simbolo = (a: Animale) => (a.sesso === 'f' ? '♀' : '♂');
@@ -263,9 +277,9 @@
     if (b.tipo === 'bottega') {
       const a = s.animali.find((x) => x.id === b.id);
       if (!a) return;
-      dialogo = { righe: [{ chi: chiDice(a), voce: 'animale', testo: `Questa è la mia bottega! Qui faccio ${a.sesso === 'f' ? 'la' : 'il'} ${a.mestiere}. L'ho costruita grazie alle tue giornate.` }] };
-      return;
+      return entra(a);
     }
+    if (b.tipo === 'nido') return entra(null);
     if (b.tipo === 'edificio') {
       const def = REGOLE.edifici.find((e) => e.tipo === b.tipo_edificio);
       const e = s.edifici.find((x) => x.tipo === b.tipo_edificio);
@@ -300,6 +314,7 @@
       } else if (!ev.length) {
         let testo: string;
         if (a.ricordi.length && n % 2 === 0) testo = scegli(frasi.animali.ricordo, n).replace('{ricordo}', scegli(a.ricordi, n).frase);
+        else if (a.umore >= 45 && n % 3 !== 0 && scena) testo = fraseCarattere(a, scena.momento(), n); // parla a modo suo
         else testo = scegli(a.umore < 45 ? frasi.animali.richiesta : frasi.animali.saluto, n);
         righe.push({ chi: chiDice(a), voce: 'animale', testo });
       }
@@ -330,6 +345,9 @@
 
 <div class="gioco">
   <canvas bind:this={canvas} class="mondo"></canvas>
+  {#if casa}
+    <Casa abitanti={casa.abitanti} proprietario={casa.proprietario} momento={() => scena?.momento() ?? 'lavoro'} onchiudi={esci} />
+  {/if}
   {#if erroreGrafica}
     <div class="errore">Questo telefono non riesce a disegnare il bosco in 3D.</div>
   {/if}
@@ -399,6 +417,7 @@
             {#if a.fase !== 'cucciolo' && !a.studio && !a.addormentato}
               <button class="tondo" onclick={() => { dialogo = null; insegnaA = a; }}>{a.sesso === 'f' ? 'Insegnale' : 'Insegnagli'} qualcosa</button>
             {/if}
+            {#if a.mestiere}<button class="tondo grigio" onclick={() => entra(a)}>🏠 Casa</button>{/if}
             <button class="tondo grigio" onclick={() => { dialogo = null; vai('animale', a.id); }}>Scheda</button>
             <button class="tondo grigio" onclick={() => (dialogo = null)}>Ciao!</button>
           {:else if dialogo?.tipo === 'backup'}

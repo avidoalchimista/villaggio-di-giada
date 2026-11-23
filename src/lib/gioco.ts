@@ -6,6 +6,7 @@ import regoleJson from '../dati/regole.json';
 import storiaJson from '../dati/storia.json';
 import { rng } from './caso';
 import { aggiornaGuardaroba } from './vestiti';
+import { scegliCarattere } from './carattere';
 import { aggiungiGiorni, giorniTra } from './date';
 import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './etichette';
 import {
@@ -92,7 +93,8 @@ export function accorda(testo: string, a: Pick<Animale, 'sesso'>): string {
 /** "la volpe" / "il daino" / "lo scoiattolo" */
 export function conArticolo(a: Pick<Animale, 'specie' | 'sesso'>): string {
   const n = nomeSpecie(a);
-  if (a.sesso === 'f') return 'la ' + n;
+  // volpe e lepre sono femminili anche per i maschi: "la volpe", non "il volpe"
+  if (a.sesso === 'f' || n === NOME_SPECIE[a.specie].f) return 'la ' + n;
   return /^(s[bcdfgklmnpqrtv]|z|gn|ps|x|y)/.test(n) ? 'lo ' + n : 'il ' + n;
 }
 
@@ -179,6 +181,7 @@ function nuovoUovo(s: StatoGioco, specie: Specie, data: string, voci: number): A
     abilita: [],
     studio: null,
   };
+  a.carattere = scegliCarattere(s, a);
   s.animali.push(a);
   return a;
 }
@@ -656,6 +659,8 @@ export function normalizzaStato(s: StatoGioco): StatoGioco {
     for (const a of s.animali) if (!a.aspetto) a.aspetto = nuovoAspetto(s, a.specie, a.sesso, a);
   }
   s.sorprese ??= [];
+  // il carattere è arrivato dopo: chi non ce l'ha ne riceve uno, diverso da quello degli altri
+  for (const a of s.animali) if (!a.carattere) a.carattere = scegliCarattere(s, a);
   s.versioneSchema = SCHEMA;
   return s;
 }

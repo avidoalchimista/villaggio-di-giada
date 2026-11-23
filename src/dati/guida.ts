@@ -40,6 +40,11 @@ export const GUIDA: PaginaGuida[] = [
     testo: 'Un animale con il punto esclamativo ha una richiesta per te. Esaudiscila e ti regala castagne. Ai più grandi puoi anche insegnare qualcosa.',
   },
   {
+    icona: '🏠',
+    titolo: 'Sbirciare in casa',
+    testo: "Tocca una casa per guardare dentro: vedrai cosa fa chi ci abita, a ogni ora del giorno. I piccoli vivono nella tana sotto il grande albero: tocca l'albero. Ognuno ha il suo carattere!",
+  },
+  {
     icona: '🌙',
     titolo: 'Il tempo passa',
     testo: 'Gli animali vivono anche quando non ci sei. Torna quando vuoi: ti racconto cosa è successo. Nella Storia trovi i capitoli nuovi.',

@@ -72,6 +72,7 @@ export interface Animale {
   aspetto: Aspetto; // com'è fatto: unico nel villaggio
   studio: { id: string; inizio: string; fine: string } | null; // cosa sta imparando ora
   vestiti?: string[]; // capi che si è fatto da solo crescendo (vedi vestiti.ts)
+  carattere?: string; // sognatore, allegro, ordinato... (vedi carattere.ts): diverso per ognuno
 }
 
 export interface Aspetto {

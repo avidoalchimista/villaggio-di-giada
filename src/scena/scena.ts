@@ -21,6 +21,7 @@ export type Bersaglio =
   | { tipo: 'uovo'; id: string }
   | { tipo: 'edificio'; tipo_edificio: string }
   | { tipo: 'bottega'; id: string }
+  | { tipo: 'nido' }
   | { tipo: 'castagne' };
 
 const POSTO_CASTAGNO: [number, number] = [-7.5, -3.5];
@@ -140,6 +141,7 @@ export class Scena {
   private prato!: THREE.Mesh;
   private matTerreno!: THREE.MeshLambertMaterial;
   private strutture = new Map<string, THREE.Object3D>();
+  private grande: THREE.Object3D | null = null;
   private giaAggiornata = false;
   private fiamma: THREE.Mesh | null = null;
   private castagne = new THREE.Group();
@@ -226,6 +228,21 @@ export class Scena {
     this.nido.scale.setScalar(1.3);
     this.nido.position.set(-2.8, 0, 1.6);
     this.scene.add(this.nido);
+    // sotto il grande albero c'è la tana dei piccoli: toccando l'albero o il nido si sbircia dentro
+    this.grande = grande;
+    grande.userData.bersaglio = { tipo: 'nido' };
+    this.nido.userData.bersaglio = { tipo: 'nido' };
+    const porticina = new THREE.Group();
+    porticina.add(new THREE.Mesh(new THREE.CircleGeometry(0.15, 18), mat('#4a3020', { rim: 0 })));
+    const tondo = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.025, 6, 18), mat('#a8703e'));
+    porticina.add(tondo);
+    const pomello = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), mat('#f2c94c'));
+    pomello.position.set(0.08, 0, 0.02);
+    porticina.add(pomello);
+    porticina.scale.y = 1.25;
+    porticina.position.set(Math.sin(0.6) * 0.235, 0.17, Math.cos(0.6) * 0.235);
+    porticina.rotation.y = 0.6;
+    grande.add(porticina);
 
     this.corvo.gruppo.position.set(-1.7, 0, 3.5);
     this.corvo.gruppo.rotation.y = 0.4;
@@ -768,7 +785,7 @@ export class Scena {
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
     const candidati: THREE.Object3D[] = [
-      this.corvo.gruppo, this.quaderno, this.castagne, ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
+      this.corvo.gruppo, this.quaderno, this.castagne, this.nido, ...(this.grande ? [this.grande] : []), ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
       ...[...this.abitanti.values()].map((a) => a.m.gruppo),
     ];
     const hit = ray.intersectObjects(candidati, true)[0];
@@ -1638,6 +1655,15 @@ export class Scena {
       g.add(seg);
     }
     u.add(g);
+  }
+
+  /** Ferma (o fa ripartire) il disegno del bosco, ad esempio mentre si guarda dentro una casa. */
+  sospendi(si: boolean) {
+    cancelAnimationFrame(this.raf);
+    if (!si) {
+      this.orologio.getDelta();
+      this.ciclo();
+    }
   }
 
   distruggi() {
