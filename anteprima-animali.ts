@@ -1,10 +1,12 @@
 // Pagina di prova (non nel gioco): griglia di animali per confrontare i modelli.
 import * as THREE from 'three';
-import { creaAnimale, posa } from './src/scena/modelli';
+import { creaAnimale, creaCasaAnimale, posa } from './src/scena/modelli';
 import { CURVA } from './src/scena/ps1';
 import { TRATTI } from './src/lib/gioco';
 import { SPECIE, VIRTU } from './src/lib/tipi';
-import { CAPI } from './src/lib/vestiti';
+import { aggiornaGuardaroba } from './src/lib/vestiti';
+import { MESTIERI } from './src/lib/mestieri';
+import { EMOZIONI } from './src/lib/tipi';
 CURVA.valore = 0;
 const q = new URLSearchParams(location.search);
 const modo = q.get('modo') ?? 'specie'; // specie | tratti | tasso
@@ -14,7 +16,7 @@ r.setSize(W, H); r.outputColorSpace = THREE.SRGBColorSpace; r.setClearColor('#cf
 const sc = new THREE.Scene();
 sc.add(new THREE.HemisphereLight('#bfe0ff', '#c9a27a', 1.3));
 const sole = new THREE.DirectionalLight('#fff1d6', 2); sole.position.set(3, 5, 4); sc.add(sole);
-type Cella = { vestiti?: string[]; specie: any; fase: string; sesso: 'f' | 'm'; manto: number; tratto: string; forma?: number; occhi?: number; orecchie?: number; lato?: number };
+type Cella = { etichetta?: string; mestiere?: string; divisa?: boolean; id?: string; vestiti?: string[]; specie: any; fase: string; sesso: 'f' | 'm'; manto: number; tratto: string; forma?: number; occhi?: number; orecchie?: number; lato?: number };
 const celle: Cella[] = [];
 const tr = (i: number) => TRATTI[i % TRATTI.length];
 if (modo === 'specie') {
@@ -27,34 +29,67 @@ if (modo === 'specie') {
   for (let m = 0; m < 4; m++) celle.push({ specie: sp, fase: 'cucciolo', sesso: m % 2 ? 'm' : 'f', manto: m, tratto: '-' });
   for (let m = 0; m < 4; m++) celle.push({ specie: sp, fase: 'adulto', sesso: m % 2 ? 'f' : 'm', manto: m, tratto: '-' });
 } else if (modo === 'vestiti') {
-  // ogni carattere con i suoi 4 capi (sopra) e solo i primi 2 (sotto)
-  VIRTU.forEach((v, i) => celle.push({ specie: SPECIE[i], fase: 'adulto', sesso: i % 2 ? 'm' : 'f', manto: 0, tratto: '-', vestiti: CAPI.filter((k) => k.virtu === v).map((k) => k.id) }));
-  VIRTU.forEach((v, i) => celle.push({ specie: SPECIE[(i + 3) % 6], fase: 'giovane', sesso: i % 2 ? 'f' : 'm', manto: 1, tratto: '-', vestiti: CAPI.filter((k) => k.virtu === v).slice(0, 2).map((k) => k.id) }));
+  // vestiti fatti da soli: animali diversi, ognuno coi suoi gusti (stesso carattere, combinazioni diverse)
+  const n = +(q.get('n') ?? 18);
+  for (let i = 0; i < n; i++) {
+    const a: any = { id: 'v' + i + (q.get('seme') ?? ''), fase: 'adulto', xp: 300, nutrimento: { coraggio: (i * 7) % 6, umanita: (i * 5) % 7, saggezza: (i * 3) % 5, giustizia: i % 4, temperanza: (i * 11) % 6, trascendenza: (i * 13) % 7 } };
+    aggiornaGuardaroba(a);
+    celle.push({ specie: SPECIE[i % 3], fase: 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: '-', vestiti: a.vestiti, id: a.id });
+  }
+} else if (modo === 'mestieri') {
+  // ogni mestiere con la sua divisa e l'attrezzo in mano
+  const da = +(q.get('da') ?? 0), quanti = +(q.get('n') ?? 12);
+  MESTIERI.slice(da, da + quanti).forEach((m, i) => celle.push({ specie: SPECIE[i % 3], fase: 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: '-', mestiere: m.id, divisa: true, etichetta: i % 2 ? m.m : m.f }));
 } else if (modo === 'scelti') {
   for (const v of (q.get('t') ?? '').split(',')) { const i = +v; celle.push({ specie: SPECIE[i % 6], fase: i % 3 ? 'cucciolo' : 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: tr(i), lato: 1 }); }
 } else if (modo === 'tratti') {
   const da = +(q.get('da') ?? 0);
   for (let i = da; i < Math.min(TRATTI.length, da + 16); i++) celle.push({ specie: SPECIE[i % 6], fase: i % 3 ? 'cucciolo' : 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: tr(i), lato: 1 });
 }
-const cols = modo === 'vestiti' ? 6 : modo === 'specie' ? 6 : modo === 'tratti' ? 8 : 4;
+const cols = modo === 'mestieri' ? 6 : modo === 'vestiti' ? 6 : modo === 'specie' ? 6 : modo === 'tratti' ? 8 : 4;
 
 const rows = Math.ceil(celle.length / cols);
+const etichette: { testo: string; x: number; y: number }[] = [];
 const passo = 2.0;
 celle.forEach((c, i) => {
   const col = modo === 'specie' ? Math.floor(i / 2) : i % cols;
   const row = modo === 'specie' ? i % 2 : Math.floor(i / cols);
-  const a: any = { vestiti: c.vestiti ?? [], xp: 0, id: 'a' + i, nome: '', specie: c.specie, sesso: c.sesso, fase: c.fase, mestiere: null,
+  const a: any = { vestiti: c.vestiti ?? [], xp: 0, id: c.id ?? 'a' + i, nome: '', specie: c.specie, sesso: c.sesso, fase: c.fase, mestiere: c.mestiere ?? null,
     aspetto: { manto: c.manto, tratto: c.tratto, forma: c.forma ?? 0, occhi: c.occhi ?? 0.5, orecchie: c.orecchie ?? 0.5, taglia: 1, lato: c.lato ?? 1 } };
-  const m = creaAnimale(a);
+  const m = creaAnimale(a, !!c.divisa);
+  if (m.accessorio) m.accessorio.visible = true;
+  if (c.divisa) { m.zampe[0].rotation.x = -1.0; }
   const e = c.fase === 'cucciolo' ? 0 : c.fase === 'giovane' ? 0.6 : 1;
   posa(m, e);
   m.gruppo.scale.setScalar(c.fase === 'cucciolo' ? 1.2 : 1.45);
   m.gruppo.position.set((col - (cols - 1) / 2) * passo, 0, -row * passo * 1.0 + 0);
-  m.gruppo.position.y = -row * (modo === 'specie' || modo === 'vestiti' ? 3.1 : 2.6);
+  m.gruppo.position.y = -row * (modo === 'specie' || modo === 'vestiti' || modo === 'mestieri' ? 3.1 : 2.6);
+  if (c.etichetta) etichette.push({ testo: c.etichetta, x: m.gruppo.position.x, y: m.gruppo.position.y - 0.25 });
   m.gruppo.position.z = 0;
   m.gruppo.rotation.y = +(q.get('rot') ?? 0.35);
   sc.add(m.gruppo);
 });
+if (modo === 'case') {
+  // le case dei mestieri, viste da davanti e un po' dall'alto
+  const da = +(q.get('da') ?? 0), quanti = +(q.get('n') ?? 6), colonne = +(q.get('c') ?? 3);
+  const specie = ['volpe', 'daino', 'tasso', 'riccio', 'scoiattolo', 'lepre'];
+  MESTIERI.slice(da, da + quanti).forEach((m, i) => {
+    const casa = creaCasaAnimale(specie[(i + da) % 6] as any, EMOZIONI[(i + da) % 8], 'adulto', m.id);
+    const col = i % colonne, row = Math.floor(i / colonne);
+    casa.position.set((col - (colonne - 1) / 2) * 6.6, 0, row * 6.2);
+    sc.add(casa);
+  });
+  const terra = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshLambertMaterial({ color: '#8cc06a' }));
+  terra.rotation.x = -Math.PI / 2;
+  sc.add(terra);
+  const righe = Math.ceil(quanti / colonne);
+  const cam = new THREE.PerspectiveCamera(34, W / H, 0.1, 200);
+  cam.position.set(0, 7 + righe * 2.2, (righe - 1) * 6.2 + 11);
+  cam.lookAt(0, 0.6, (righe - 1) * 3.1);
+  r.render(sc, cam);
+  (window as any).pronto = true;
+  throw new Error('fatto');
+}
 const box = new THREE.Box3().setFromObject(sc);
 const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 const cx = (box.min.x + box.max.x) / 2, cy = (box.min.y + box.max.y) / 2;
@@ -63,4 +98,11 @@ if (hw / hh > W / H) hh = hw * H / W; else hw = hh * W / H;
 cam.left = -hw; cam.right = hw; cam.top = hh; cam.bottom = -hh;
 cam.position.set(cx, cy, 10); cam.lookAt(cx, cy, 0); cam.updateProjectionMatrix();
 r.render(sc, cam);
+for (const e of etichette) {
+  const v = new THREE.Vector3(e.x, e.y, 0).project(cam);
+  const d = document.createElement('div');
+  d.textContent = e.testo;
+  d.style.cssText = `position:absolute;left:${(v.x + 1) / 2 * W}px;top:${(1 - v.y) / 2 * H}px;transform:translate(-50%,0);font:700 22px sans-serif;color:#3b2616;background:#fff8e7;padding:2px 10px;border-radius:10px`;
+  document.body.appendChild(d);
+}
 (window as any).pronto = true;

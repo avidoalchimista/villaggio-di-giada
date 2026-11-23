@@ -7,6 +7,7 @@ import storiaJson from '../dati/storia.json';
 import { arredoDi, arredoVuoto } from './arredo';
 import { rng } from './caso';
 import { aggiornaGuardaroba } from './vestiti';
+import { defMestiere, nomeMestiere, scegliTra, virtuMestiere } from './mestieri';
 import { scegliCarattere } from './carattere';
 import { aggiungiGiorni, giorniTra } from './date';
 import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './etichette';
@@ -55,8 +56,6 @@ interface Regole {
   quotaAltreVirtu: number;
   umore: { iniziale: number; perVoce: number; caloGiorno: number; minimo: number; giorniPerAddormentarsi: number };
   edificio: { giorniLento: number; giorniFermo: number };
-  mestieri: Record<Virtu, string[]>;
-  mestieriAttivi: string[];
   edifici: DefEdificio[];
   ghiande: { perPagina: number; perPuntoForza: number; massimoPerPagina: number };
   costruzioni: DefCostruzione[];
@@ -342,15 +341,19 @@ function cresci(s: StatoGioco, a: Animale, data: string, out: Evento[]) {
   }
 }
 
-/** Il mestiere segue il nutrimento ricevuto: la virtù più nutrita con un mestiere disponibile. */
+/**
+ * Il mestiere segue il nutrimento ricevuto: la virtù più nutrita sceglie la famiglia di mestieri
+ * (vedi mestieri.ts), e dentro ognuno fa il suo, diverso da quello degli altri.
+ */
 export function scegliMestiere(s: StatoGioco, a: Animale, data: string, out: Evento[]) {
   const ordine = [...VIRTU].sort((x, y) => a.nutrimento[y] - a.nutrimento[x]);
-  const giaPresi = new Set(s.animali.map((b) => b.mestiere).filter(Boolean));
+  const giaPresi = new Set(s.animali.map((b) => b.mestiere).filter((m): m is string => !!m));
   for (const v of ordine) {
-    const possibili = REGOLE.mestieri[v].filter((m) => REGOLE.mestieriAttivi.includes(m));
-    if (!possibili.length) continue;
-    a.mestiere = possibili.find((m) => !giaPresi.has(m)) ?? possibili[0];
-    evento(s, data, 'mestiere', `${cap(nomeAnimale(a))} ha scelto un mestiere: ${a.mestiere}.`, out, a.id);
+    const m = scegliTra(a, v, giaPresi);
+    if (!m) continue;
+    a.mestiere = m;
+    const d = defMestiere(m)!;
+    evento(s, data, 'mestiere', `${cap(nomeAnimale(a))} ha scelto un mestiere: fa ${a.sesso === 'f' ? "la" : "il"} ${nomeMestiere(a)} e ${d.cosa}.`, out, a.id);
     return;
   }
 }
@@ -363,7 +366,8 @@ export function aggiornaEdifici(s: StatoGioco, data: string, out: Evento[]) {
     if (def.dopoNatale) continue;
     const esiste = s.edifici.find((e) => e.tipo === def.tipo);
     if (!esiste) {
-      const gestore = s.animali.find((a) => a.mestiere === def.gestore);
+      // lo apre chi fa quel mestiere, o un mestiere della stessa famiglia (umanità per il chiosco...)
+      const gestore = s.animali.find((a) => a.mestiere === def.gestore) ?? s.animali.find((a) => virtuMestiere(a.mestiere) === def.virtu);
       if (!gestore) continue;
       const utenti = svegli.filter((a) => a.id !== gestore.id).length;
       if (utenti >= def.utentiMinimi) {

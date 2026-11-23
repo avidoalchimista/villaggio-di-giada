@@ -7,6 +7,7 @@
   import { accorda, conArticolo, NOME_MANTO, REGOLE } from '../lib/gioco';
   import { VIRTU } from '../lib/tipi';
   import { indossati } from '../lib/vestiti';
+  import { defMestiere, nomeMestiere } from '../lib/mestieri';
   import { carattereDi, descrizioneCarattere, nomeCarattere } from '../lib/carattere';
 
   let a = $derived(app.stato!.animali.find((x) => x.id === app.animaleAperto)!);
@@ -29,7 +30,8 @@
       {#if a.fase === 'uovo'}<Ritratto animale={a} taglia={170} />{:else}<Ritratto3D animale={a} />{/if}
       {#if a.nome}
         <h1 style="margin-top:8px">{a.nome} <span class="sesso">{a.sesso === 'f' ? '♀' : '♂'}</span></h1>
-        <p class="tenue">{conArticolo(a)} {NOME_MANTO[a.specie][a.aspetto?.manto ?? 0]} · {a.mestiere ?? NOME_FASE[a.fase]}</p>
+        <p class="tenue">{conArticolo(a)} {NOME_MANTO[a.specie][a.aspetto?.manto ?? 0]} · {a.mestiere ? nomeMestiere(a) : NOME_FASE[a.fase]}</p>
+        {#if defMestiere(a.mestiere)}<p class="tenue">Il suo lavoro: {defMestiere(a.mestiere)!.cosa}. La sua bottega si chiama «{defMestiere(a.mestiere)!.insegna.toLowerCase()}».</p>{/if}
         {#if a.aspetto}<p class="segno">Segno particolare: <strong>{a.aspetto.tratto}</strong></p>{/if}
         {#if a.vestiti?.length}<p class="tenue">Si è fatt{a.sesso === 'f' ? 'a' : 'o'} da sol{a.sesso === 'f' ? 'a' : 'o'}: {indossati(a).map((k) => k.nome).join(', ')}</p>{/if}
         {#if a.abilita?.length}<p class="tenue">Sa: {a.abilita.map((x) => REGOLE.abilita.find((d) => d.id === x)?.nome.toLowerCase()).join(', ')}</p>{/if}

@@ -32,4 +32,28 @@ describe('vestiti che si fanno da soli', () => {
     expect(a.vestiti).toHaveLength(3);
     expect(a.vestiti!.every((id) => capo(id))).toBe(true);
   });
+
+  it('i guardaroba del tipo vecchio si rifanno da soli, senza annunci', () => {
+    const a = animale(130, 'adulto', ['sciarpa-rosa', 'coroncina-fiori']);
+    expect(aggiornaGuardaroba(a)).toEqual([]);
+    expect(a.vestiti!.every((id) => capo(id))).toBe(true);
+  });
+
+  it('animali diversi si vestono in modo diverso, anche con lo stesso carattere', () => {
+    const vestiti = new Set<string>();
+    const forme = new Set<string>();
+    for (let i = 0; i < 12; i++) {
+      const a = { ...animale(SOGLIE_CAPI[3], 'adulto'), id: 'b' + i } as Animale;
+      aggiornaGuardaroba(a);
+      vestiti.add(indossati(a).map((k) => k.id).sort().join('|'));
+      for (const k of indossati(a)) forme.add(k.forma);
+    }
+    expect(vestiti.size).toBe(12);
+    expect(forme.size).toBeGreaterThanOrEqual(12);
+  });
+
+  it('i nomi si leggono bene', () => {
+    expect(capo('sciarpa:giallo:righe:panna')!.nome).toBe('una sciarpa gialla a righe');
+    expect(capo('berretto:rosso:pois:bianco')!.nome).toBe('un berretto di lana col pompon rosso a pois');
+  });
 });
