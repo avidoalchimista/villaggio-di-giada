@@ -903,10 +903,11 @@ export class Scena {
     return 'lavoro';
   }
 
-  /** Dove dorme: davanti alla sua bottega se ce l'ha, altrimenti con i piccoli vicino al nido. */
+  /** Dove dorme: davanti alla sua casa se ce l'ha, altrimenti con i piccoli vicino al nido. */
   private casa(ab: Abitante): THREE.Vector3 {
     const b = this.botteghe.get(ab.dati.id);
-    if (b) return b.position.clone().add(b.position.clone().setY(0).normalize().multiplyScalar(-1.1)).setY(0);
+    // davanti alla porta (le case sono grandi e Giada può averle girate)
+    if (b) return new THREE.Vector3(Math.sin(b.rotation.y), 0, Math.cos(b.rotation.y)).multiplyScalar(2.1).add(b.position).setY(0);
     const ang = (hash(ab.dati.id) % 360) * (Math.PI / 180);
     return new THREE.Vector3(this.nido.position.x + Math.cos(ang) * 1.1, 0, this.nido.position.z + Math.sin(ang) * 1.1);
   }
