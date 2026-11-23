@@ -37,6 +37,16 @@ describe('carattere degli animali', () => {
     expect(cosaFaInCasa(a, 'lavoro').posto).toBe('lavoro');
   });
 
+  it('in casa la giornata scorre: durante il giorno non si fa sempre la stessa cosa', () => {
+    const s = villaggio(120);
+    for (const a of s.animali.filter((x) => x.fase !== 'uovo')) {
+      a.addormentato = false;
+      const cose = new Set([0, 1, 2, 3, 4].map((t) => cosaFaInCasa(a, 'lavoro', t).testo));
+      expect(cose.size).toBeGreaterThan(1);
+      for (let t = 0; t < 8; t++) expect(cosaFaInCasa(a, 'pranzo', t).testo).toBeTruthy();
+    }
+  });
+
   it('le frasi sono accordate al sesso e non restano segnaposto', () => {
     for (const c of CARATTERI) {
       for (const sesso of ['f', 'm'] as const) {

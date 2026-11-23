@@ -354,10 +354,16 @@ export function cosaFaInCasa(a: Animale, momento: Momento, turno = 0): AttivitaC
   const piccolo = a.fase === 'cucciolo' || a.fase === 'giovane';
   let att: AttivitaCasa;
   if (a.addormentato || momento === 'notte') att = { gesto: 'dorme', posto: 'letto', testo: 'dorme nel suo lettino', fumetto: 'z' };
-  else if (momento === 'pranzo') att = c.pranzo;
-  else if (momento === 'lavoro') {
-    if (a.mestiere) att = { gesto: 'lavora', posto: 'lavoro', testo: `lavora al suo banco da ${nomeMestiere(a)}` };
-    else att = c.gioco;
+  else if (momento === 'pranzo') {
+    // si mangia, e ogni tanto ci si alza a fare due passi
+    const l = [c.pranzo, c.pranzo, c.sera[hash(a.id) % c.sera.length]];
+    att = l[turno % l.length];
+  } else if (momento === 'lavoro') {
+    // la giornata scorre: lavoro (o gioco), una pausa, poi di nuovo
+    const lavoro: AttivitaCasa = a.mestiere ? { gesto: 'lavora', posto: 'lavoro', testo: `lavora al suo banco da ${nomeMestiere(a)}` } : c.gioco;
+    const pausa = c.mattina[(hash(a.id) + Math.floor(turno / 3)) % c.mattina.length];
+    const l = a.mestiere ? [lavoro, lavoro, pausa, lavoro, c.gioco] : [lavoro, pausa, lavoro, c.sera[hash(a.id) % c.sera.length]];
+    att = l[turno % l.length];
   } else {
     const l = momento === 'mattina' ? c.mattina : c.sera;
     att = l[(hash(a.id) + turno) % l.length];
