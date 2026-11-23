@@ -608,16 +608,20 @@ export class Scena {
       // colori della sua emozione, e crescendo la abbellisce
       if (a.mestiere) {
         const emo = a.emozione ?? emozioneDellaPagina(null, a);
-        const firma = `${a.specie}|${emo}|${a.fase}|${a.mestiere}`;
+        const livello = a.livelloCasa ?? 1;
+        const firma = `${a.specie}|${emo}|${a.fase}|${a.mestiere}|${livello}`;
         const vecchia = this.botteghe.get(a.id);
         if (!vecchia || vecchia.userData.firma !== firma) {
-          const b = creaCasaAnimale(a.specie, emo, a.fase, a.mestiere);
+          const b = creaCasaAnimale(a.specie, emo, a.fase, a.mestiere, livello);
+          b.userData.livello = livello;
           b.userData.bersaglio = { tipo: 'bottega', id: a.id };
           b.userData.firma = firma;
           if (vecchia) {
             b.position.copy(vecchia.position);
             b.rotation.copy(vecchia.rotation);
             this.scene.remove(vecchia);
+            // casa migliorata da Giada: festa di coriandoli
+            if (livello > ((vecchia.userData.livello as number) ?? 1)) this.coriandoli(b.position.clone().setY(2), ['#ffd166', '#ff8fb1', '#7ccf6a', '#ffffff']);
           } else if (this.giaAggiornata) this.coriandoli(new THREE.Vector3(0, 1, 0), ['#f2c94c', '#ffffff']);
           this.botteghe.set(a.id, b);
           this.scene.add(b);
@@ -1447,6 +1451,18 @@ export class Scena {
       (this.fiamma.material as THREE.MeshToonMaterial).emissiveIntensity = 1.4 + Math.sin(t * 17) * 0.3;
     }
     if (this.pale) this.pale.rotation.z += dt * (this.meteo === 'vento' || this.meteo === 'temporale' ? 2.2 : 0.6);
+    // le case migliorate: il fumo del camino sale piano, la bandiera sventola
+    for (const b of this.botteghe.values()) {
+      if ((b.userData.livello ?? 1) < 3) continue;
+      const fumo = b.getObjectByName('fumo');
+      fumo?.children.forEach((p, i) => {
+        const k = (t * 0.35 + i / 3) % 1;
+        p.position.set(Math.sin(t + i) * 0.08, k * 0.9, 0);
+        p.scale.setScalar(0.6 + k * 0.9);
+      });
+      const bandiera = b.getObjectByName('bandiera');
+      if (bandiera) bandiera.rotation.y = Math.sin(t * 3 + b.position.x) * 0.25;
+    }
 
     // meteo: pioggia/neve, lampi, alberi che ondeggiano col vento
     this.aggiornaPrecipitazioni(dt, t);

@@ -9,6 +9,7 @@ import { rng } from './caso';
 import { aggiornaGuardaroba } from './vestiti';
 import { defMestiere, nomeMestiere, scegliTra, virtuMestiere } from './mestieri';
 import { scegliCarattere } from './carattere';
+import { incassiDelGiorno } from './migliorie';
 import { aggiungiGiorni, giorniTra } from './date';
 import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './etichette';
 import {
@@ -455,6 +456,7 @@ export function simula(s: StatoGioco, fino: string): Evento[] {
     aggiornaEdifici(s, giorno, out);
     sbloccaStoria(s, giorno, out);
     vitaDelGiorno(s, giorno, out);
+    incassiDelGiorno(s, giorno);
   }
   s.ultimoAccesso = fino;
   return out;

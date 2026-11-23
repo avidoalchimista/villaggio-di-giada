@@ -3,6 +3,8 @@
   import { onDestroy, onMount } from 'svelte';
   import { carattereDi, descrizioneCarattere, fraseCarattere, nomeCarattere, type Momento } from '../lib/carattere';
   import { nomeAnimale } from '../lib/gioco';
+  import { app, miglioraCasa, ritiraIncasso } from '../lib/app.svelte';
+  import { defLivello, LIVELLO_MASSIMO, livelloCasa, motivoMiglioria, prossimoLivello } from '../lib/migliorie';
   import type { Animale } from '../lib/tipi';
   import { Interno, type StatoOspite } from '../scena/interno';
 
@@ -20,6 +22,14 @@
   let scheda = $state<Animale | null>(null);
   let errore = $state(false);
   let k = Math.floor(Math.random() * 100);
+  // migliorare la casa con le castagne
+  let migliorie = $state(false);
+  let livello = $state(1);
+  let incasso = $state(0);
+  let festa = $state('');
+  const vero = $derived(proprietario ? app.stato?.animali.find((x) => x.id === proprietario!.id) ?? null : null);
+  const prossimo = $derived.by(() => { void livello; return vero ? prossimoLivello(vero) : null; });
+  const motivo = $derived.by(() => { void livello; void app.stato?.ghiande; return vero && app.stato ? motivoMiglioria(app.stato, vero) : ''; });
 
   const nomeDi = (a: Animale) => { const n = a.nome || nomeAnimale(a); return n.charAt(0).toUpperCase() + n.slice(1); };
   const di = (a: Animale) => (a.nome ? `di ${a.nome}` : nomeAnimale(a).replace(/^il /, 'del ').replace(/^lo /, 'dello ').replace(/^la /, 'della '));
@@ -27,9 +37,9 @@
   const ORA: Record<Momento, string> = { mattina: '🌅 Mattina', lavoro: '☀️ Giorno', pranzo: '🍲 Ora di pranzo', sera: '🌇 Sera', notte: '🌙 Notte' };
   let quando = $state<Momento>('lavoro');
 
-  onMount(() => {
-    quando = momento();
+  function costruisciStanza() {
     try {
+      interno?.distruggi();
       interno = new Interno(canvas, proprietario ? 'casa' : 'tana', abitanti, momento, proprietario ?? undefined);
       interno.onTocco = tocca;
       interno.onCambio = () => { stato = interno!.stato(); quando = momento(); };
@@ -39,7 +49,26 @@
       console.error(e);
       errore = true;
     }
+  }
+
+  onMount(() => {
+    quando = momento();
+    if (proprietario) livello = livelloCasa(proprietario);
+    costruisciStanza();
+    // la bottega ha messo da parte qualche castagna per Giada
+    if (proprietario) ritiraIncasso(proprietario.id).then((n) => (incasso = n));
   });
+
+  async function miglioriamo() {
+    if (!proprietario) return;
+    const ev = await miglioraCasa(proprietario.id);
+    if (!ev) return;
+    livello = livelloCasa(vero ?? proprietario);
+    for (const a of abitanti) if (a.id === proprietario.id) a.livelloCasa = livello;
+    migliorie = false;
+    festa = `Evviva! Ora è ${defLivello(livello).nome.charAt(0).toLowerCase() + defLivello(livello).nome.slice(1)}. Esci a vederla da fuori!`;
+    costruisciStanza();
+  }
   onDestroy(() => interno?.distruggi());
 
   function tocca(id: string) {
@@ -67,11 +96,18 @@
     <button class="esci" onclick={onchiudi} aria-label="Esci">🚪 Esci</button>
     <div class="titolo">
       <div class="nome">{titolo}</div>
-      <div class="ora">{ORA[quando]}</div>
+      <div class="ora">{ORA[quando]}{#if proprietario && proprietario.mestiere}&nbsp;· {'★'.repeat(livello)}{'☆'.repeat(LIVELLO_MASSIMO - livello)}{/if}</div>
     </div>
+    {#if proprietario && proprietario.mestiere}
+      <button class="migliora" onclick={() => (migliorie = !migliorie)} aria-label="Migliora la casa">🔨</button>
+    {/if}
   </header>
 
-  {#if parla}
+  {#if incasso || festa}
+    <button class="fumetto incasso" onclick={() => { incasso = 0; festa = ''; }}>
+      {#if festa}🎉 {festa}{:else}🌰 La bottega ha venduto bene: {proprietario ? nomeDi(proprietario) : ''} ti dà {incasso} castagne!{/if}
+    </button>
+  {:else if parla}
     {@const a = abitanti.find((x) => x.id === parla!.id)}
     {#if a}
       <button class="fumetto" onclick={() => (parla = null)}>
@@ -82,7 +118,24 @@
   {/if}
 
   <div class="sotto">
-    {#if scheda}
+    {#if migliorie && vero}
+      <div class="carta-carattere">
+        <div class="carattere-titolo">🔨 Migliora la casa</div>
+        <p>Ora è <strong class="giallo">{defLivello(livello).nome.toLowerCase()}</strong>{#if defLivello(livello).incasso}: la bottega mette da parte {defLivello(livello).incasso} {defLivello(livello).incasso === 1 ? 'castagna' : 'castagne'} al giorno per te{/if}.</p>
+        {#if prossimo}
+          <p><strong class="giallo">{prossimo.nome}</strong> · 🌰 {prossimo.costo}<br />{prossimo.descrizione}</p>
+          {#if motivo}<p class="motivo">{motivo}</p>{/if}
+          <div class="bottoni">
+            <button class="tondo grigio" onclick={() => (migliorie = false)}>Chiudi</button>
+            <button class="tondo" disabled={!!motivo} onclick={miglioriamo}>Miglioriamo! 🌰 {prossimo.costo}</button>
+          </div>
+        {:else}
+          <p>È già la casa più bella del villaggio!</p>
+          <button class="tondo grigio" onclick={() => (migliorie = false)}>Chiudi</button>
+        {/if}
+        <p class="borsa">Hai 🌰 {app.stato?.ghiande ?? 0}</p>
+      </div>
+    {:else if scheda}
       {@const c = carattereDi(scheda)}
       <div class="carta-carattere">
         <div class="carattere-titolo">{c.emoji} {nomeDi(scheda)} è {scheda.sesso === 'f' ? 'una' : 'un'} <strong>{nomeCarattere(scheda)}</strong></div>
@@ -168,5 +221,14 @@
   .carta-carattere p { margin: 8px 0; line-height: 1.4; }
   .carta-carattere ul { list-style: none; padding: 0; margin: 0 0 10px; }
   .carta-carattere li { margin: 4px 0; }
+  .migliora {
+    flex: none; background: var(--panna); border: 3px solid var(--legno); border-radius: 999px; padding: 6px 12px;
+    font-size: 1.2rem; box-shadow: 0 4px 0 var(--legno-scuro);
+  }
+  .incasso { border-color: #b9862f; background: #fff6d8; }
+  .giallo { color: #ffe08a; }
+  .motivo { color: #ffd0a8; font-weight: 800; }
+  .borsa { margin: 8px 0 0; font-size: 0.85rem; opacity: 0.85; text-align: right; }
+  .bottoni { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
   .carta-carattere li span { display: inline-block; min-width: 96px; color: #ffe08a; font-weight: 800; }
 </style>
