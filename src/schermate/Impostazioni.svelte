@@ -1,7 +1,7 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
   import GuidaIcona from '../componenti/GuidaIcona.svelte';
-  import { app, vai, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import { app, vai, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, provaFestaDiCompleanno, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
   import { giorniTra } from '../lib/date';
 
@@ -131,6 +131,10 @@
       <div class="riga" style="flex-wrap:wrap">
         <button class="secondario tondo" onclick={async () => { await crescitaDiProva(); messaggio = 'Tutti sono cresciuti di una fase. Torna al villaggio!'; }}>Fai crescere tutti</button>
         <button class="secondario tondo" onclick={async () => { await regalaCastagne(100); messaggio = '100 castagne in più per le prove.'; }}>+100 castagne</button>
+      </div>
+      <p style="margin-top:12px">Il 24 luglio il villaggio fa una festa per il compleanno di Giada. Per vederla adesso:</p>
+      <div class="riga" style="flex-wrap:wrap">
+        <button class="secondario tondo" onclick={provaFestaDiCompleanno}>🎂 Prova la festa di compleanno</button>
       </div>
       <p style="margin-top:12px"><button class="tondo" onclick={() => confirm('Cancello TUTTO il villaggio e il diario da questo telefono?') && azzeraTutto()}>Azzera tutto</button></p>
       <p style="margin-top:12px"><button class="secondario tondo" onclick={esciDallaProva}>Nascondi questo pannello</button></p>

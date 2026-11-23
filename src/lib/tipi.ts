@@ -108,7 +108,7 @@ export interface Edificio {
 
 export interface Evento {
   data: string;
-  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne';
+  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne' | 'compleanno';
   testo: string;
   animale?: string; // di chi parla (per inquadrarlo)
 }
@@ -136,6 +136,7 @@ export interface StatoGioco {
   ultimoBackupRicordato: string | null;
   arredo?: Arredo; // come Giada ha sistemato il villaggio (vedi arredo.ts)
   sorprese: Evento[]; // eventi importanti non ancora mostrati in primo piano
+  compleanni?: string[]; // giorni in cui il villaggio ha festeggiato il compleanno di Giada (vedi festa.ts)
 }
 
 export function zeriVirtu(): Record<Virtu, number> {

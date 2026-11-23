@@ -9,9 +9,12 @@
   import { leggiMeta, scriviMeta } from '../lib/db';
   import frasi from '../dati/frasi.json';
   import {
-    app, chiudiMentreEriVia, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, vai,
+    app, chiudiMentreEriVia, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, soffiaCandeline, vai,
     type RigaDialogo,
   } from '../lib/app.svelte';
+  import {
+    auguriDi, CASTAGNE_IN_REGALO, chiHaFattoLaTorta, chiSuona, eVigilia, festaDaFare, festaInRitardo, fraseDiFesta, FRASI_VIGILIA, invitati, ordinale, quantaFesta, villaggioInFesta,
+  } from '../lib/festa';
   import { giorniTra } from '../lib/date';
   import {
     abilitaPossibili, accorda, conArticolo, nomeAnimale, REGOLE, statoCostruzione, STORIA, testoRichiesta, type DefAbilita,
@@ -47,6 +50,8 @@
     scena?.sospendi(false);
   }
   let tempo = $state<Meteo>('sole');
+  // il compleanno di Giada: il villaggio è addobbato (e, se la festa non c'è ancora stata, la si fa appena entra)
+  let inFesta = $derived(app.provaCompleanno > 0 || villaggioInFesta(s, dataDiOggi()));
   let puoCostruire = $derived(REGOLE.costruzioni.some((c) => statoCostruzione(s, c) === 'pronta'));
   const simbolo = (a: Animale) => (a.sesso === 'f' ? '♀' : '♂');
 
@@ -156,7 +161,7 @@
 
   // il tempo che fa: cambia a fasce di 4 ore, uguale per tutto il giorno a parità di ora
   function aggiornaMeteo() {
-    tempo = calcolaMeteo(dataDiOggi(), new Date().getHours(), s.seme);
+    tempo = inFesta ? 'sole' : calcolaMeteo(dataDiOggi(), new Date().getHours(), s.seme); // alla festa non piove
     scena?.impostaMeteo(tempo);
   }
   let timerMeteo: ReturnType<typeof setInterval> | undefined;
@@ -181,6 +186,89 @@
     return [{ chi: chiDice(a), voce: 'animale', testo: `Giada… ho pensato a te. ${frase}` }];
   }
 
+  // ---------- la festa di compleanno di Giada ----------
+  type PassoFesta = { testo: string; chi?: string; bottone: string; soffia?: boolean };
+  let fs = $state<{ passo: PassoFesta | null; pronto: boolean } | null>(null);
+  let avantiFesta: (() => void) | null = null;
+  /** Mostra un passo dello spettacolo e aspetta che Giada tocchi il bottone. */
+  function passoFesta(p: PassoFesta, attesa = 900): Promise<void> {
+    return new Promise((ok) => {
+      fs = { passo: null, pronto: false };
+      setTimeout(() => {
+        if (!fs) return ok();
+        fs = { passo: p, pronto: true };
+        avantiFesta = ok;
+      }, attesa);
+    });
+  }
+  function toccaFesta() {
+    if (!fs?.pronto) return;
+    fs.pronto = false;
+    const f = avantiFesta;
+    avantiFesta = null;
+    f?.();
+  }
+
+  const maiuscola = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+  async function festaDiCompleanno() {
+    if (!scena) return;
+    const oggi = dataDiOggi();
+    const n = quantaFesta(s);
+    const tutti = invitati(s, 99);
+    const chiFa = invitati(s, 4);
+    const chef = chiHaFattoLaTorta(s);
+    const musica = chiSuona(s);
+    const k = Date.now();
+    scena.impostaFesta(true);
+    scena.radunaFesta(true);
+    scena.inquadraFesta(false);
+    const ritardo = festaInRitardo(oggi) && app.provaCompleanno !== 1;
+    const quante = n > 1 ? ` È la ${ordinale(n)} festa che facciamo insieme!` : '';
+    await passoFesta({
+      chi: 'Corvo',
+      testo: ritardo
+        ? `Cra! Giada, finalmente! Il 24 luglio era il tuo compleanno e ti abbiamo aspettata: una festa così non si fa senza di te!${quante}`
+        : `Cra! Lo sai che giorno è oggi? È il 24 luglio: il tuo compleanno! Tutto il villaggio ha preparato una festa per te.${quante}`,
+      bottone: 'Avanti',
+    }, 1600);
+    scena.inquadraFesta(true);
+    const torta = chef
+      ? `${maiuscola(nomeAnimale(chef))} ha preparato una torta a tre piani, con la panna e le fragole. Ci ha lavorato tutta la notte!`
+      : tutti.length
+        ? 'Gli animali hanno preparato insieme una torta a tre piani, con la panna e le fragole!'
+        : 'Ho preparato una torta a tre piani, con la panna e le fragole. Da solo! Beh… con un po\' di aiuto dalle formiche.';
+    await passoFesta({ chi: 'Corvo', testo: musica ? `${torta} E ${nomeAnimale(musica)} suona per te!` : torta, bottone: 'Avanti' }, 1300);
+    for (const [i, a] of chiFa.entries()) {
+      scena.inquadra({ tipo: 'animale', id: a.id });
+      await passoFesta({ chi: chiDice(a), testo: auguriDi(a, k + i), bottone: 'Avanti' }, 1100);
+    }
+    if (tutti.length > chiFa.length) {
+      scena.inquadraFesta(false);
+      await passoFesta({ chi: 'Corvo', testo: `E ci sono proprio tutti: ${tutti.length} amici del villaggio, venuti per te!`, bottone: 'Avanti' }, 1100);
+    }
+    scena.inquadraFesta(true);
+    await passoFesta({ testo: 'Ora chiudi gli occhi, esprimi un desiderio… e soffia sulle candeline!', bottone: '🎂 Soffia!', soffia: true }, 1100);
+    scena.soffiaCandeline();
+    await soffiaCandeline();
+    if (app.provaCompleanno === 1) app.provaCompleanno = 2;
+    scena.inquadraFesta('cielo');
+    await passoFesta({
+      testo: tutti.length ? '♪ Tanti auguri a te, tanti auguri a te, tanti auguri, cara Giada, tanti auguri a te! ♪' : '♪ Tanti auguri a te! ♪ Cra cra!',
+      chi: tutti.length ? 'Tutti insieme' : 'Corvo',
+      bottone: 'Grazie!',
+    }, 2200);
+    scena.inquadraFesta(false);
+    await passoFesta({
+      chi: 'Corvo',
+      testo: `Il villaggio ti regala ${CASTAGNE_IN_REGALO} castagne, come il giorno del tuo compleanno. E stasera, quando fa buio, guarda il cielo: ci sono i fuochi d'artificio!`,
+      bottone: 'Che bello!',
+    }, 600);
+    fs = null;
+    scena.fineCinema();
+    // si balla ancora un po', poi ognuno torna alle sue cose (gli addobbi restano tutto il giorno)
+    setTimeout(() => scena?.radunaFesta(false), 30_000);
+  }
+
   onMount(() => {
     try {
       scena = new Scena(canvas);
@@ -194,10 +282,19 @@
     const sorprese = sorpreseDaMostrare();
     scena.trattieni(sorprese.filter((e) => e.tipo === 'schiusa').map((e) => e.animale!));
     scena.aggiorna($state.snapshot(app.stato!) as typeof s);
+    const fareFesta = app.provaCompleanno === 1 || festaDaFare(s, dataDiOggi());
+    if (inFesta) scena.impostaFesta(true, !fareFesta);
     aggiornaMeteo();
     timerMeteo = setInterval(aggiornaMeteo, 60_000);
 
-    // cosa succede appena si entra (quello che si vede in primo piano non si ripete nel fumetto)
+    // il giorno del compleanno, prima di tutto la festa; poi il resto
+    if (fareFesta) festaDiCompleanno().then(() => accogli(sorprese));
+    else accogli(sorprese);
+  });
+
+  /** Cosa succede appena si entra (quello che si vede in primo piano non si ripete nel fumetto). */
+  function accogli(sorprese: Evento[]) {
+    if (!scena) return;
     const giaInPrimoPiano = new Set(sorprese.map((e) => e.testo));
     const daDiario = app.codaDialoghi.length > 0;
     const conforto = daDiario ? null : serveConforto();
@@ -245,7 +342,7 @@
       setTimeout(() => scena?.festeggia(), 300);
       app.festa = 0;
     }
-  });
+  }
   onDestroy(() => {
     clearInterval(timerMeteo);
     scena?.distruggi();
@@ -258,7 +355,7 @@
   });
 
   async function tocco(b: Bersaglio) {
-    if (chiediNome || insegnaA || sp) return;
+    if (chiediNome || insegnaA || sp || fs) return;
     const n = s.numeroVoci + Math.floor(Date.now() / 1000);
     if (b.tipo === 'quaderno') return vai('diario');
     if (b.tipo === 'aiuola') {
@@ -283,6 +380,8 @@
     if (b.tipo === 'corvo') {
       const capitolo = STORIA.filter((c) => s.capitoli.includes(c.id)).at(-1);
       const righe = [corvo('', scegli(frasi.animali.consigli, n).replace('a noi animali', 'a noi uccelli'))];
+      if (inFesta) righe.unshift(corvo('', 'Buon compleanno, Giada! Cra cra! È la festa più bella dell\'anno.'));
+      else if (eVigilia(dataDiOggi())) righe.unshift(corvo('', scegli(FRASI_VIGILIA, n)));
       if (s.castagneMature >= 3) righe.unshift(corvo('', 'Sotto il castagno ci sono castagne mature. Toccale per raccoglierle!'));
       if (capitolo && n % 3 === 0) righe.unshift(corvo('', `Hai letto l'ultimo capitolo, «${capitolo.titolo}»? Lo trovi nella Storia.`));
       dialogo = { righe };
@@ -334,7 +433,8 @@
         righe.push({ chi: chiDice(a), voce: 'animale', testo: `Sto imparando: ${def?.nome.toLowerCase()}! Ancora ${mancano === 1 ? 'un giorno' : `${mancano} giorni`} e ce la faccio.` });
       } else if (!ev.length) {
         let testo: string;
-        if (a.ricordi.length && n % 2 === 0) testo = scegli(frasi.animali.ricordo, n).replace('{ricordo}', scegli(a.ricordi, n).frase);
+        if (inFesta && !fs && n % 2 === 0) testo = fraseDiFesta(a, n);
+        else if (a.ricordi.length && n % 2 === 0) testo = scegli(frasi.animali.ricordo, n).replace('{ricordo}', scegli(a.ricordi, n).frase);
         else if (a.umore >= 45 && n % 3 !== 0 && scena) testo = fraseCarattere(a, scena.momento(), n); // parla a modo suo
         else testo = scegli(a.umore < 45 ? frasi.animali.richiesta : frasi.animali.saluto, n);
         righe.push({ chi: chiDice(a), voce: 'animale', testo });
@@ -378,7 +478,26 @@
       <img src={quadroAperto} alt="Un quadretto di Giada" />
     </button>
   {/if}
-  {#if sp}
+  {#if fs}
+    <div class="cinema festa">
+      <div class="banda">
+        <div class="titolo-cinema">🎂 Buon compleanno, Giada!</div>
+      </div>
+      <div class="sottotitolo-cinema">
+        {#if fs.passo}
+          {#key fs.passo.testo}
+            <p class="testo-cinema">
+              {#if fs.passo.chi}<span class="chi-festa">{fs.passo.chi}</span>{/if}
+              {fs.passo.testo}
+            </p>
+          {/key}
+          {#if fs.pronto}
+            <button class={['tondo', 'avanti', fs.passo.soffia && 'soffia']} onclick={toccaFesta}>{fs.passo.bottone}</button>
+          {/if}
+        {/if}
+      </div>
+    </div>
+  {:else if sp}
     <div class="cinema">
       <div class="banda">
         <div class="titolo-cinema">{sp.titolo}</div>
@@ -408,7 +527,7 @@
       <button class="pillola aiuto-gioco" aria-label="Come si gioca" onclick={() => vai('guida')}>?</button>
     </div>
     <div class="destra">
-      <div class="pillola data">{NOME_METEO[tempo].icona} {dataTesto}</div>
+      <div class="pillola data">{inFesta ? '🎂' : NOME_METEO[tempo].icona} {dataTesto}</div>
       <div class="pillola castagne">🌰 {s.ghiande ?? 0}</div>
     </div>
   </header>
@@ -567,5 +686,9 @@
   .sottotitolo-cinema .riga { display: flex; gap: 10px; }
   .avanti { min-width: 160px; animation: entra 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
   @keyframes appare { from { opacity: 0; } }
+  .festa .banda { background: linear-gradient(180deg, rgba(120, 30, 70, 0.92), rgba(90, 20, 60, 0.78)); }
+  .festa .titolo-cinema { color: #fff0a8; }
+  .chi-festa { display: block; font-size: 0.85rem; color: #ffe08a; margin-bottom: 4px; letter-spacing: 0.02em; }
+  .soffia { font-size: 1.35rem; padding: 14px 30px; background: #e8465f; animation: entra 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both, respira 1.1s ease-in-out 0.4s infinite; }
   @keyframes scendeBanda { from { transform: translateY(-100%); } }
 </style>

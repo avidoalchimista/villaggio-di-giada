@@ -8,6 +8,7 @@ import {
   applicaVoce, controllaRichiesta, costruisci, faiCrescere, insegna, normalizzaStato, nuovoStato, raccogliCastagne, riassunto, simula, simulaGiorniConDiario,
 } from './gioco';
 import { GUIDA, type PaginaGuida } from '../dati/guida';
+import { festeggia as festeggiaCompleanno } from './festa';
 import { doveSiamo } from './telefono';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
@@ -29,6 +30,8 @@ export const app = $state({
   // dialoghi da mostrare nel villaggio (es. dopo una pagina di diario) e festa degli animali
   codaDialoghi: [] as RigaDialogo[],
   festa: 0,
+  // modalità prova: 1 = mostra la festa di compleanno di Giada adesso, 2 = già vista (restano gli addobbi)
+  provaCompleanno: 0,
 });
 
 export interface RigaDialogo {
@@ -209,6 +212,20 @@ export function cambiaArredo<T>(f: (s: StatoGioco, oggi: string) => T, subito = 
   if (subito) salvaStato();
   else timerArredo = setTimeout(salvaStato, 400);
   return r;
+}
+
+/** Giada ha soffiato le candeline: festa fatta, regalo di castagne e un ricordo per tutti. */
+export async function soffiaCandeline(): Promise<Evento | null> {
+  if (!app.stato) return null;
+  const e = festeggiaCompleanno(app.stato, dataDiOggi());
+  await salvaStato();
+  return e;
+}
+
+/** Modalità prova: fa vedere subito la festa di compleanno di Giada, senza aspettare il 24 luglio. */
+export function provaFestaDiCompleanno() {
+  app.provaCompleanno = 1;
+  vai('villaggio');
 }
 
 /** Modalità prova: castagne extra. */
