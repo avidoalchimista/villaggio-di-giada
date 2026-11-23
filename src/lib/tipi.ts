@@ -79,6 +79,8 @@ export interface Animale {
   emozione?: Emozione; // l'emozione della pagina che l'ha fatto nascere: si vede nella sua casa
   vestiti?: string[]; // capi che si è fatto da solo crescendo (vedi vestiti.ts)
   carattere?: string; // sognatore, allegro, ordinato... (vedi carattere.ts): diverso per ognuno
+  livelloCasa?: number; // 1..4: quanto Giada ha migliorato la sua casa-bottega (vedi migliorie.ts)
+  cassa?: number; // castagne che la sua bottega ha messo da parte per Giada
 }
 
 export interface Aspetto {

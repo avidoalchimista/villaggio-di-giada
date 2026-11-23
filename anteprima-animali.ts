@@ -73,18 +73,26 @@ if (modo === 'case') {
   // le case dei mestieri, viste da davanti e un po' dall'alto
   const da = +(q.get('da') ?? 0), quanti = +(q.get('n') ?? 6), colonne = +(q.get('c') ?? 3);
   const specie = q.get('s')?.split(',') ?? ['volpe', 'daino', 'tasso', 'riccio', 'scoiattolo', 'lepre'];
-  MESTIERI.slice(da, da + quanti).forEach((m, i) => {
-    const casa = creaCasaAnimale(specie[(i + da) % specie.length] as any, EMOZIONI[(i + da) % 8], 'adulto', q.get('senza') ? null : m.id);
+  // modo=case&livelli=1: ogni riga è una casa, da sinistra a destra i 4 livelli di miglioria (vedi lib/migliorie.ts)
+  const livelli = q.has('livelli');
+  const quali = livelli
+    ? MESTIERI.slice(da, da + quanti / 4).flatMap((m) => [1, 2, 3, 4].map((l) => ({ m, l })))
+    : MESTIERI.slice(da, da + quanti).map((m) => ({ m, l: +(q.get('livello') ?? 1) }));
+  quali.forEach(({ m, l }, i) => {
+    const k = livelli ? Math.floor(i / 4) : i;
+    const casa = creaCasaAnimale(specie[(k + da) % specie.length] as any, EMOZIONI[(k + da) % 8], 'adulto', q.get('senza') ? null : m.id, l);
     const col = i % colonne, row = Math.floor(i / colonne);
-    casa.position.set((col - (colonne - 1) / 2) * 6.6, 0, row * 6.2);
+    const passo = +(q.get('passo') ?? 6.6);
+    casa.position.set((col - (colonne - 1) / 2) * passo, 0, row * 6.2);
     sc.add(casa);
   });
   const terra = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshLambertMaterial({ color: '#8cc06a' }));
   terra.rotation.x = -Math.PI / 2;
   sc.add(terra);
-  const righe = Math.ceil(quanti / colonne);
+  const righe = Math.ceil(quali.length / colonne);
   const cam = new THREE.PerspectiveCamera(34, W / H, 0.1, 200);
-  cam.position.set(0, 7 + righe * 2.2, (righe - 1) * 6.2 + 11);
+  const lontano = +(q.get('lontano') ?? 1);
+  cam.position.set(0, (7 + righe * 2.2) * lontano, ((righe - 1) * 6.2 + 11) * lontano);
   cam.lookAt(0, 0.6, (righe - 1) * 3.1);
   r.render(sc, cam);
   (window as any).pronto = true;

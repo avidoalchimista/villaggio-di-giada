@@ -220,6 +220,13 @@ export class Interno {
     else this.ancore.set('lavoro', [1.3, -0.2, 0]);
     // decorazioni
     for (const d of c.decorazioni) this.decorazione(d, a);
+    // le cose che arrivano migliorando la casa (vedi lib/migliorie.ts), senza doppioni né cose sovrapposte
+    const livello = a.livelloCasa ?? 1;
+    const extra: string[] = [];
+    if (livello >= 2) extra.push('vasetti');
+    if (livello >= 3 && !c.decorazioni.some((d) => d === 'bandierine' || d === 'stelle')) extra.push('lucine');
+    if (livello >= 4) extra.push('foto', 'palloncini');
+    for (const d of extra) if (!c.decorazioni.includes(d)) this.decorazione(d, a);
     // il ritratto di Giada (un cuoricino) sopra il letto: ogni casa ne ha uno
     this.quadretto(-2.5, 2.3, '♥', '#ff8fb1');
     this.ancore.set('tappeto', [1.3, -0.2, 0.4]);
@@ -748,26 +755,28 @@ export class Interno {
 
   // ---------- input ----------
 
+  private ascolto = new AbortController();
   private collegaInput() {
     const c = this.canvas;
+    const { signal } = this.ascolto;
     c.addEventListener('pointerdown', (e) => {
       this.trascina = { x: e.clientX, mosso: 0 };
       c.setPointerCapture(e.pointerId);
-    });
+    }, { signal });
     c.addEventListener('pointermove', (e) => {
       if (!this.trascina) return;
       const dx = e.clientX - this.trascina.x;
       this.trascina.mosso += Math.abs(dx);
       this.trascina.x = e.clientX;
       this.angoloVoluto = THREE.MathUtils.clamp(this.angoloVoluto - dx * 0.004, -0.45, 0.35);
-    });
+    }, { signal });
     const fine = (e: PointerEvent) => {
       const t = this.trascina;
       this.trascina = null;
       if (t && t.mosso < 8 && e.type === 'pointerup') this.tocca(e.clientX, e.clientY);
     };
-    c.addEventListener('pointerup', fine);
-    c.addEventListener('pointercancel', fine);
+    c.addEventListener('pointerup', fine, { signal });
+    c.addEventListener('pointercancel', fine, { signal });
   }
 
   private tocca(x: number, y: number) {
@@ -1067,6 +1076,7 @@ export class Interno {
 
   distruggi() {
     cancelAnimationFrame(this.raf);
+    this.ascolto.abort();
     this.resizeObs.disconnect();
     this.renderer.dispose();
   }

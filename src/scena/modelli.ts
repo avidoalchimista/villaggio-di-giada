@@ -9,7 +9,7 @@ import { aggiornaGuardaroba, capo, conDivisa, indossati, type Parte } from '../l
 import { defMestiere, simboloMestiere, MESTIERI } from '../lib/mestieri';
 import { creaAttrezzoInMano, mettiCapo, mettiOcchiali, type Attacchi } from './sartoria';
 import { creaAttrezziMestiere, creaInsegnaMestiere } from './botteghe';
-import { contorno, macchie, materiale, ombra, strisce, texture } from './ps1';
+import { contorno, macchie, materiale, ombra, spriteTesto, strisce, texture } from './ps1';
 
 export const geo = {
   palla: (r: number, s = 18) => new THREE.SphereGeometry(r, s, Math.round(s * 0.75)),
@@ -2073,7 +2073,7 @@ const CASA_EMOZIONE: Record<Emozione, { tetto: string; porta: string; muro: stri
  * della pagina con cui è nato. Crescendo la abbellisce (vasi, recinto, comignolo...).
  * È grande: circa 2,5 metri di lato, porta davanti (verso +z).
  */
-export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, mestiere: string | null): THREE.Group {
+export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, mestiere: string | null, livelloCasa = 1): THREE.Group {
   const g = new THREE.Group();
   const c = CASA_EMOZIONE[emozione] ?? CASA_EMOZIONE.gioia;
   const muro = mat('#ffffff', { map: texture(64, macchie([c.muro, '#' + new THREE.Color(c.muro).offsetHSL(0, 0, -0.06).getHexString(), c.muro], 0.6, specie.length + emozione.length)) });
@@ -2298,7 +2298,8 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
     const dove: Partial<Record<Specie, [number, number, number, number]>> = {
       riccio: [0, 1.32, 1.34, -0.35], lepre: [0, 1.85, 1.1, -0.6], uccellino: [0, 1.5, 0.75, 0], papera: [0, 1.15, 0.6, -0.5], scoiattolo: [1.15, 1.22, 1.08, 0], tasso: [0, altPorta + 0.8, fronte + 0.12, -0.15],
     };
-    const [xi, yi, zi, ri] = dove[specie] ?? [0, altPorta + 0.68, fronte + 0.1, 0];
+    // con il portico (casa migliorata) l'insegna sale sopra il tettuccio, sul davanti, così si legge da lontano
+    const [xi, yi, zi, ri] = livelloCasa >= 2 ? [0, altPorta + 1.38, fronte + 0.72, -0.12] : dove[specie] ?? [0, altPorta + 0.68, fronte + 0.1, 0];
     ins.position.set(xi, yi, zi);
     ins.rotation.x = ri;
     g.add(ins);
@@ -2342,6 +2343,7 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
       g.add(mesh(geo.scatola(0.08, 0.45, 0.08), legno, Math.cos(a + Math.PI) * 1.9, 0.22, -Math.sin(a + Math.PI) * 1.9 * 0.8));
     }
   }
+  if (livelloCasa >= 2) miglioraCasa(g, specie, c, livelloCasa, fronte, altPorta);
   return contorno(g);
 }
 
@@ -2355,6 +2357,115 @@ function tettoA(l: number, h: number, p: number, m: THREE.Material): THREE.Mesh 
   const geom = new THREE.ExtrudeGeometry(f, { depth: p, bevelEnabled: false });
   geom.translate(0, 0, -p / 2);
   return mesh(geom, m);
+}
+
+/** Mezza larghezza e cima del tetto di ogni casa, per appoggiare le migliorie. */
+const SAGOMA_CASA: Record<Specie, { mezza: number; cima: number }> = {
+  volpe: { mezza: 1.0, cima: 2.5 }, daino: { mezza: 1.0, cima: 3.3 }, lepre: { mezza: 1.2, cima: 2.8 },
+  riccio: { mezza: 1.25, cima: 2.55 }, scoiattolo: { mezza: 0.8, cima: 3.65 }, tasso: { mezza: 1.6, cima: 1.35 },
+  cavallo: { mezza: 1.25, cima: 2.3 }, mucca: { mezza: 1.05, cima: 2.9 }, asino: { mezza: 1.1, cima: 2.1 },
+  maiale: { mezza: 1.0, cima: 2.3 }, uccellino: { mezza: 0.75, cima: 3.47 }, papera: { mezza: 1.0, cima: 1.7 },
+};
+
+/**
+ * Le migliorie che Giada compra con le castagne (vedi lib/migliorie.ts):
+ * 2 portico e vasi di fiori, 3 una stanza in più col camino e le lanterne, 4 bandierine, stella, bandiera e giardino.
+ */
+function miglioraCasa(g: THREE.Group, specie: Specie, c: { muro: string; tetto: string; porta: string }, livello: number, fronte: number, altPorta: number) {
+  const legno = legnoMat();
+  const tetto = mat(c.tetto, { rim: 0.4 });
+  const { mezza, cima } = SAGOMA_CASA[specie];
+  const base = specie === 'scoiattolo' ? 1.66 : 0;
+  const alto = altPorta + 1.0; // il tettuccio del portico, sopra l'insegna
+  const zp = fronte + 0.6;
+
+  // 2: il portico di legno davanti alla porta e i vasi alle finestre
+  for (const x of [-0.6, 0.6]) g.add(mesh(geo.cil(0.05, 0.06, alto - base, 6), legno, x, base + (alto - base) / 2, zp));
+  const tettuccio = mesh(geo.scatola(1.5, 0.07, 0.8), tetto, 0, alto + 0.05, fronte + 0.3);
+  tettuccio.rotation.x = 0.22;
+  g.add(tettuccio);
+  if (base) g.add(mesh(geo.scatola(1.4, 0.06, 0.7), legno, 0, base, fronte + 0.32));
+  const fiori = ['#ff8fb1', '#ffd166', '#ffffff', '#b39ddb'];
+  for (const [i, x] of [-0.95, 0.95].entries()) {
+    const vaso = mesh(geo.cil(0.16, 0.12, 0.22, 8), mat('#c8805a'), x, base + 0.11, zp + 0.05);
+    for (let k = 0; k < 3; k++) {
+      const f = creaFiore(fiori[(i + k) % fiori.length]);
+      f.scale.setScalar(1.6);
+      f.position.set((k - 1) * 0.08, 0.1, 0);
+      vaso.add(f);
+    }
+    g.add(vaso);
+  }
+  if (livello < 3) return;
+
+  // 3: una stanza in più sul retro, col suo tettino e il camino che fuma; due lanterne al portico
+  const muro = mat(c.muro, { rim: 0.2 });
+  const xs = -(mezza + 0.35);
+  const stanza = new THREE.Group();
+  stanza.position.set(xs, 0, -0.7);
+  const vetro = mat('#9fd3f0', { emissive: '#ffd27a', emissiveIntensity: 0.25 });
+  let altoCamino = 1.55;
+  if (specie === 'tasso') {
+    // per il tasso una collinetta più piccola, con la finestrella tonda
+    const colle = mesh(geo.palla(0.8, 12), mat('#6ba552', { rim: 0.3 }), 0, 0, 0);
+    colle.scale.set(1, 0.9, 1);
+    stanza.add(colle);
+    const f = mesh(geo.cil(0.16, 0.16, 0.06, 12), vetro, 0, 0.4, 0.7);
+    f.rotation.x = Math.PI / 2 - 0.4;
+    stanza.add(f);
+    altoCamino = 0.85;
+  } else {
+    stanza.add(mesh(geo.scatola(1.1, 1.0, 1.1), muro, 0, 0.5, 0));
+    const t2 = mesh(geo.cono(0.95, 0.7, 4), tetto, 0, 1.35, 0);
+    t2.rotation.y = Math.PI / 4;
+    stanza.add(t2);
+    stanza.add(mesh(geo.scatola(0.3, 0.3, 0.05), vetro, 0, 0.6, 0.56));
+  }
+  stanza.add(mesh(geo.scatola(0.22, 0.6, 0.22), pietra(), 0.25, altoCamino, -0.15));
+  const fumo = new THREE.Group();
+  fumo.name = 'fumo';
+  for (let i = 0; i < 3; i++) {
+    const p = mesh(geo.palla(0.12 + i * 0.05, 8), mat('#eeeeee', { transparent: true, opacity: 0.75 - i * 0.18 }), Math.sin(i) * 0.08, 0.3 + i * 0.28, 0);
+    p.userData.senzaContorno = true;
+    fumo.add(p);
+  }
+  fumo.position.set(0.25, altoCamino + 0.3, -0.15);
+  stanza.add(fumo);
+  g.add(stanza);
+  for (const x of [-0.6, 0.6]) {
+    g.add(mesh(geo.cil(0.01, 0.01, 0.15, 4), mat('#4a3a2c'), x, alto - 0.08, zp));
+    g.add(mesh(geo.palla(0.09, 10), mat('#ffe2a0', { emissive: '#ffb347', emissiveIntensity: 0.9, rim: 0 }), x, alto - 0.22, zp));
+    g.add(mesh(geo.cono(0.11, 0.08, 8), mat('#4a3a2c'), x, alto - 0.12, zp));
+  }
+  if (livello < 4) return;
+
+  // 4: bottega famosa: bandierine dal portico al tetto, la stella in cima, la bandiera e il giardino fiorito
+  const colori = ['#ff6f91', '#ffd166', '#7fc8f8', '#7ccf6a', '#b39ddb'];
+  for (const lato of [-1, 1]) {
+    for (let i = 0; i < 5; i++) {
+      const k = (i + 0.5) / 5;
+      const b = mesh(geo.cono(0.08, 0.16, 3), mat(colori[i]), lato * (0.6 + k * (mezza - 0.4)), alto + 0.1 + k * (cima - alto - 0.6) - Math.sin(k * Math.PI) * 0.15, zp - k * 0.6);
+      b.rotation.x = Math.PI;
+      g.add(b);
+    }
+  }
+  const stella = spriteTesto('★', '#ffd23f');
+  stella.scale.setScalar(0.7);
+  stella.position.set(0, cima + 0.3, 0);
+  g.add(stella);
+  const asta = mesh(geo.cil(0.035, 0.04, 3.2, 6), legno, mezza + 0.35, 1.6, -0.6);
+  g.add(asta);
+  const bandiera = mesh(geo.scatola(0.6, 0.38, 0.02), mat(c.porta, { side: THREE.DoubleSide }), mezza + 0.66, 3.0, -0.6);
+  bandiera.name = 'bandiera';
+  g.add(bandiera);
+  const zg = Math.max(fronte, 1.1) + 1.25;
+  for (let i = 0; i < 8; i++) {
+    const x = (i < 4 ? -1 : 1) * (0.45 + (i % 4) * 0.22);
+    const f = creaFiore(colori[i % colori.length]);
+    f.scale.setScalar(2.2);
+    f.position.set(x, 0, zg + (i % 2) * 0.18);
+    g.add(f);
+  }
 }
 
 /** Cartello a freccia per indicare la via, con una scritta di Giada. */

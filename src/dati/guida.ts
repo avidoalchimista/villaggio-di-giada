@@ -45,6 +45,11 @@ export const GUIDA: PaginaGuida[] = [
     testo: "Tocca una casa per guardare dentro: vedrai cosa fa chi ci abita, a ogni ora del giorno. I piccoli vivono nella tana sotto il grande albero: tocca l'albero. Ognuno ha il suo carattere!",
   },
   {
+    icona: '⭐',
+    titolo: 'Case più belle',
+    testo: 'Dentro una casa, tocca il martello per migliorarla con le castagne: portico, camino, bandierine. Le botteghe migliorate vendono e ogni giorno mettono da parte castagne per te.',
+  },
+  {
     icona: '🌙',
     titolo: 'Il tempo passa',
     testo: 'Gli animali vivono anche quando non ci sei. Torna quando vuoi: ti racconto cosa è successo. Nella Storia trovi i capitoli nuovi.',
