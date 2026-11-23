@@ -308,6 +308,12 @@ const AFFINI: Record<Specie, string[]> = {
   riccio: ['dormiglione', 'premuroso', 'brontolone'],
   scoiattolo: ['sportivo', 'allegro', 'curioso'],
   lepre: ['allegro', 'sportivo', 'sognatore'],
+  cavallo: ['sportivo', 'curioso', 'premuroso'],
+  asino: ['brontolone', 'dormiglione', 'premuroso'],
+  mucca: ['premuroso', 'dormiglione', 'sognatore'],
+  maiale: ['allegro', 'curioso', 'dormiglione'],
+  uccellino: ['sognatore', 'allegro', 'curioso'],
+  papera: ['ordinato', 'allegro', 'brontolone'],
 };
 
 /**

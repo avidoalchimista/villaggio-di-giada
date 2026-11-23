@@ -64,6 +64,12 @@ export const NOME_SPECIE: Record<Specie, { f: string; m: string }> = {
   riccio: { f: 'riccia', m: 'riccio' },
   scoiattolo: { f: 'scoiattola', m: 'scoiattolo' },
   lepre: { f: 'lepre', m: 'lepre' },
+  cavallo: { f: 'cavalla', m: 'cavallo' },
+  asino: { f: 'asinella', m: 'asinello' },
+  mucca: { f: 'mucca', m: 'torello' },
+  maiale: { f: 'maialina', m: 'maialino' },
+  uccellino: { f: 'uccellina', m: 'uccellino' },
+  papera: { f: 'papera', m: 'papero' },
 };
 
 export const NOME_FASE: Record<Fase, string> = {
@@ -121,4 +127,10 @@ export const SIMBOLO_SPECIE: Record<Specie, string> = {
   riccio: '🦔',
   scoiattolo: '🐿️',
   lepre: '🐇',
+  cavallo: '🐴',
+  asino: '🫏',
+  mucca: '🐮',
+  maiale: '🐷',
+  uccellino: '🐦',
+  papera: '🦆',
 };

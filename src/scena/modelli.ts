@@ -118,6 +118,48 @@ const MANTI: Record<Specie, Mantello[]> = {
     { corpo: '#f4f2ee', pancia: '#ffffff', muso: '#ffffff', zampe: '#d4d0cc', extra: '#f4b9b9', occhi: '#a03040' },
     { corpo: '#8a6446', pancia: '#e8d8c4', muso: '#e8d8c4', zampe: '#4a3020', extra: '#e4a8a8', occhi: '#1a100a' },
   ],
+  // cavallo: extra = criniera e coda
+  cavallo: [
+    { corpo: '#a8643a', pancia: '#c8865a', muso: '#d8a07a', zampe: '#3a2418', extra: '#2e1c14', occhi: '#2a160c' },
+    { corpo: '#e8c27a', pancia: '#f4dca8', muso: '#f6e4c0', zampe: '#c89a5a', extra: '#fff6e0', occhi: '#3a2410' },
+    { corpo: '#c8ccd4', pancia: '#e8eaee', muso: '#9aa0aa', zampe: '#6a707a', extra: '#f4f4f6', occhi: '#1e2430' },
+    { corpo: '#3a3436', pancia: '#4e4648', muso: '#5a5254', zampe: '#242022', extra: '#1a1618', occhi: '#0a0a0a' },
+  ],
+  // asino: extra = criniera e punta delle orecchie
+  asino: [
+    { corpo: '#9a958e', pancia: '#e8e4de', muso: '#f2eee8', zampe: '#6a655e', extra: '#3a3632', occhi: '#1e1a16' },
+    { corpo: '#8a6a50', pancia: '#e4d4c0', muso: '#f0e4d4', zampe: '#5a4232', extra: '#2e2018', occhi: '#1e120a' },
+    { corpo: '#e4d6be', pancia: '#fbf6ec', muso: '#ffffff', zampe: '#b8a88e', extra: '#8a7a62', occhi: '#3a2a1a' },
+    { corpo: '#5a5450', pancia: '#c8c2bc', muso: '#e8e2dc', zampe: '#34302c', extra: '#1e1a18', occhi: '#100e0c' },
+  ],
+  // mucca: extra = le macchie, muso = il musone rosa
+  mucca: [
+    { corpo: '#fbf8f2', pancia: '#ffffff', muso: '#f6b8bc', zampe: '#3a3230', extra: '#2e2826', occhi: '#1e1614' },
+    { corpo: '#fbf6ee', pancia: '#ffffff', muso: '#f6c0b8', zampe: '#7a4026', extra: '#a8502e', occhi: '#2a140a' },
+    { corpo: '#a8784e', pancia: '#e8d2b4', muso: '#e8d8c8', zampe: '#5a3e26', extra: '#8a5e3a', occhi: '#1e120a' },
+    { corpo: '#f2e2c0', pancia: '#fff8e8', muso: '#f8c8c0', zampe: '#c8a878', extra: '#e0c89a', occhi: '#3a2a18' },
+  ],
+  // maiale: extra = macchie (pezzato) o fascia (cinta)
+  maiale: [
+    { corpo: '#f6b4c0', pancia: '#fcd2da', muso: '#f39aac', zampe: '#e88a9c', extra: '#f6b4c0', occhi: '#2a1a1c' },
+    { corpo: '#f8c4c8', pancia: '#fde0e2', muso: '#f2a4b0', zampe: '#e898a4', extra: '#4a3a3a', occhi: '#2a1a1c' },
+    { corpo: '#3e3638', pancia: '#5a5052', muso: '#6a5a5c', zampe: '#2a2426', extra: '#f8f2ee', occhi: '#0e0a0a' },
+    { corpo: '#d88a52', pancia: '#f2c49a', muso: '#e8a070', zampe: '#a8603a', extra: '#d88a52', occhi: '#2a140a' },
+  ],
+  // uccellino: muso = la faccina/il petto colorato, extra = il cappuccio e le ali
+  uccellino: [
+    { corpo: '#9a7a5a', pancia: '#f08a3a', muso: '#f08a3a', zampe: '#d89a4a', extra: '#7a5e44', occhi: '#1a100a' },
+    { corpo: '#8aa86a', pancia: '#ffd84a', muso: '#ffffff', zampe: '#7a8aa0', extra: '#2a2a34', occhi: '#0e0e12' },
+    { corpo: '#b08a62', pancia: '#e8dcc8', muso: '#d8c8b0', zampe: '#c89a6a', extra: '#6a4a30', occhi: '#1a100a' },
+    { corpo: '#3a3436', pancia: '#4a4244', muso: '#3a3436', zampe: '#e8a030', extra: '#2a2426', occhi: '#0a0a0a' },
+  ],
+  // papera: muso = il becco, extra = la testa (verde nel germano)
+  papera: [
+    { corpo: '#fbf8f2', pancia: '#ffffff', muso: '#f6a030', zampe: '#f6a030', extra: '#fbf8f2', occhi: '#1e1612' },
+    { corpo: '#a88466', pancia: '#d8c4a8', muso: '#e8c040', zampe: '#f09a3a', extra: '#2e7a52', occhi: '#1a100a' },
+    { corpo: '#a8acb4', pancia: '#e4e6ea', muso: '#f0a83a', zampe: '#f0a03a', extra: '#8a909a', occhi: '#1a1c22' },
+    { corpo: '#f2e4c4', pancia: '#fbf4e2', muso: '#f6a840', zampe: '#f6a040', extra: '#f2e4c4', occhi: '#2a1e12' },
+  ],
 };
 
 export interface ModelloAnimale {
@@ -166,7 +208,7 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
 
   // zampette corte e tozze, con i piedini tondi
   const zampe: THREE.Object3D[] = [];
-  const lunga = a.specie === 'daino' ? 0.1 : 0;
+  const lunga = ({ daino: 0.1, cavallo: 0.13, asino: 0.08, mucca: 0.05 } as Partial<Record<Specie, number>>)[a.specie] ?? 0;
   for (const [x, z] of [[-0.17, 0.13], [0.17, 0.13], [-0.16, -0.14], [0.16, -0.14]]) {
     const perno = new THREE.Group();
     perno.position.set(x, 0.26 + lunga, z);
@@ -185,7 +227,7 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
   cranio.scale.set(1.08, 0.98, 1);
   testa.add(cranio);
   // muso piccolo e basso; volpe e daino lo hanno un po' più a punta, così si riconoscono subito
-  const aPunta = ({ volpe: 1.6, daino: 1.35, tasso: 1.3, riccio: 1.45 } as Partial<Record<Specie, number>>)[a.specie] ?? 1;
+  const aPunta = ({ volpe: 1.6, daino: 1.35, tasso: 1.3, riccio: 1.45, cavallo: 1.55, asino: 1.5 } as Partial<Record<Specie, number>>)[a.specie] ?? 1;
   const muso = mesh(geo.palla(0.17), mat(p.muso, { rim: 0.15 }), 0, -0.16, 0.32 + (aPunta - 1) * 0.08);
   muso.scale.set(aPunta > 1 ? 1.05 : 1.25, 0.8, 0.85 * aPunta);
   muso.userData.senzaContorno = true; // con il contorno sembrava un grugno
@@ -549,10 +591,270 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       coda = c;
       break;
     }
+
+    case 'cavallo':
+    case 'asino': {
+      // Cavallino e asinello: muso lungo e chiaro, criniera, coda; l'asino con le orecchie lunghissime
+      const asino = a.specie === 'asino';
+      const piccolo = a.fase === 'cucciolo';
+      muso.scale.set(1.2, 0.95, 1.45);
+      naso.scale.set(0.9, 0.7, 0.8);
+      naso.material = mat(varia(p.muso, 0, -0.35), { rim: 0 });
+      // le narici
+      for (const s of [-1, 1]) {
+        const n = mesh(geo.palla(0.025, 8), mat('#2a1a14', { rim: 0 }), s * 0.06, -0.16, davantiMuso - 0.005);
+        n.userData.senzaContorno = true;
+        testa.add(n);
+      }
+      if (asino) {
+        // l'asinello: occhi cerchiati di bianco e orecchie lunghe con la punta scura
+        for (const x of [-0.25, 0.25]) {
+          const o = orecchio(x, 0.1, piccolo ? 0.34 : 0.46, p.corpo, 0.32, '#f2e4dc');
+          const punta = mesh(geo.cono(0.07, 0.12, 8), mat(p.extra), 0, (piccolo ? 0.34 : 0.46) - 0.04, 0);
+          punta.scale.z = 0.55;
+          o.add(punta);
+        }
+        for (const x of [-0.19, 0.19]) {
+          const anello = mesh(geo.palla(0.14), mat(p.muso, { rim: 0 }), x * 1.02, -0.02, 0.32);
+          anello.scale.set(1, 1.1, 0.45);
+          anello.userData.senzaContorno = true;
+          testa.add(anello);
+        }
+      } else {
+        for (const x of [-0.2, 0.2]) orecchio(x, 0.085, 0.22, p.corpo, 0.12, '#f0c8b8');
+        // la stellina bianca in fronte (palomino e grigio ce l'hanno più chiara)
+        const stella = mesh(geo.palla(0.07), mat('#fffaf0', { rim: 0 }), 0, 0.12, 0.43);
+        stella.scale.set(0.7, 1.4, 0.35);
+        stella.userData.senzaContorno = true;
+        testa.add(stella);
+      }
+      // criniera: dal ciuffo sulla fronte giù lungo il collo
+      const crin = new THREE.Group();
+      for (let k = 0; k < 8; k++) {
+        const ang = -0.45 + k * 0.3;
+        const y = Math.cos(ang) * 0.47, z = -Math.sin(ang) * 0.47;
+        const c = asino
+          ? mesh(geo.cono(0.06, 0.16, 6), pelo(p.extra), 0, y + 0.03, z)
+          : mesh(geo.palla(0.1, 10), pelo(p.extra), (k % 2 ? 0.05 : -0.05), y + 0.02, z);
+        if (asino) c.rotation.x = -ang;
+        else c.scale.set(0.75, 1.15, 1.3);
+        crin.add(c);
+      }
+      if (!asino) {
+        // il ciuffo che scende sulla fronte
+        const ciuffo = mesh(geo.palla(0.12, 10), pelo(p.extra), 0.06, 0.36, 0.25);
+        ciuffo.scale.set(1.1, 0.7, 0.8);
+        ciuffo.rotation.z = -0.4;
+        crin.add(ciuffo);
+      }
+      if (piccolo) crin.scale.setScalar(0.8);
+      testa.add(crin);
+      // coda: lunga e morbida (cavallo) o sottile col fiocco in fondo (asino)
+      const c = new THREE.Group();
+      c.position.set(0, 0.48, -0.32);
+      if (asino) {
+        const filo = mesh(geo.capsula(0.03, 0.22), pelo(p.corpo), 0, -0.1, -0.06);
+        filo.rotation.x = 0.5;
+        c.add(filo);
+        c.add(mesh(geo.palla(0.07, 8), pelo(p.extra), 0, -0.24, -0.13));
+      } else {
+        for (const [dx, rz, l] of [[-0.04, 0.15, 0.32], [0.04, -0.15, 0.34], [0, 0, 0.38]]) {
+          const ciocca = mesh(geo.capsula(0.07, l * (piccolo ? 0.7 : 1)), pelo(p.extra), dx, -0.12, -0.12);
+          ciocca.rotation.set(0.75, 0, rz);
+          c.add(ciocca);
+        }
+      }
+      corpo.add(c);
+      coda = c;
+      // zoccoli
+      for (const z of zampe) z.children[1].scale.set(0.95, 0.75, 1);
+      break;
+    }
+    case 'mucca': {
+      // Mucchina: musone rosa largo, orecchie di lato, cornini, macchie
+      const piccola = a.fase === 'cucciolo';
+      muso.scale.set(1.6, 0.95, 1.0);
+      muso.position.y -= 0.02;
+      naso.visible = false;
+      for (const s of [-1, 1]) {
+        const n = mesh(geo.palla(0.03, 8), mat(varia(p.muso, 0, -0.35), { rim: 0 }), s * 0.08, -0.15, davantiMuso);
+        n.scale.set(1, 1.3, 0.5);
+        n.userData.senzaContorno = true;
+        testa.add(n);
+      }
+      for (const x of [-1, 1]) {
+        const g = new THREE.Group();
+        g.position.set(x * 0.42, 0.14, -0.02);
+        g.rotation.z = -x * 1.45;
+        const o = mesh(geo.palla(0.1), pelo(p.corpo), 0, 0.12, 0);
+        o.scale.set(0.8, 1.4, 0.4);
+        g.add(o);
+        const i = mesh(geo.palla(0.07), mat('#f4b0b8', { rim: 0 }), 0, 0.12, 0.03);
+        i.scale.set(0.7, 1.2, 0.3);
+        i.userData.senzaContorno = true;
+        g.add(i);
+        testa.add(g);
+        orecchieDi.push(g);
+        if (!piccola) {
+          const corno = mesh(geo.cono(0.045, a.sesso === 'm' ? 0.2 : 0.14, 8), mat('#f4ead2'), x * 0.24, 0.43, -0.04);
+          corno.rotation.z = -x * 0.7;
+          testa.add(corno);
+        }
+      }
+      // le macchie: sulla schiena, sui fianchi e una sulla testa
+      const r = rng(hash(a.id + 'macchie'));
+      const macchie: [THREE.Object3D, number, number][] = [[busto, 0.34, 5], [cranio, 0.46, 2]];
+      if (asp.manto % 4 < 2) for (const [dove, raggio, quante] of macchie) for (let k = 0; k < quante; k++) {
+        const th = r() * Math.PI * 2, y = dove === cranio ? 0.2 + r() * 0.5 : -0.2 + r() * 0.9;
+        if (dove === cranio && Math.cos(th) > 0.3) continue; // non sulla faccia
+        const rr = Math.sqrt(1 - y * y);
+        const m = mesh(geo.palla(0.1 + r() * 0.06, 10), mat(p.extra, { rim: 0 }), Math.sin(th) * rr * raggio, y * raggio, Math.cos(th) * rr * raggio * (dove === cranio ? -1 : 1));
+        m.scale.set(1, 1, 0.35);
+        m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), m.position.clone().normalize());
+        m.userData.senzaContorno = true;
+        dove.add(m);
+      }
+      const c = new THREE.Group();
+      c.position.set(0, 0.5, -0.33);
+      const filo = mesh(geo.capsula(0.025, 0.26), pelo(p.corpo), 0, -0.12, -0.05);
+      filo.rotation.x = 0.35;
+      c.add(filo);
+      c.add(mesh(geo.palla(0.06, 8), pelo(p.extra === p.corpo ? p.zampe : p.extra), 0, -0.27, -0.1));
+      corpo.add(c);
+      coda = c;
+      for (const z of zampe) z.children[1].scale.set(0.95, 0.75, 1);
+      break;
+    }
+    case 'maiale': {
+      // Maialino: grugnetto a disco, orecchie a punta piegate in avanti, codina a ricciolo
+      muso.visible = false;
+      naso.visible = false;
+      const grugno = mesh(geo.cil(0.13, 0.14, 0.12, 16), mat(p.muso, { rim: 0.2 }), 0, -0.13, 0.43);
+      grugno.rotation.x = Math.PI / 2;
+      testa.add(grugno);
+      for (const s of [-1, 1]) {
+        const n = mesh(geo.palla(0.03, 8), mat(varia(p.muso, 0, -0.3), { rim: 0 }), s * 0.045, -0.13, 0.49);
+        n.scale.set(0.8, 1.3, 0.4);
+        n.userData.senzaContorno = true;
+        testa.add(n);
+      }
+      bocca.position.set(0, -0.25, 0.4);
+      for (const x of [-0.25, 0.25]) {
+        const o = orecchio(x, 0.14, 0.22, p.corpo, 0.35, varia(p.muso, 0, 0.05));
+        o.rotation.x = 0.7; // piegate in avanti
+      }
+      if (asp.manto % 4 === 1) {
+        // pezzato: macchie scure
+        const r = rng(hash(a.id + 'macchie'));
+        for (let k = 0; k < 4; k++) {
+          const th = r() * Math.PI * 2, y = -0.1 + r() * 0.8, rr = Math.sqrt(1 - y * y);
+          const m = mesh(geo.palla(0.09 + r() * 0.04, 10), mat(p.extra, { rim: 0 }), Math.sin(th) * rr * 0.34, y * 0.34, Math.cos(th) * rr * 0.34);
+          m.scale.set(1, 1, 0.35);
+          m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), m.position.clone().normalize());
+          m.userData.senzaContorno = true;
+          busto.add(m);
+        }
+      } else if (asp.manto % 4 === 2) {
+        // cinta: la fascia chiara intorno alle spalle
+        const fascia = mesh(new THREE.TorusGeometry(0.315, 0.07, 8, 24), mat(p.extra, { rim: 0.2 }), 0, 0.5, 0.06);
+        fascia.scale.set(1.05, 1.0, 1.0);
+        corpo.add(fascia);
+      }
+      const c = new THREE.Group();
+      c.position.set(0, 0.5, -0.33);
+      const ricciolo = mesh(new THREE.TorusGeometry(0.06, 0.02, 6, 14, Math.PI * 1.7), mat(p.corpo), 0, 0, -0.05);
+      ricciolo.rotation.y = Math.PI / 2;
+      c.add(ricciolo);
+      corpo.add(c);
+      coda = c;
+      for (const z of zampe) z.children[1].scale.set(0.9, 0.75, 1);
+      break;
+    }
+    case 'uccellino':
+    case 'papera': {
+      // Uccellino e paperella: becco al posto del muso, ali al posto delle zampe davanti, zampette sottili
+      const papera = a.specie === 'papera';
+      const piccolo = a.fase === 'cucciolo';
+      // da piccola la paperella è un pulcino giallo
+      const corpoC = papera && piccolo ? '#ffe270' : p.corpo;
+      const panciaC = papera && piccolo ? '#fff2b0' : p.pancia;
+      busto.material = pelo(corpoC);
+      pancia.material = mat(panciaC, { rim: 0.2 });
+      muso.visible = false;
+      naso.visible = false;
+      bocca.visible = false;
+      const testaC = papera ? (piccolo ? '#ffe270' : a.sesso === 'm' || asp.manto % 4 !== 1 ? p.extra : p.corpo) : p.corpo;
+      cranio.material = pelo(testaC);
+      if (!papera) {
+        // faccina e petto colorati (il pettirosso arancione, la cinciallegra le guance bianche)
+        const faccia = mesh(geo.palla(0.32, 20), mat(p.muso, { rim: 0.15 }), 0, -0.17, 0.2);
+        faccia.scale.set(1.05, 0.7, 0.85);
+        faccia.userData.senzaContorno = true;
+        testa.add(faccia);
+        // il cappuccio
+        const capp = mesh(geo.palla(0.47, 20), pelo(p.extra), 0, 0.06, -0.03);
+        capp.scale.set(1.02, 0.85, 1.0);
+        testa.add(capp);
+        const becco = mesh(geo.cono(0.095, 0.22, 10), mat(asp.manto % 4 === 3 ? '#f2a020' : '#e8b040', { rim: 0.2 }), 0, -0.1, 0.52);
+        becco.rotation.x = Math.PI / 2;
+        testa.add(becco);
+        // il ciuffetto in testa
+        for (const [x, rz] of [[-0.03, 0.3], [0.03, -0.2]]) {
+          const c = mesh(geo.cono(0.045, 0.14, 6), pelo(p.extra), x, 0.48, 0.02);
+          c.rotation.set(-0.5, 0, rz);
+          testa.add(c);
+        }
+      } else {
+        // il becco largo e piatto
+        const becco = mesh(geo.palla(0.15, 14), mat(piccolo ? '#f6b040' : p.muso, { rim: 0.2 }), 0, -0.15, 0.45);
+        becco.scale.set(1.05, 0.38, 1.15);
+        testa.add(becco);
+        if (!piccolo && asp.manto % 4 === 1 && a.sesso === 'm') {
+          // il collarino bianco del germano
+          const coll = mesh(new THREE.TorusGeometry(0.25, 0.035, 6, 20), mat('#ffffff', { rim: 0 }), 0, -0.4, 0.02);
+          coll.rotation.x = Math.PI / 2;
+          testa.add(coll);
+        }
+      }
+      // ali: al posto delle zampe davanti, sui fianchi
+      const alaC = papera ? varia(corpoC, 0, -0.05) : p.extra;
+      for (const [i, s] of [[0, -1], [1, 1]] as const) {
+        const z = zampe[i];
+        for (const ch of z.children) ch.visible = false;
+        z.position.set(s * 0.3, 0.46, -0.02);
+        const ala = mesh(geo.palla(0.2, 12), pelo(alaC), 0, -0.04, -0.04);
+        ala.scale.set(0.35, 0.85, 1.05);
+        ala.rotation.x = 0.3;
+        z.add(ala);
+      }
+      // zampette sottili arancioni (palmate per la paperella)
+      for (const [i, s] of [[2, -1], [3, 1]] as const) {
+        const z = zampe[i];
+        for (const ch of z.children) ch.visible = false;
+        z.position.set(s * 0.12, 0.26, 0.02);
+        const colZ = papera ? p.zampe : '#e8a040';
+        z.add(mesh(geo.cil(0.025, 0.025, 0.2, 6), mat(colZ), 0, -0.1, 0));
+        const piede = mesh(geo.palla(0.08, 10), mat(colZ), 0, -0.19, 0.05);
+        piede.scale.set(papera ? 1.2 : 0.8, 0.3, papera ? 1.4 : 1.1);
+        z.add(piede);
+      }
+      // la coda: un ventaglio di penne (alzata nella paperella)
+      const c = new THREE.Group();
+      c.position.set(0, 0.42, -0.3);
+      for (const [rz, dx] of [[0.35, -0.06], [0, 0], [-0.35, 0.06]]) {
+        const penna = mesh(geo.palla(0.09, 8), pelo(papera ? corpoC : p.extra), dx, 0.02, -0.12);
+        penna.scale.set(0.6, 0.3, 1.6);
+        penna.rotation.set(papera ? -0.8 : -0.3, rz, 0);
+        c.add(penna);
+      }
+      corpo.add(c);
+      coda = c;
+      break;
+    }
   }
 
   // maschi: ciuffo di pelo in testa (e bozzetti delle corna per i daini piccoli)
-  if (a.sesso === 'm' && a.specie !== 'riccio') {
+  if (a.sesso === 'm' && !['riccio', 'cavallo', 'asino', 'uccellino', 'papera'].includes(a.specie)) {
     for (const [x, rz] of [[-0.06, 0.4], [0.02, 0], [0.09, -0.4]]) {
       const ciuffo = mesh(geo.cono(0.05, 0.16, 6), pelo(p.corpo), x, 0.46, 0.06);
       ciuffo.rotation.z = rz;
@@ -1312,41 +1614,173 @@ export function creaFalo(): { gruppo: THREE.Group; fiamma: THREE.Mesh } {
   return { gruppo: g, fiamma };
 }
 
+/** Il contorno un po' irregolare del laghetto (raggi x 2,4 e z 1,6). */
+const RX_LAGO = 2.4, RZ_LAGO = 1.6;
+function rivaLago(th: number) {
+  return 1 + Math.sin(th * 3 + 0.6) * 0.07 + Math.cos(th * 5) * 0.04;
+}
+function formaLago(scala: number) {
+  const f = new THREE.Shape();
+  for (let i = 0; i <= 48; i++) {
+    const th = (i / 48) * Math.PI * 2, r = rivaLago(th) * scala;
+    const x = Math.cos(th) * RX_LAGO * r, y = -Math.sin(th) * RZ_LAGO * r;
+    if (i === 0) f.moveTo(x, y); else f.lineTo(x, y);
+  }
+  return new THREE.ShapeGeometry(f);
+}
+/** Un punto sulla riva (o dentro il lago, con k < 1). */
+export function puntoLago(th: number, k = 1): [number, number] {
+  const r = rivaLago(th) * k;
+  return [Math.cos(th) * RX_LAGO * r, Math.sin(th) * RZ_LAGO * r];
+}
+
+/** Un pesciolino arancione-argento (per i salti nel laghetto). */
+function pesciolino(colore: string) {
+  const g = new THREE.Group();
+  const corpo = mesh(geo.palla(0.12, 10), materiale({ color: colore, rim: 0.5 }));
+  corpo.scale.set(0.55, 0.75, 1.5);
+  g.add(corpo);
+  const coda = mesh(geo.cono(0.1, 0.14, 6), mat(colore, { rim: 0.5 }), 0, 0, -0.22);
+  coda.rotation.x = -Math.PI / 2;
+  coda.scale.x = 0.3;
+  g.add(coda);
+  return g;
+}
+
+/**
+ * Il laghetto: acqua con la riva di sabbia, ninfee fiorite, canne palustri, sassi,
+ * un pontiletto di legno per pescare e i pesci che ogni tanto saltano (vedi animaLaghetto).
+ */
 export function creaLaghetto(): THREE.Group {
   const g = new THREE.Group();
-  const acqua = mesh(new THREE.CircleGeometry(1.3, 28), materiale({ color: '#5aa8d8', emissive: '#2a6f9a', emissiveIntensity: 0.25, rim: 0.6, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-  acqua.rotation.x = -Math.PI / 2;
-  acqua.position.y = 0.03;
-  acqua.scale.set(1.3, 0.9, 1);
+  const piatto = (geom: THREE.BufferGeometry, m: THREE.Material, y: number) => {
+    const o = mesh(geom, m);
+    o.rotation.x = -Math.PI / 2;
+    o.position.y = y;
+    o.userData.senzaContorno = true;
+    g.add(o);
+    return o;
+  };
+  const sopra = { polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 };
+  piatto(formaLago(1.16), materiale({ color: '#e6d3a0', rim: 0.2, ...sopra }), 0.015);
+  const acqua = piatto(formaLago(1), materiale({ color: '#4f9fd4', emissive: '#2a6f9a', emissiveIntensity: 0.25, rim: 0.6, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }), 0.03);
   acqua.name = 'acqua';
-  g.add(acqua);
-  for (let i = 0; i < 11; i++) {
-    const s = creaSasso(0.4 + (i % 3) * 0.12);
-    const a = (i / 11) * Math.PI * 2;
-    s.position.set(Math.cos(a) * 1.75, s.position.y, Math.sin(a) * 1.25);
+  // il centro più profondo e qualche riflesso
+  piatto(formaLago(0.6), materiale({ color: '#3a86c0', emissive: '#1e5a86', emissiveIntensity: 0.25, rim: 0.4, polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8 }), 0.035);
+  for (const [x, z, l] of [[-0.6, -0.5, 0.5], [0.5, 0.35, 0.35], [-1.1, 0.5, 0.3]]) {
+    const r = mesh(geo.scatola(l, 0.01, 0.05), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.5, rim: 0 }), x, 0.045, z);
+    r.userData.senzaContorno = true;
+    g.add(r);
+  }
+  // sassi sulla riva (ma non davanti al pontile)
+  for (let i = 0; i < 14; i++) {
+    const th = (i / 14) * Math.PI * 2 + 0.2;
+    if (Math.abs(th - Math.PI * 0.5) < 0.35) continue;
+    const s = creaSasso(0.32 + (i % 3) * 0.1);
+    const [x, z] = puntoLago(th, 1.1);
+    s.position.set(x, s.position.y, z);
     g.add(s);
   }
-  // ninfee
-  for (const [x, z] of [[0.4, 0.2], [-0.5, -0.3], [0.1, -0.5]]) {
-    const n = mesh(geo.cil(0.18, 0.18, 0.02, 10), mat('#4f9a50'), x, 0.05, z);
-    g.add(n);
-    g.add(mesh(geo.palla(0.06, 8), mat('#ff9ab8'), x + 0.05, 0.1, z));
+  // canne palustri con il pennacchio marrone, a ciuffi
+  const verde = mat('#5a9a3a', { rim: 0.2 }), marrone = mat('#7a4a26', { rim: 0.2 });
+  for (const [th, n] of [[2.6, 6], [3.3, 5], [5.6, 6], [0.2, 4]] as const) {
+    const ciuffo = new THREE.Group();
+    const [x, z] = puntoLago(th, 0.98);
+    ciuffo.position.set(x, 0, z);
+    for (let k = 0; k < n; k++) {
+      const h = 0.7 + ((k * 37) % 10) / 20;
+      const dx = Math.cos(k * 2.3) * 0.18, dz = Math.sin(k * 2.3) * 0.14;
+      const stelo = mesh(geo.cil(0.012, 0.018, h, 4), verde, dx, h / 2, dz);
+      stelo.rotation.z = Math.cos(k * 1.7) * 0.12;
+      ciuffo.add(stelo);
+      if (k % 2 === 0) ciuffo.add(mesh(geo.capsula(0.035, 0.14), marrone, dx + stelo.rotation.z * -h / 2, h + 0.02, dz));
+      else {
+        const foglia = mesh(geo.cono(0.04, h * 0.8, 4), verde, dx * 1.4, h * 0.4, dz * 1.4);
+        foglia.scale.z = 0.3;
+        foglia.rotation.z = -Math.cos(k) * 0.4;
+        ciuffo.add(foglia);
+      }
+    }
+    g.add(ciuffo);
   }
-  return g;
+  // ninfee: foglie tonde con lo spicchio, alcune col fiore rosa o bianco
+  for (const [x, z, r, fiore] of [[0.9, -0.4, 0.22, '#ff9ab8'], [-0.9, -0.2, 0.18, ''], [-0.4, 0.75, 0.2, '#ffffff'], [1.5, 0.4, 0.16, ''], [-1.5, -0.55, 0.2, '#ff9ab8'], [0.2, -0.9, 0.15, '']] as const) {
+    const foglia = mesh(new THREE.CylinderGeometry(r, r, 0.02, 14, 1, false, 0.3, Math.PI * 2 - 0.6), mat('#4f9a50', { rim: 0.3 }), x, 0.05, z);
+    foglia.rotation.y = x * 3;
+    g.add(foglia);
+    if (fiore) {
+      const f = new THREE.Group();
+      for (let k = 0; k < 6; k++) {
+        const pe = mesh(geo.cono(0.04, 0.12, 5), mat(fiore, { rim: 0.2 }), Math.cos(k) * 0.04, 0.05, Math.sin(k) * 0.04);
+        pe.rotation.set(Math.sin(k) * 0.6, 0, -Math.cos(k) * 0.6);
+        f.add(pe);
+      }
+      f.add(mesh(geo.palla(0.03, 6), mat('#ffd34d'), 0, 0.05, 0));
+      f.position.set(x + 0.05, 0.06, z + 0.03);
+      g.add(f);
+    }
+  }
+  // il pontile di legno (davanti, dove si pesca)
+  const pontile = new THREE.Group();
+  const legno = assi();
+  for (let i = 0; i < 6; i++) pontile.add(mesh(geo.scatola(0.62, 0.06, 0.2), legno, 0, 0.2, -i * 0.22));
+  for (const x of [-0.27, 0.27]) for (const z of [0, -1.1]) pontile.add(mesh(geo.cil(0.045, 0.045, 0.45, 6), legno, x, 0.1, z));
+  const [px, pz] = puntoLago(Math.PI * 0.5, 1.05);
+  pontile.position.set(px + 0.2, 0, pz);
+  pontile.name = 'pontile';
+  g.add(pontile);
+  // i pesci che saltano e i cerchi nell'acqua
+  const salto = pesciolino('#f08a3a');
+  salto.name = 'salto';
+  salto.visible = false;
+  g.add(salto);
+  const cerchio = mesh(new THREE.TorusGeometry(0.2, 0.012, 4, 24), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.6, rim: 0, transparent: true }), 0, 0.05, 0);
+  cerchio.rotation.x = Math.PI / 2;
+  cerchio.name = 'cerchio';
+  cerchio.userData.senzaContorno = true;
+  cerchio.visible = false;
+  g.add(cerchio);
+  return contorno(g);
+}
+
+/** Ogni tanto un pesce salta fuori dall'acqua e lascia un cerchio (t in secondi). */
+export function animaLaghetto(g: THREE.Object3D, t: number) {
+  const salto = g.getObjectByName('salto');
+  const cerchio = g.getObjectByName('cerchio') as THREE.Mesh | undefined;
+  if (!salto || !cerchio) return;
+  const periodo = 4.5, n = Math.floor(t / periodo), f = t / periodo - n;
+  const r = rng(hash('salto' + n));
+  const [x, z] = puntoLago(r() * Math.PI * 2, 0.25 + r() * 0.45);
+  const durata = 0.18; // in frazione del periodo
+  salto.visible = f < durata;
+  if (salto.visible) {
+    const k = f / durata;
+    salto.position.set(x + (k - 0.5) * 0.5, 0.05 + Math.sin(k * Math.PI) * 0.55, z);
+    salto.rotation.set(0, Math.PI / 2, 0);
+    salto.rotateX(-(k - 0.5) * 2.4);
+    ((salto.children[0] as THREE.Mesh).material as THREE.MeshToonMaterial).color.set(r() < 0.5 ? '#f08a3a' : '#b8c8d8');
+  }
+  const c = (f - durata * 0.9) / 0.35;
+  cerchio.visible = c > 0 && c < 1;
+  if (cerchio.visible) {
+    cerchio.position.set(x + 0.25, 0.05, z);
+    cerchio.scale.setScalar(0.5 + c * 2.5);
+    (cerchio.material as THREE.MeshToonMaterial).opacity = 1 - c;
+  }
 }
 
 export function creaPonticello(): THREE.Group {
   const g = new THREE.Group();
-  const n = 9;
+  const n = 12;
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1) - 0.5;
-    const asse = mesh(geo.scatola(0.3, 0.06, 0.8), assi(), t * 2.6, 0.3 + Math.cos(t * Math.PI) * 0.35, 0);
+    const asse = mesh(geo.scatola(0.3, 0.06, 0.8), assi(), t * 3.6, 0.3 + Math.cos(t * Math.PI) * 0.35, 0);
     asse.rotation.z = -Math.sin(t * Math.PI) * 0.45;
     g.add(asse);
   }
   for (const z of [-0.42, 0.42]) for (let i = 0; i <= 4; i++) {
     const t = i / 4 - 0.5;
-    g.add(mesh(geo.cil(0.04, 0.04, 0.5, 6), assi(), t * 2.4, 0.55 + Math.cos(t * Math.PI) * 0.35, z));
+    g.add(mesh(geo.cil(0.04, 0.04, 0.5, 6), assi(), t * 3.3, 0.55 + Math.cos(t * Math.PI) * 0.35, z));
   }
   return contorno(g);
 }
@@ -1721,6 +2155,128 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
       fronte = 0.82;
       break;
     }
+    case 'mucca':
+    case 'cavallo': {
+      // il fienile (mucca) e la scuderia (cavallo): tetto a capanna, porte grandi con la croce bianca
+      const stalla = specie === 'cavallo';
+      const L = stalla ? 2.5 : 2.1, H = stalla ? 1.4 : 1.7, P = 1.7;
+      g.add(mesh(geo.scatola(L, H, P), muro, 0, H / 2, 0));
+      const tA = tettoA(L + 0.3, stalla ? 0.9 : 1.2, P + 0.3, tetto);
+      tA.position.y = H;
+      g.add(tA);
+      fronte = P / 2;
+      const bianco = mat('#fbf8f2');
+      if (stalla) {
+        // porta a due metà, come nelle scuderie, e il ferro di cavallo portafortuna
+        g.add(mesh(geo.scatola(0.7, 0.55, 0.08), porta, 0, 0.3, fronte + 0.02));
+        g.add(mesh(geo.scatola(0.7, 0.5, 0.08), porta, 0, 0.88, fronte + 0.05));
+        const ferro = mesh(new THREE.TorusGeometry(0.13, 0.035, 6, 14, Math.PI * 1.3), mat('#c8c8d0', { rim: 0.6 }), 0, 1.25, fronte + 0.06);
+        ferro.rotation.z = -Math.PI * 0.15 + Math.PI;
+        g.add(ferro);
+        for (const x of [-0.85, 0.85]) g.add(mesh(geo.scatola(0.4, 0.35, 0.06), vetro, x, 0.85, fronte + 0.01));
+        altPorta = 0.55;
+      } else {
+        g.add(mesh(geo.scatola(0.95, 1.05, 0.08), porta, 0, 0.53, fronte + 0.02));
+        for (const r of [0.83, -0.83]) {
+          const asse = mesh(geo.scatola(0.08, 1.35, 0.03), bianco, 0, 0.53, fronte + 0.07);
+          asse.rotation.z = r;
+          g.add(asse);
+        }
+        g.add(mesh(geo.scatola(1.05, 0.08, 0.04), bianco, 0, 1.08, fronte + 0.07));
+        // la finestrella del fienile, con il fieno che spunta
+        g.add(mesh(geo.scatola(0.45, 0.4, 0.06), mat('#5a3a20'), 0, H + 0.4, fronte + 0.17));
+        g.add(mesh(geo.palla(0.16, 8), mat('#e8c860', { rim: 0.3 }), 0, H + 0.3, fronte + 0.24));
+        altPorta = 0.55;
+      }
+      // una balla di fieno di lato
+      const balla = mesh(geo.cil(0.32, 0.32, 0.5, 12), mat('#e2c46a', { rim: 0.3 }), L / 2 + 0.35, 0.32, 0.3);
+      balla.rotation.x = Math.PI / 2;
+      g.add(balla);
+      break;
+    }
+    case 'asino': {
+      // la casetta dell'asinello: di pietra, con la tettoia di legno e il fieno sotto
+      g.add(mesh(geo.scatola(1.7, 1.3, 1.5), pietra(), -0.2, 0.65, 0));
+      const tA = tettoA(1.95, 0.8, 1.75, tetto);
+      tA.position.set(-0.2, 1.3, 0);
+      g.add(tA);
+      const tettoia = mesh(geo.scatola(1.0, 0.08, 1.5), legno, 1.1, 1.15, 0.05);
+      tettoia.rotation.z = -0.25;
+      g.add(tettoia);
+      for (const z of [-0.6, 0.65]) g.add(mesh(geo.cil(0.05, 0.05, 1.05, 6), legno, 1.5, 0.52, z));
+      const fieno = mesh(geo.palla(0.4, 10), mat('#e2c46a', { rim: 0.3 }), 1.05, 0.25, 0);
+      fieno.scale.set(1, 0.6, 1.2);
+      g.add(fieno);
+      g.add(mesh(geo.scatola(0.55, 0.9, 0.08), porta, -0.2, 0.45, 0.77));
+      g.add(mesh(geo.scatola(0.32, 0.32, 0.06), vetro, -0.75, 0.85, 0.77));
+      fronte = 0.77;
+      break;
+    }
+    case 'maiale': {
+      // casetta di mattoni con il comignolo, le finestre tonde e la pozzanghera di fango
+      const mattoni = mat('#ffffff', { map: texture(64, (cx, l) => {
+        cx.fillStyle = '#e8eae4'; cx.fillRect(0, 0, l, l);
+        for (let r = 0; r < 8; r++) for (let k = -1; k < 4; k++) {
+          cx.fillStyle = ['#c8644a', '#b85a42', '#d4765a'][(r + k + 3) % 3];
+          cx.fillRect(k * 16 + (r % 2) * 8 + 1, r * 8 + 1, 14, 6);
+        }
+      }, 2) });
+      g.add(mesh(geo.scatola(2.0, 1.35, 1.7), mattoni, 0, 0.68, 0));
+      const tA = tettoA(2.35, 0.95, 2.0, tetto);
+      tA.position.y = 1.35;
+      g.add(tA);
+      g.add(mesh(geo.scatola(0.3, 0.6, 0.3), mattoni, 0.55, 2.0, -0.2));
+      g.add(mesh(geo.scatola(0.55, 0.9, 0.08), porta, 0, 0.45, 0.87));
+      for (const x of [-0.6, 0.6]) {
+        const f = mesh(geo.cil(0.18, 0.18, 0.06, 14), vetro, x, 0.85, 0.87);
+        f.rotation.x = Math.PI / 2;
+        g.add(f);
+      }
+      const fango = mesh(geo.cil(0.5, 0.5, 0.03, 14), mat('#7a5232', { rim: 0.4 }), 1.35, 0.02, 1.0);
+      fango.scale.z = 0.65;
+      fango.userData.senzaContorno = true;
+      g.add(fango);
+      fronte = 0.87;
+      break;
+    }
+    case 'uccellino': {
+      // una grande casetta per uccelli in cima a un palo, con il posatoio davanti al buco
+      g.add(mesh(geo.cil(0.12, 0.15, 1.5, 8), legno, 0, 0.75, 0));
+      g.add(mesh(geo.scatola(1.5, 1.25, 1.3), muro, 0, 2.1, 0));
+      const tA = tettoA(1.8, 0.75, 1.6, tetto);
+      tA.position.y = 2.72;
+      g.add(tA);
+      const buco = mesh(geo.cil(0.27, 0.27, 0.06, 16), mat('#3a2418'), 0, 2.15, 0.66);
+      buco.rotation.x = Math.PI / 2;
+      g.add(buco);
+      const posatoio = mesh(geo.cil(0.035, 0.035, 0.35, 6), legno, 0, 1.78, 0.8);
+      posatoio.rotation.x = Math.PI / 2;
+      g.add(posatoio);
+      // qualche fiorellino ai piedi del palo
+      for (const [x, z] of [[-0.35, 0.3], [0.3, 0.35]]) { const f = creaFiore('#ff9ab8'); f.scale.setScalar(2); f.position.set(x, 0, z); g.add(f); }
+      fronte = 0.66;
+      altPorta = 2.15;
+      break;
+    }
+    case 'papera': {
+      // la casetta a punta della paperella, con il suo stagno davanti e la passerella
+      const tA = tettoA(2.0, 1.7, 1.8, tetto);
+      g.add(tA);
+      g.add(mesh(geo.scatola(1.5, 0.3, 1.6), muro, 0, 0.15, 0));
+      const pd = mesh(geo.cil(0.36, 0.36, 0.08, 16), porta, 0, 0.55, 0.88);
+      pd.rotation.x = Math.PI / 2;
+      g.add(pd);
+      const stagno = mesh(new THREE.CircleGeometry(0.75, 20), materiale({ color: '#5aa8d8', emissive: '#2a6f9a', emissiveIntensity: 0.25, rim: 0.6, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+      stagno.rotation.x = -Math.PI / 2;
+      stagno.position.set(1.3, 0.03, 1.25);
+      stagno.scale.set(1, 0.7, 1);
+      stagno.userData.senzaContorno = true;
+      g.add(stagno);
+      for (let i = 0; i < 4; i++) g.add(mesh(geo.scatola(0.5, 0.05, 0.14), legno, 0, 0.05, 1.1 + i * 0.17));
+      fronte = 0.88;
+      altPorta = 0.55;
+      break;
+    }
     default: {
       // volpe: casetta col tetto spiovente e il comignolo
       g.add(mesh(geo.scatola(2.0, 1.4, 1.7), muro, 0, 0.7, 0));
@@ -1740,7 +2296,7 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
     const ins = creaInsegnaMestiere(mestiere);
     // sopra la porta; dove il tetto sporge (riccio, lepre) appoggiata sul tetto, sullo scoiattolo appesa sotto la piattaforma
     const dove: Partial<Record<Specie, [number, number, number, number]>> = {
-      riccio: [0, 1.32, 1.34, -0.35], lepre: [0, 1.85, 1.1, -0.6], scoiattolo: [1.15, 1.22, 1.08, 0], tasso: [0, altPorta + 0.8, fronte + 0.12, -0.15],
+      riccio: [0, 1.32, 1.34, -0.35], lepre: [0, 1.85, 1.1, -0.6], uccellino: [0, 1.5, 0.75, 0], papera: [0, 1.15, 0.6, -0.5], scoiattolo: [1.15, 1.22, 1.08, 0], tasso: [0, altPorta + 0.8, fronte + 0.12, -0.15],
     };
     const [xi, yi, zi, ri] = dove[specie] ?? [0, altPorta + 0.68, fronte + 0.1, 0];
     ins.position.set(xi, yi, zi);
@@ -1787,6 +2343,18 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
     }
   }
   return contorno(g);
+}
+
+/** Tetto a capanna (prisma triangolare): base larga `l`, alto `h`, profondo `p`, appoggiato a y = 0. */
+function tettoA(l: number, h: number, p: number, m: THREE.Material): THREE.Mesh {
+  const f = new THREE.Shape();
+  f.moveTo(-l / 2, 0);
+  f.lineTo(l / 2, 0);
+  f.lineTo(0, h);
+  f.closePath();
+  const geom = new THREE.ExtrudeGeometry(f, { depth: p, bevelEnabled: false });
+  geom.translate(0, 0, -p / 2);
+  return mesh(geom, m);
 }
 
 /** Cartello a freccia per indicare la via, con una scritta di Giada. */

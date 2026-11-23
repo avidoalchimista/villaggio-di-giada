@@ -36,6 +36,12 @@ export const NOME_MANTO: Record<Specie, string[]> = {
   riccio: ['sabbia', 'castano', 'biondo', 'scuro'],
   scoiattolo: ['rosso', 'grigio', 'nero', 'dorato'],
   lepre: ['grigia', 'sabbia', 'bianca', 'bruna'],
+  cavallo: ['baio', 'palomino', 'pomellato', 'morello'],
+  asino: ['grigio', 'marrone', 'crema', 'scuro'],
+  mucca: ['pezzata nera', 'pezzata rossa', 'bruna', 'color panna'],
+  maiale: ['rosa', 'pezzato', 'cinta', 'fulvo'],
+  uccellino: ['pettirosso', 'cinciallegra', 'passerotto', 'merlo'],
+  papera: ['bianca', 'germano', 'grigia', 'color crema'],
 };
 
 export interface DefAbilita { id: string; nome: string; giorni: number; simbolo: string; frase: string; richiede?: string; luogo?: string }
@@ -58,6 +64,7 @@ interface Regole {
   edificio: { giorniLento: number; giorniFermo: number };
   edifici: DefEdificio[];
   ghiande: { perPagina: number; perPuntoForza: number; massimoPerPagina: number };
+  pesca: { ghiandePerPesce: number; pesciPagatiAlGiorno: number };
   costruzioni: DefCostruzione[];
   castagno: { perGiorno: number; massimo: number; giorniSenzaDiario: number };
   richieste: { probabilitaAlGiorno: number; durataGiorni: number; premio: number };
@@ -94,6 +101,7 @@ export function accorda(testo: string, a: Pick<Animale, 'sesso'>): string {
 export function conArticolo(a: Pick<Animale, 'specie' | 'sesso'>): string {
   const n = nomeSpecie(a);
   // volpe e lepre sono femminili anche per i maschi: "la volpe", non "il volpe"
+  if (/^[aeiouh]/.test(n)) return "l'" + n; // l'asinella, l'uccellino
   if (a.sesso === 'f' || n === NOME_SPECIE[a.specie].f) return 'la ' + n;
   return /^(s[bcdfgklmnpqrtv]|z|gn|ps|x|y)/.test(n) ? 'lo ' + n : 'il ' + n;
 }
@@ -114,9 +122,15 @@ function evento(s: StatoGioco, data: string, tipo: Evento['tipo'], testo: string
   }
 }
 
-function specieDaVirtu(v: Virtu): Specie | null {
-  const sp = (Object.entries(REGOLE.specieVirtu) as [Specie, Virtu][]).find(([, vv]) => vv === v)?.[0];
-  return sp && REGOLE.specieDisponibili.includes(sp) ? sp : null;
+/**
+ * La specie di un uovo nuovo per una virtù: ogni virtù ha più specie, si sceglie
+ * quella che nel villaggio non c'è ancora (o ce n'è meno), a pari merito la prima della lista.
+ */
+function specieDaVirtu(s: StatoGioco, v: Virtu): Specie | null {
+  const tra = REGOLE.specieDisponibili.filter((sp) => REGOLE.specieVirtu[sp] === v);
+  if (!tra.length) return null;
+  const quanti = (sp: Specie) => s.animali.filter((a) => a.specie === sp).length;
+  return tra.reduce((m, sp) => (quanti(sp) < quanti(m) ? sp : m));
 }
 
 function indiceFase(f: Fase) {
@@ -288,7 +302,7 @@ export function applicaVoce(s: StatoGioco, voce: VoceDiario): Evento[] {
   for (const v of VIRTU) {
     for (const soglia of REGOLE.soglieUova) {
       if (prima[v] < soglia && s.totaleVirtu[v] >= soglia && s.animali.length < REGOLE.maxAnimali) {
-        const sp = specieDaVirtu(v);
+        const sp = specieDaVirtu(s, v);
         if (!sp) continue;
         const u = nuovoUovo(s, sp, data, REGOLE.vociAltreUova);
         evento(s, data, 'uovo', `Il corvo ha trovato un uovo nuovo: dentro c'è ${conArticolo(u)}.`, out, u.id);

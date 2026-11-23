@@ -72,9 +72,9 @@ celle.forEach((c, i) => {
 if (modo === 'case') {
   // le case dei mestieri, viste da davanti e un po' dall'alto
   const da = +(q.get('da') ?? 0), quanti = +(q.get('n') ?? 6), colonne = +(q.get('c') ?? 3);
-  const specie = ['volpe', 'daino', 'tasso', 'riccio', 'scoiattolo', 'lepre'];
+  const specie = q.get('s')?.split(',') ?? ['volpe', 'daino', 'tasso', 'riccio', 'scoiattolo', 'lepre'];
   MESTIERI.slice(da, da + quanti).forEach((m, i) => {
-    const casa = creaCasaAnimale(specie[(i + da) % 6] as any, EMOZIONI[(i + da) % 8], 'adulto', m.id);
+    const casa = creaCasaAnimale(specie[(i + da) % specie.length] as any, EMOZIONI[(i + da) % 8], 'adulto', q.get('senza') ? null : m.id);
     const col = i % colonne, row = Math.floor(i / colonne);
     casa.position.set((col - (colonne - 1) / 2) * 6.6, 0, row * 6.2);
     sc.add(casa);
