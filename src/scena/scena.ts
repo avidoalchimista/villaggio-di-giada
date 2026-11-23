@@ -1,18 +1,19 @@
 // La radura del villaggio in 3D. Gli animali girano liberi, dormono, festeggiano.
 // Il villaggio si allarga quando arrivano nuovi abitanti e nascono nuovi mestieri.
 import * as THREE from 'three';
+import { hash } from '../lib/caso';
 import { COLORE_VIRTU } from '../lib/etichette';
 import { emozioneDellaPagina, REGOLE } from '../lib/gioco';
 import { arredoVuoto, fasePianta, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arredo, type Posto } from '../lib/arredo';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
-  aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo,
+  aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo, SIMBOLI_MESTIERE,
   creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, creaCastagno, creaCastagna, creaCanna,
   creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto,
 } from './modelli';
-import { CURVA, materialeTerreno, spriteTesto, ombra } from './ps1';
+import { CURVA, materiale, materialeTerreno, spriteTesto } from './ps1';
 import type { Meteo } from '../lib/meteo';
 
 export type Bersaglio =
@@ -22,6 +23,7 @@ export type Bersaglio =
   | { tipo: 'uovo'; id: string }
   | { tipo: 'edificio'; tipo_edificio: string }
   | { tipo: 'bottega'; id: string }
+  | { tipo: 'nido' }
   | { tipo: 'castagne' }
   | { tipo: 'aiuola'; id: string }
   | { tipo: 'quadretto'; id: string };
@@ -60,6 +62,44 @@ function puntoTondo(): THREE.CanvasTexture {
   return texPunto;
 }
 
+/** Raggi di luce per la schiusa. */
+let texR: THREE.CanvasTexture | null = null;
+function texRaggi(): THREE.CanvasTexture {
+  if (texR) return texR;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const c = cv.getContext('2d')!;
+  c.translate(64, 64);
+  for (let i = 0; i < 12; i++) {
+    c.rotate((Math.PI * 2) / 12);
+    const g = c.createLinearGradient(0, 0, 0, -64);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(-3, 0);
+    c.lineTo(-(i % 2 ? 7 : 11), -64);
+    c.lineTo(i % 2 ? 7 : 11, -64);
+    c.lineTo(3, 0);
+    c.fill();
+  }
+  texR = new THREE.CanvasTexture(cv);
+  return texR;
+}
+
+/** Le due metà del guscio: quella di sopra vola via, quella di sotto resta nel nido. */
+function creaGusci(): THREE.Mesh[] {
+  const m = materiale({ color: '#fff7e6', rim: 0.5, side: THREE.DoubleSide });
+  const sopra = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42), m);
+  sopra.scale.set(1, 1.3, 1);
+  const sotto = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45), m);
+  sotto.scale.set(1, 1.3, 1);
+  sopra.position.y = 0.2;
+  // la metà di sotto la appoggio col fondo sul nido
+  sotto.geometry.translate(0, 0.3, 0);
+  return [sopra, sotto];
+}
+
 interface Abitante {
   m: ModelloAnimale;
   dati: Animale;
@@ -76,6 +116,7 @@ interface Abitante {
   incontro: number; // secondi di chiacchierata rimasti
   prossimoBalloon: number;
   balloon: THREE.Sprite | null;
+  sveglio: number; // di notte: secondi di veglia dopo una carezza
 }
 
 /** Grandezza della radura: cresce con gli abitanti, i mestieri e le costruzioni. */
@@ -152,6 +193,7 @@ export class Scena {
   private prato!: THREE.Mesh;
   private matTerreno!: THREE.MeshLambertMaterial;
   private strutture = new Map<string, THREE.Object3D>();
+  private grande: THREE.Object3D | null = null;
   private giaAggiornata = false;
   private fiamma: THREE.Mesh | null = null;
   private castagne = new THREE.Group();
@@ -178,6 +220,19 @@ export class Scena {
   private effimeri: { o: THREE.Object3D; vita: number; vel: THREE.Vector3 }[] = [];
   private resizeObs: ResizeObserver;
   onTocco: (b: Bersaglio) => void = () => {};
+  // primo piano: la telecamera si avvicina a qualcosa (schiusa, riepilogo "mentre eri via")
+  private cine: { segui: () => THREE.Vector3; dist: number; alt: number; guardaY: number; angolo: number; animale?: string } | null = null;
+  private morbido = 0; // secondi di passaggio dolce dopo il primo piano
+  private posCam = new THREE.Vector3(0, 8, 14);
+  private guardaCam = new THREE.Vector3(0, 0.6, 0);
+  private trattenuti = new Set<string>(); // nati ma ancora mostrati come uova, finché non si vede la schiusa
+  private ultimoStato: StatoGioco | null = null;
+  private schiusaIn: {
+    id: string; t: number; uovo: THREE.Group; crepe: number; alone: THREE.Sprite; raggi: THREE.Sprite; luce: THREE.PointLight;
+    nato: boolean; gusci: THREE.Mesh[]; base: number; fatto: () => void; onFase?: (f: 'trema' | 'crepa' | 'luce' | 'nato') => void;
+  } | null = null;
+  private stelline: { o: THREE.Sprite; vita: number }[] = [];
+  velocita = 1; // solo per le prove: accelera la schiusa
 
   // ---------- arredo ----------
   private castagno!: THREE.Group;
@@ -243,9 +298,10 @@ export class Scena {
       this.selvatici.add(sasso);
     }
 
+    // (il grande albero è la tana dei piccoli: non si abbatte)
     const grande = creaAlbero(1.5, 2);
     grande.position.set(-4.1, 0, 0.2);
-    this.selvatici.add(grande);
+    this.scene.add(grande);
 
     // anello giallo sotto la cosa scelta quando si arreda
     this.anelloSel = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.15, 32), new THREE.MeshBasicMaterial({ color: '#ffd166', transparent: true, opacity: 0.9, depthWrite: false }));
@@ -257,6 +313,21 @@ export class Scena {
     this.nido.scale.setScalar(1.3);
     this.nido.position.set(-2.8, 0, 1.6);
     this.scene.add(this.nido);
+    // sotto il grande albero c'è la tana dei piccoli: toccando l'albero o il nido si sbircia dentro
+    this.grande = grande;
+    grande.userData.bersaglio = { tipo: 'nido' };
+    this.nido.userData.bersaglio = { tipo: 'nido' };
+    const porticina = new THREE.Group();
+    porticina.add(new THREE.Mesh(new THREE.CircleGeometry(0.15, 18), mat('#4a3020', { rim: 0 })));
+    const tondo = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.025, 6, 18), mat('#a8703e'));
+    porticina.add(tondo);
+    const pomello = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), mat('#f2c94c'));
+    pomello.position.set(0.08, 0, 0.02);
+    porticina.add(pomello);
+    porticina.scale.y = 1.25;
+    porticina.position.set(Math.sin(0.6) * 0.235, 0.17, Math.cos(0.6) * 0.235);
+    porticina.rotation.y = 0.6;
+    grande.add(porticina);
 
     this.corvo.gruppo.position.set(-1.7, 0, 3.5);
     this.corvo.gruppo.rotation.y = 0.4;
@@ -481,6 +552,7 @@ export class Scena {
     this.arredo = s.arredo ?? arredoVuoto();
     this.oggi = s.ultimoAccesso;
     this.ghiande = s.ghiande;
+    this.ultimoStato = s;
     this.aggiornaCastagne(s.castagneMature ?? 0);
     this.conRichiesta = s.richiesta?.animale ?? null;
     const primaVolta = this.strutture.size === 0 && !this.giaAggiornata;
@@ -489,7 +561,7 @@ export class Scena {
     const visti = new Set<string>();
     s.animali.forEach((a, i) => {
       visti.add(a.id);
-      if (a.fase === 'uovo') {
+      if (a.fase === 'uovo' || this.trattenuti.has(a.id)) {
         this.togliAbitante(a.id);
         if (!this.uova.has(a.id)) {
           const u = creaUovo(COLORE_VIRTU[REGOLE.specieVirtu[a.specie]]);
@@ -505,7 +577,7 @@ export class Scena {
       if (uovo) {
         this.scene.remove(uovo);
         this.uova.delete(a.id);
-        this.coriandoli(uovo.position.clone().setY(0.6), ['#ffd166', '#ff8fb1', '#7ccf6a', '#8fd3ff']);
+        if (this.schiusaIn?.id !== a.id) this.coriandoli(uovo.position.clone().setY(0.6), ['#ffd166', '#ff8fb1', '#7ccf6a', '#8fd3ff']);
       }
       let ab = this.abitanti.get(a.id);
       if (!ab) {
@@ -517,13 +589,30 @@ export class Scena {
         ab = {
           m, dati: a, meta: this.puntoCasuale(), pausa: 1 + Math.random() * 2, passo: Math.random() * 6, salto: uovo ? 1 : 0,
           ammicca: Math.random() * 4, z: [], eretto: 0, amico: null, incontro: 0, prossimoBalloon: 0, balloon: null,
-          attivita: null, canna: null,
+          attivita: null, canna: null, sveglio: 0,
         };
         this.abitanti.set(a.id, ab);
       }
       ab.dati = a;
-      // i cuccioli sono piccoli e con la testa enorme; crescendo il corpo si allunga
-      const scala = ({ cucciolo: 1.15, giovane: 1.35, adulto: 1.55, maestro: 1.65, uovo: 1 } as const)[a.fase];
+      // crescendo cambia il modello (corna, unghie, orecchie) e arrivano i vestiti: lo rifacciamo
+      const chiave = `${a.fase}|${(a.vestiti ?? []).join(',')}|${a.mestiere ?? ''}`;
+      if (ab.m.gruppo.userData.chiave !== undefined && ab.m.gruppo.userData.chiave !== chiave) {
+        const vecchio = ab.m.gruppo;
+        const m = creaAnimale(a);
+        m.gruppo.position.copy(vecchio.position);
+        m.gruppo.rotation.copy(vecchio.rotation);
+        m.gruppo.userData.bersaglio = vecchio.userData.bersaglio;
+        if (ab.canna) { ab.canna.parent?.remove(ab.canna); ab.canna = null; }
+        for (const z of ab.z) z.parent?.remove(z);
+        ab.z = [];
+        this.scene.remove(vecchio);
+        this.scene.add(m.gruppo);
+        ab.m = m;
+      }
+      ab.m.gruppo.userData.chiave = chiave;
+      // i cuccioli sono piccoli e con la testa enorme; crescendo il corpo si allunga in piedi,
+      // ma la grandezza cresce poco: un adulto è un cucciolo cresciuto, non un gigante
+      const scala = ({ cucciolo: 1.15, giovane: 1.22, adulto: 1.28, maestro: 1.32, uovo: 1 } as const)[a.fase];
       ab.m.gruppo.scale.setScalar(scala * ((ab.m.gruppo.userData.taglia as number) ?? 1));
       const proporzione = ({ cucciolo: 1.12, giovane: 1.0, adulto: 0.9, maestro: 0.9, uovo: 1 } as const)[a.fase];
       ab.m.testa.scale.setScalar(proporzione);
@@ -778,6 +867,60 @@ export class Scena {
     }
   }
 
+  private zeta(ab: Abitante, accese: boolean) {
+    if (accese && !ab.z.length) {
+      for (let i = 0; i < 3; i++) {
+        const z = spriteTesto('z', '#ffffff');
+        z.scale.setScalar(0.25 + i * 0.07);
+        ab.m.gruppo.add(z);
+        ab.z.push(z);
+      }
+    } else if (!accese && ab.z.length) {
+      ab.z.forEach((z) => ab.m.gruppo.remove(z));
+      ab.z = [];
+    }
+  }
+
+  private dormi(ab: Abitante, dt: number, t: number) {
+    ab.m.corpo.rotation.z = THREE.MathUtils.lerp(ab.m.corpo.rotation.z, 1.25, dt * 2);
+    ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, -0.05, dt * 2);
+    ab.m.corpo.scale.y = 1 + Math.sin(t * 1.5) * 0.03;
+    ab.z.forEach((z, i) => {
+      const f = (t * 0.5 + i / 3) % 1;
+      z.position.set(0.3 + f * 0.3, 0.9 + f * 0.9, 0);
+      z.material.opacity = 1 - f;
+    });
+  }
+
+  /** Che momento della giornata è (ora vera, o quella finta delle prove). */
+  momento(): 'mattina' | 'lavoro' | 'pranzo' | 'sera' | 'notte' {
+    const ora = new Date();
+    const h = this.oraFinta ?? ora.getHours() + ora.getMinutes() / 60;
+    if (h >= 21.5 || h < 7) return 'notte';
+    if (h < 9) return 'mattina';
+    if (h >= 12.5 && h < 14) return 'pranzo';
+    if (h >= 18) return 'sera';
+    return 'lavoro';
+  }
+
+  /** Dove dorme: davanti alla sua bottega se ce l'ha, altrimenti con i piccoli vicino al nido. */
+  private casa(ab: Abitante): THREE.Vector3 {
+    const b = this.botteghe.get(ab.dati.id);
+    if (b) return b.position.clone().add(b.position.clone().setY(0).normalize().multiplyScalar(-1.1)).setY(0);
+    const ang = (hash(ab.dati.id) % 360) * (Math.PI / 180);
+    return new THREE.Vector3(this.nido.position.x + Math.cos(ang) * 1.1, 0, this.nido.position.z + Math.sin(ang) * 1.1);
+  }
+
+  private fineAttivita(ab: Abitante) {
+    if (ab.m.accessorio?.userData.grembiule) ab.m.accessorio.visible = false;
+    ab.attivita = null;
+    ab.m.corpo.rotation.x = 0;
+    if (ab.canna) {
+      ab.canna.parent?.remove(ab.canna);
+      ab.canna = null;
+    }
+  }
+
   private puntoCasuale(): THREE.Vector3 {
     const a = Math.random() * Math.PI * 2, r = 0.8 + Math.random() * Math.max(2, this.raggio - 2.2);
     return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
@@ -840,6 +983,7 @@ export class Scena {
   private collegaInput() {
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => {
+      if (this.cine) return;
       this.dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.dita.size === 1) {
         this.trascina = { x: e.clientX, y: e.clientY, mosso: 0 };
@@ -912,6 +1056,7 @@ export class Scena {
     c.addEventListener('pointerup', fine);
     c.addEventListener('pointercancel', fine);
     c.addEventListener('wheel', (e) => {
+      if (this.cine) return;
       this.zoom = THREE.MathUtils.clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.5, 2.4);
     }, { passive: true });
   }
@@ -1082,7 +1227,7 @@ export class Scena {
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
     const candidati: THREE.Object3D[] = [
-      this.corvo.gruppo, this.quaderno, this.castagne, ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
+      this.corvo.gruppo, this.quaderno, this.castagne, this.nido, ...(this.grande ? [this.grande] : []), ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
       ...this.aiuole.values(), ...this.quadri.values(),
       ...[...this.abitanti.values()].map((a) => a.m.gruppo),
     ];
@@ -1095,6 +1240,7 @@ export class Scena {
     if (b.tipo === 'animale') {
       const ab = this.abitanti.get(b.id);
       if (ab && !ab.dati.addormentato) {
+        if (this.momento() === 'notte') ab.sveglio = 30; // una carezza lo sveglia per un po'
         ab.salto = 0.5;
         ab.pausa = 4;
         // si gira verso di te
@@ -1172,18 +1318,32 @@ export class Scena {
     }
     this.centro.lerp(this.centroVoluto, Math.min(1, dt * 3));
     const oscilla = Math.sin(t * 0.15) * 0.04;
-    this.camera.position.set(
-      this.centro.x + Math.sin(this.angolo + oscilla) * dist,
-      alt,
-      this.centro.z + Math.cos(this.angolo + oscilla) * dist,
-    );
-    this.camera.lookAt(this.centro.x, 0.6, this.centro.z);
+    const cin = this.cine;
+    let voluta: THREE.Vector3, guarda: THREE.Vector3;
+    if (cin) {
+      // primo piano: vicina, quasi all'altezza degli occhi, con un giro lentissimo intorno
+      const p = cin.segui();
+      const ang = cin.angolo + Math.sin(t * 0.25) * 0.12;
+      voluta = new THREE.Vector3(p.x + Math.sin(ang) * cin.dist, p.y + cin.alt, p.z + Math.cos(ang) * cin.dist);
+      guarda = new THREE.Vector3(p.x, p.y + cin.guardaY, p.z);
+      CURVA.valore = 0.0004;
+    } else {
+      voluta = new THREE.Vector3(this.centro.x + Math.sin(this.angolo + oscilla) * dist, alt, this.centro.z + Math.cos(this.angolo + oscilla) * dist);
+      guarda = new THREE.Vector3(this.centro.x, 0.6, this.centro.z);
+    }
+    this.morbido = Math.max(0, this.morbido - dt);
+    const k = cin || this.morbido > 0 ? Math.min(1, dt * 2.4) : 1;
+    this.posCam.lerp(voluta, k);
+    this.guardaCam.lerp(guarda, k);
+    this.camera.position.copy(this.posCam);
+    this.camera.lookAt(this.guardaCam);
 
     if (Math.floor(t / 5) !== Math.floor((t - dt) / 5)) this.luceDelGiorno();
 
     for (const ab of this.abitanti.values()) this.muovi(ab, dt, t);
 
     for (const u of this.uova.values()) {
+      if (u === this.schiusaIn?.uovo) continue;
       const scossa = (u.userData.scossa as number) ?? 0;
       u.rotation.z = Math.sin(t * 3 + u.position.x * 5) * 0.07 * (Math.sin(t * 0.7) > 0.6 ? 1 : 0.15) + Math.sin(t * 30) * scossa * 0.2;
       u.userData.scossa = Math.max(0, scossa - dt * 1.5);
@@ -1242,6 +1402,15 @@ export class Scena {
       this.anelloSel.position.set(scelto.position.x, 0.06, scelto.position.z);
       this.anelloSel.scale.setScalar(grande * (1 + Math.sin(t * 5) * 0.06));
     }
+    this.aggiornaSchiusa(dt, t);
+    this.stelline = this.stelline.filter((st) => {
+      st.vita -= dt;
+      st.o.position.y += dt * 0.6;
+      (st.o.material as THREE.SpriteMaterial).opacity = Math.min(1, st.vita * 1.5);
+      if (st.vita > 0) return true;
+      this.scene.remove(st.o);
+      return false;
+    });
 
     const brilla = this.quaderno.getObjectByName('brilla');
     if (brilla) brilla.position.y = 1.4 + Math.sin(t * 3) * 0.08;
@@ -1274,16 +1443,24 @@ export class Scena {
     for (const o of ab.m.occhi) o.scale.y = ab.dati.addormentato ? 0.12 : chiusi ? 0.15 : 1;
 
     if (ab.dati.addormentato) {
-      ab.m.corpo.rotation.z = THREE.MathUtils.lerp(ab.m.corpo.rotation.z, 1.25, dt * 2);
-      ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, -0.05, dt * 2);
-      ab.m.corpo.scale.y = 1 + Math.sin(t * 1.5) * 0.03;
-      ab.z.forEach((z, i) => {
-        const f = (t * 0.5 + i / 3) % 1;
-        z.position.set(0.3 + f * 0.3, 0.9 + f * 0.9, 0);
-        z.material.opacity = 1 - f;
-      });
+      this.dormi(ab, dt, t);
       return;
     }
+    // ---- la giornata: di notte ognuno torna a casa a dormire (una carezza lo sveglia un po') ----
+    ab.sveglio = Math.max(0, ab.sveglio - dt);
+    if (this.momento() === 'notte' && ab.sveglio <= 0) {
+      const casa = this.casa(ab);
+      if (g.position.distanceTo(casa) < 0.25) {
+        if (!ab.z.length) this.zeta(ab, true);
+        for (const o of ab.m.occhi) o.scale.y = 0.12;
+        this.dormi(ab, dt, t);
+        return;
+      }
+      if (ab.amico) { const b = this.abitanti.get(ab.amico); if (b) b.amico = null; ab.amico = null; }
+      if (ab.attivita) this.fineAttivita(ab);
+      ab.meta = casa;
+      ab.pausa = 0;
+    } else if (ab.z.length) this.zeta(ab, false);
     ab.m.corpo.rotation.z = THREE.MathUtils.lerp(ab.m.corpo.rotation.z, 0, dt * 4);
     if (!ab.attivita) ab.m.corpo.rotation.x = THREE.MathUtils.lerp(ab.m.corpo.rotation.x, 0, dt * 4);
 
@@ -1389,20 +1566,64 @@ export class Scena {
     if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(ab.passo) * 0.4;
   }
 
-  /** Finita una pausa: a volte si va a trovare qualcuno, altrimenti si gironzola. */
+  /** Quanti altri sono già lì vicino (in cammino o arrivati). */
+  private affollato(p: THREE.Vector3, io: Abitante, r = 1.2): number {
+    let n = 0;
+    for (const b of this.abitanti.values()) {
+      if (b === io || b.dati.addormentato) continue;
+      if (b.meta.distanceTo(p) < r || b.m.gruppo.position.distanceTo(p) < r) n++;
+    }
+    return n;
+  }
+
+  /** Un punto vicino a quello voluto ma non addosso agli altri: ognuno il suo spazio. */
+  private postoLibero(io: Abitante, voluto: () => THREE.Vector3, quanti = 0): THREE.Vector3 {
+    let meglio = voluto(), folla = this.affollato(meglio, io);
+    for (let i = 0; i < 8 && folla > quanti; i++) {
+      const p = voluto(), f = this.affollato(p, io);
+      if (f < folla) { meglio = p; folla = f; }
+    }
+    return meglio;
+  }
+
+  /** Il posticino del cuore di ciascuno (dipende da chi è): il laghetto, il castagno, le aiuole... */
+  private postoPreferito(ab: Abitante): THREE.Vector3 {
+    const intorno = (x: number, z: number, r: number) => {
+      const a = Math.random() * Math.PI * 2, rr = r * (0.8 + Math.random() * 0.4);
+      return new THREE.Vector3(x + Math.cos(a) * rr, 0, z + Math.sin(a) * rr);
+    };
+    const c = POSTI_COSTRUZIONI;
+    const posti: (() => THREE.Vector3)[] = [
+      () => intorno(POSTO_CASTAGNO[0], POSTO_CASTAGNO[1], 1.8),
+      () => { const k = this.casa(ab); return intorno(k.x, k.z, 0.9); },
+    ];
+    if (this.strutture.has('laghetto')) posti.push(() => intorno(c.laghetto[0], c.laghetto[1], 2.2));
+    if (this.strutture.has('aiuola')) posti.push(() => intorno(c.aiuola[0], c.aiuola[1], 1.1));
+    if (this.strutture.has('pozzo')) posti.push(() => intorno(c.pozzo[0], c.pozzo[1], 1.3));
+    if (this.strutture.has('torretta')) posti.push(() => intorno(c.torretta[0], c.torretta[1], 1.5));
+    if (this.strutture.has('mulino')) posti.push(() => intorno(c.mulino[0], c.mulino[1], 1.6));
+    // un angolino tutto suo, sempre lo stesso, lungo il bordo del villaggio
+    const ang = ((hash(ab.dati.id + 'angolo') % 360) * Math.PI) / 180, r = Math.max(3.5, this.raggio - 2.5);
+    posti.push(() => intorno(Math.cos(ang) * r, Math.sin(ang) * r, 0.8));
+    return this.postoLibero(ab, posti[hash(ab.dati.id + 'cuore') % posti.length]);
+  }
+
+  /** Finita una pausa: ognuno fa la sua cosa, sparsi per il villaggio; ogni tanto due si incontrano. */
   private scegliCosaFare(ab: Abitante) {
-    // chi ha imparato qualcosa, spesso va a farlo
-    const sa = ab.dati.abilita ?? [];
-    if (sa.length && Math.random() < 0.45) {
-      const id = sa[Math.floor(Math.random() * sa.length)];
-      const luogo = this.luogoAttivita(id);
-      ab.attivita = { id, tempo: 7 + Math.random() * 6, prossimo: 0.5 };
-      ab.meta = luogo ?? this.puntoCasuale();
+    const momento = this.momento();
+    const bottega = this.botteghe.get(ab.dati.id);
+    const tutti = [...this.abitanti.values()].filter((b) => !b.dati.addormentato);
+    const r = Math.random();
+    if (momento === 'lavoro' && bottega && r < 0.6) {
+      ab.attivita = { id: 'lavoro', tempo: 10 + Math.random() * 10, prossimo: 1 };
+      ab.meta = this.casa(ab);
       return;
     }
-    const liberi = [...this.abitanti.values()].filter((b) => b !== ab && !b.amico && !b.dati.addormentato && b.salto <= 0);
-    const voglia = ab.dati.fase === 'cucciolo' ? 0.3 : 0.45;
-    if (liberi.length && Math.random() < voglia) {
+    // incontri: solo qualcuno, mai tutti insieme (al massimo un terzo del villaggio in chiacchiere)
+    const inChiacchiera = tutti.filter((b) => b.amico).length;
+    const voglia = (ab.dati.fase === 'cucciolo' ? 0.22 : 0.18) * (momento === 'pranzo' || momento === 'sera' ? 1.4 : 1);
+    const liberi = tutti.filter((b) => b !== ab && !b.amico && b.salto <= 0 && !b.attivita);
+    if (liberi.length && inChiacchiera + 2 <= Math.max(2, Math.ceil(tutti.length / 3)) && Math.random() < voglia) {
       // preferisce chi è vicino
       liberi.sort((x, y) => x.m.gruppo.position.distanceTo(ab.m.gruppo.position) - y.m.gruppo.position.distanceTo(ab.m.gruppo.position));
       const b = liberi[Math.floor(Math.random() * Math.min(2, liberi.length))];
@@ -1419,7 +1640,38 @@ export class Scena {
       b.pausa = 0;
       return;
     }
-    ab.meta = this.puntoCasuale();
+    // chi ha imparato qualcosa, spesso va a farlo (ma non dove sono già in tanti)
+    const sa = ab.dati.abilita ?? [];
+    if (sa.length && Math.random() < 0.4) {
+      const id = sa[Math.floor(Math.random() * sa.length)];
+      const luogo = this.luogoAttivita(id);
+      if (!luogo || this.affollato(luogo, ab, 1.6) < 2) {
+        ab.attivita = { id, tempo: 9 + Math.random() * 8, prossimo: 0.5 };
+        ab.meta = luogo ? this.postoLibero(ab, () => this.luogoAttivita(id)!) : this.postoLibero(ab, () => this.puntoCasuale());
+        return;
+      }
+    }
+    // a pranzo e la sera ci si riposa, ma ognuno nel suo posticino; la panchina tiene due amici
+    const riposo = momento === 'pranzo' ? 0.55 : momento === 'sera' ? 0.5 : momento === 'mattina' ? 0.15 : 0.2;
+    if (Math.random() < riposo) {
+      const panca = POSTI_COSTRUZIONI.panchina;
+      if (this.strutture.has('panchina') && Math.random() < 0.3 && this.affollato(new THREE.Vector3(panca[0], 0, panca[1] + 0.45), ab, 0.9) < 2) {
+        const lato = this.affollato(new THREE.Vector3(panca[0] - 0.35, 0, panca[1] + 0.45), ab, 0.3) ? 0.35 : -0.35;
+        ab.meta = new THREE.Vector3(panca[0] + Math.cos(panca[2]) * lato, 0, panca[1] - Math.sin(panca[2]) * lato + 0.45);
+      } else ab.meta = this.postoPreferito(ab);
+      const cose = momento === 'sera' ? ['seduto', 'seduto', 'guarda', 'riposino'] : ['seduto', 'riposino', 'guarda', 'merenda'];
+      ab.attivita = { id: cose[Math.floor(Math.random() * cose.length)], tempo: 14 + Math.random() * 14, prossimo: 2 + Math.random() * 3 };
+      return;
+    }
+    // le piccole cose di tutti i giorni: annusare i fiori, stiracchiarsi, guardarsi intorno
+    if (Math.random() < 0.45) {
+      const cose = ['annusa', 'stiracchia', 'guarda', 'annusa', 'saltella'];
+      const id = cose[Math.floor(Math.random() * cose.length)];
+      ab.attivita = { id, tempo: 5 + Math.random() * 6, prossimo: 1 + Math.random() * 2 };
+      ab.meta = Math.random() < 0.5 ? this.postoPreferito(ab) : this.postoLibero(ab, () => this.puntoCasuale());
+      return;
+    }
+    ab.meta = this.postoLibero(ab, () => this.puntoCasuale());
   }
 
   /** Dove si va a fare un'attività: vicino al castagno, sul bordo del laghetto, attorno al falò... */
@@ -1508,14 +1760,80 @@ export class Scena {
       case 'stelle':
         ab.m.testa.rotation.x = -0.55;
         break;
+      case 'lavoro': {
+        if (ab.m.accessorio?.userData.grembiule) ab.m.accessorio.visible = true; // il grembiule da lavoro
+        // al lavoro davanti alla bottega: martella, mescola, scrive...
+        const b = this.botteghe.get(ab.dati.id);
+        if (b) guardaVerso(b.position.x, b.position.z);
+        ab.m.testa.rotation.x = 0.25;
+        ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -1.0 + Math.sin(t * 7 + i * Math.PI) * 0.35));
+        ab.m.corpo.position.y = Math.abs(Math.sin(t * 7)) * 0.02;
+        if (att.prossimo <= 0) {
+          att.prossimo = 1.8 + Math.random() * 1.5;
+          this.fumetto(ab, SIMBOLI_MESTIERE[ab.dati.mestiere ?? ''] ?? '★');
+        }
+        break;
+      }
+      case 'seduto': {
+        // seduto nel suo posticino: dondola la testa, ogni tanto un sorriso
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, -0.3, dt * 4)));
+        ab.m.testa.rotation.z = Math.sin(t * 0.9 + g.position.x) * 0.12;
+        if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(t * 1.5) * 0.25;
+        if (att.prossimo <= 0) {
+          att.prossimo = 3 + Math.random() * 4;
+          this.fumetto(ab, ['☺', '♪', '♥', '…', '✿'][Math.floor(Math.random() * 5)]);
+        }
+        break;
+      }
+      case 'riposino': {
+        // seduto a sonnecchiare: occhi socchiusi, testa che ciondola
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.testa.rotation.x = 0.2 + Math.sin(t * 0.7) * 0.08;
+        for (const o of ab.m.occhi) o.scale.y = 0.25;
+        if (att.prossimo <= 0) { att.prossimo = 4 + Math.random() * 3; this.fumetto(ab, '…'); }
+        break;
+      }
+      case 'merenda': {
+        // sgranocchia qualcosa: zampine alla bocca
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -1.4 + Math.sin(t * 10) * 0.08));
+        ab.m.testa.rotation.x = 0.1 + Math.abs(Math.sin(t * 8)) * 0.06;
+        if (att.prossimo <= 0) { att.prossimo = 3 + Math.random() * 3; this.fumetto(ab, ['🌰', '🍓', '☺'][Math.floor(Math.random() * 3)]); }
+        break;
+      }
+      case 'guarda':
+        // si guarda intorno, col naso all'insù quando è sera
+        ab.m.testa.rotation.y = Math.sin(t * 0.5 + g.position.x) * 0.6;
+        ab.m.testa.rotation.x = this.momento() === 'sera' ? -0.4 : -0.1;
+        if (att.prossimo <= 0) { att.prossimo = 4 + Math.random() * 4; this.fumetto(ab, this.momento() === 'sera' ? '☆' : '♪'); }
+        break;
+      case 'annusa':
+        // naso a terra tra l'erba e i fiori
+        ab.m.corpo.rotation.x = 0.3 + Math.sin(t * 3) * 0.05;
+        ab.m.testa.rotation.x = 0.35 + Math.sin(t * 12) * 0.05;
+        ab.m.testa.rotation.y = Math.sin(t * 1.4) * 0.4;
+        if (att.prossimo <= 0) { att.prossimo = 3 + Math.random() * 3; this.fumetto(ab, '✿'); }
+        break;
+      case 'stiracchia': {
+        const s = Math.min(1, Math.sin(Math.min(Math.PI, (att.tempo % 4) * 0.8)) * 1.3);
+        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -2.6 * s));
+        ab.m.testa.rotation.x = -0.3 * s;
+        ab.m.corpo.scale.set(1, 1 + 0.05 * s, 1);
+        break;
+      }
+      case 'saltella':
+        ab.m.corpo.position.y = Math.abs(Math.sin(t * 6)) * 0.18;
+        g.rotation.y += dt * 1.2;
+        if (att.prossimo <= 0) { att.prossimo = 2.5 + Math.random() * 2; this.fumetto(ab, '♪'); }
+        break;
     }
     if (att.tempo <= 0) {
-      ab.attivita = null;
-      ab.m.corpo.rotation.x = 0;
-      if (ab.canna) {
-        ab.canna.parent?.remove(ab.canna);
-        ab.canna = null;
-      }
+      this.fineAttivita(ab);
+      ab.m.corpo.position.y = 0;
       ab.pausa = 1.5 + Math.random() * 2;
     }
   }
@@ -1527,6 +1845,287 @@ export class Scena {
     f.position.copy(ab.m.gruppo.position).add(new THREE.Vector3(0, 1.75 * ab.m.gruppo.scale.x, 0));
     this.scene.add(f);
     this.effimeri.push({ o: f, vita: 1.1, vel: new THREE.Vector3(0, 0.35, 0) });
+  }
+
+  // ---------- primo piano: schiusa e sorprese ----------
+
+  /** Questi animali sono già nati, ma restano uova finché Giada non vede la schiusa. */
+  trattieni(ids: string[]) {
+    for (const id of ids) this.trattenuti.add(id);
+  }
+
+  private vibra(p: number | number[]) {
+    try {
+      navigator.vibrate?.(p);
+    } catch {
+      /* niente vibrazione */
+    }
+  }
+
+  /** Telecamera ravvicinata su un animale, un uovo, il corvo o un edificio. */
+  inquadra(cosa: { tipo: 'animale' | 'uovo' | 'edificio'; id: string } | { tipo: 'corvo' }): boolean {
+    let o: THREE.Object3D | undefined;
+    let dist = 2.6, alt = 0.9, guardaY = 0.55;
+    if (cosa.tipo === 'animale') {
+      const ab = this.abitanti.get(cosa.id);
+      if (!ab) return false;
+      o = ab.m.gruppo;
+      const sc = o.scale.x;
+      dist = 3.1 * sc + 0.6;
+      alt = 1.1 * sc;
+      guardaY = 0.6 * sc;
+      // si ferma e si gira verso di noi
+      ab.pausa = 999;
+      if (ab.attivita) this.fineAttivita(ab);
+      ab.salto = 0.8;
+      this.cine = null;
+      o.rotation.y = this.angolo;
+      for (let i = 0; i < 6; i++) this.stellina(o.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.4, 0.4 + Math.random() * 1.2 * sc, (Math.random() - 0.5) * 1.4)));
+    } else if (cosa.tipo === 'uovo') {
+      o = this.uova.get(cosa.id);
+      dist = 2.9; alt = 1.25; guardaY = 0.45;
+      if (o) o.userData.scossa = 1;
+    } else if (cosa.tipo === 'edificio') {
+      o = this.edifici.get(cosa.id);
+      dist = 6; alt = 2.4; guardaY = 1.4;
+    } else {
+      o = this.corvo.gruppo;
+      dist = 3; alt = 1.2; guardaY = 1.6;
+      this.corvoParla = 2;
+    }
+    if (!o) return false;
+    const bersaglio = o;
+    const pos = new THREE.Vector3();
+    // angolo: dalla parte della telecamera di adesso, così il volo è breve
+    const ang = Math.atan2(this.posCam.x - o.position.x, this.posCam.z - o.position.z);
+    this.cine = { segui: () => bersaglio.getWorldPosition(pos).setY(0), dist, alt, guardaY, angolo: ang, animale: cosa.tipo === 'animale' ? cosa.id : undefined };
+    if (cosa.tipo === 'animale') (bersaglio as THREE.Group).rotation.y = ang;
+    return true;
+  }
+
+  /** Finito il primo piano: si torna alla vista di sempre, centrata su quello che si è visto. */
+  fineCinema() {
+    const c = this.cine;
+    if (!c) return;
+    const p = c.segui();
+    this.centroVoluto.set(p.x, 0, p.z);
+    this.centro.copy(this.centroVoluto);
+    this.angolo = c.angolo;
+    this.cine = null;
+    this.morbido = 1.8;
+    for (const ab of this.abitanti.values()) if (ab.pausa > 100) ab.pausa = 1 + Math.random();
+  }
+
+  private stellina(p: THREE.Vector3, colore = '#ffe680') {
+    const st = spriteTesto('✦', colore);
+    st.scale.setScalar(0.12 + Math.random() * 0.1);
+    st.position.copy(p);
+    (st.material as THREE.SpriteMaterial).transparent = true;
+    this.scene.add(st);
+    this.stelline.push({ o: st, vita: 1 + Math.random() * 0.8 });
+  }
+
+  /**
+   * La schiusa come spettacolo: l'uovo trema tre volte, si crepa, si illumina,
+   * scoppia e ne esce il cucciolo che sbadiglia e saluta. Si risolve quando è finita (circa 9 secondi).
+   */
+  schiusa(id: string, onFase?: (f: 'trema' | 'crepa' | 'luce' | 'nato') => void): Promise<void> {
+    return new Promise((fatto) => {
+      const uovo = this.uova.get(id);
+      if (!uovo || !this.trattenuti.has(id)) {
+        this.trattenuti.delete(id);
+        if (this.ultimoStato) this.aggiorna(this.ultimoStato);
+        fatto();
+        return;
+      }
+      this.inquadra({ tipo: 'uovo', id });
+      // materiale tutto suo: quello di serie è condiviso con le altre uova
+      const gu = uovo.getObjectByName('guscio') as THREE.Mesh | undefined;
+      if (gu) gu.material = materiale({ color: '#fff7e6', rim: 0.5 });
+      const alone = new THREE.Sprite(new THREE.SpriteMaterial({ map: puntoTondo(), color: '#fff1a8', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      alone.position.copy(uovo.position).setY(0.42);
+      alone.scale.setScalar(0.01);
+      const raggi = new THREE.Sprite(new THREE.SpriteMaterial({ map: texRaggi(), color: '#fff6c4', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      raggi.position.copy(alone.position);
+      raggi.scale.setScalar(0.01);
+      const luce = new THREE.PointLight('#ffe7a0', 0, 4);
+      luce.position.copy(uovo.position).setY(0.6);
+      this.scene.add(alone, raggi, luce);
+      this.schiusaIn = { id, t: 0, uovo, crepe: 0, alone, raggi, luce, nato: false, gusci: [], base: 1, fatto, onFase };
+      onFase?.('trema');
+    });
+  }
+
+  private aggiornaSchiusa(dt: number, t: number) {
+    const sc = this.schiusaIn;
+    if (!sc) return;
+    const prima = sc.t;
+    sc.t += dt * this.velocita;
+    const T = sc.t;
+    const passa = (x: number) => prima < x && T >= x;
+    const u = sc.uovo;
+
+    if (!sc.nato) {
+      // tre scossoni sempre più forti, ognuno lascia una crepa
+      let ampiezza = Math.sin(t * 2.4) * 0.03;
+      const scossoni = [1.5, 2.6, 3.6];
+      scossoni.forEach((x, i) => {
+        if (passa(x)) {
+          this.crepa(u, i);
+          this.vibra(40 + i * 40);
+          if (i === 0) sc.onFase?.('crepa');
+          for (let k = 0; k < 3 + i * 2; k++) this.stellina(u.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.7, 0.3 + Math.random() * 0.6, (Math.random() - 0.5) * 0.7)), '#ffffff');
+        }
+        const d = T - x;
+        if (d > 0 && d < 0.5) ampiezza += Math.sin(d * 40) * (0.12 + i * 0.07) * (1 - d / 0.5);
+      });
+      // luce che filtra dalle crepe, poi esplode
+      const luce = THREE.MathUtils.clamp((T - 4.3) / 1.1, 0, 1);
+      if (passa(4.3)) {
+        sc.onFase?.('luce');
+        this.vibra([30, 40, 30, 40, 30, 40, 60]);
+      }
+      if (luce > 0) ampiezza += Math.sin(T * 55) * 0.06 * luce;
+      u.rotation.z = ampiezza;
+      u.position.y = luce > 0 ? Math.abs(Math.sin(T * 30)) * 0.03 * luce : 0;
+      const gu = u.getObjectByName('guscio') as THREE.Mesh | undefined;
+      if (gu) {
+        const m = gu.material as THREE.MeshToonMaterial;
+        m.emissive?.set('#ffe08a');
+        if (m.emissive) m.emissiveIntensity = luce * 0.9;
+      }
+      sc.alone.scale.setScalar(0.3 + luce * 1.6);
+      (sc.alone.material as THREE.SpriteMaterial).opacity = luce * 0.9;
+      sc.raggi.scale.setScalar(0.5 + luce * 2.6);
+      (sc.raggi.material as THREE.SpriteMaterial).opacity = luce * 0.75;
+      (sc.raggi.material as THREE.SpriteMaterial).rotation = T * 0.8;
+      sc.luce.intensity = luce * 6;
+
+      if (T >= 5.4) {
+        // scoppia: gusci che volano, lampo, e il cucciolo
+        sc.nato = true;
+        this.vibra([90, 50, 140]);
+        const pos = u.position.clone();
+        sc.gusci = creaGusci();
+        sc.gusci.forEach((g, i) => {
+          g.position.copy(pos);
+          if (i === 0) g.position.y += 0.4;
+          g.userData.vel = i === 0 ? new THREE.Vector3(0.6, 2.6, 0.4) : new THREE.Vector3(0, 0, 0);
+          this.scene.add(g);
+        });
+        this.coriandoli(pos.clone().setY(0.6), ['#ffd166', '#ff8fb1', '#7ccf6a', '#8fd3ff', '#ffffff']);
+        for (let k = 0; k < 12; k++) this.stellina(pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.6, 0.3 + Math.random() * 1.4, (Math.random() - 0.5) * 1.6)));
+        this.trattenuti.delete(sc.id);
+        if (this.ultimoStato) this.aggiorna(this.ultimoStato);
+        const ab = this.abitanti.get(sc.id);
+        if (ab) {
+          ab.pausa = 999;
+          ab.salto = 0;
+          sc.base = ab.m.gruppo.scale.x;
+          ab.m.gruppo.scale.setScalar(0.01);
+          ab.m.gruppo.position.copy(pos).setY(0);
+          ab.m.gruppo.rotation.y = this.cine?.angolo ?? 0;
+          // da qui la telecamera segue il cucciolo, un po' più indietro
+          const g = ab.m.gruppo;
+          const p = new THREE.Vector3();
+          if (this.cine) this.cine = { ...this.cine, segui: () => g.getWorldPosition(p).setY(0), dist: 3.1 * sc.base + 0.6, alt: 1.1 * sc.base, guardaY: 0.6 * sc.base, animale: sc.id };
+        }
+        sc.onFase?.('nato');
+      }
+      return;
+    }
+
+    // dopo la nascita
+    const D = T - 5.4;
+    const lampo = Math.max(0, 1 - D / 0.6);
+    sc.alone.scale.setScalar(1.9 + D * 3);
+    (sc.alone.material as THREE.SpriteMaterial).opacity = lampo;
+    (sc.raggi.material as THREE.SpriteMaterial).opacity = lampo * 0.75;
+    sc.luce.intensity = lampo * 6;
+    for (const g of sc.gusci) {
+      const v = g.userData.vel as THREE.Vector3;
+      if (v.lengthSq() > 0) {
+        v.y -= 6 * dt;
+        g.position.addScaledVector(v, dt);
+        g.rotation.x += dt * 6;
+        g.rotation.z += dt * 3;
+        if (g.position.y < 0.05) { g.position.y = 0.05; v.set(0, 0, 0); }
+      }
+    }
+    const ab = this.abitanti.get(sc.id);
+    if (ab) {
+      // spunta con un rimbalzo
+      const k = Math.min(1, D / 0.55);
+      const rimbalzo = k < 1 ? (1 - Math.pow(1 - k, 3)) * (1 + Math.sin(k * Math.PI) * 0.3) : 1;
+      ab.m.gruppo.scale.setScalar(Math.max(0.01, sc.base * rimbalzo));
+      ab.pausa = 999;
+      // sbadiglio: testa all'indietro, occhi chiusi, si stiracchia
+      const sb = THREE.MathUtils.clamp((D - 1.1) / 1.6, 0, 1);
+      const curva = Math.sin(sb * Math.PI);
+      if (sb > 0 && sb < 1) {
+        ab.m.testa.rotation.x = -0.45 * curva;
+        ab.m.testa.rotation.z = 0.1 * curva;
+        for (const o of ab.m.occhi) o.scale.y = 0.15;
+        ab.m.corpo.scale.y = 1 + 0.1 * curva;
+      } else if (sb >= 1) {
+        ab.m.corpo.scale.y = 1;
+      }
+      if (passa(5.4 + 1.3)) this.vibra(20);
+      if (passa(5.4 + 3.0)) {
+        ab.salto = 0.7;
+        const cuore = spriteTesto('♥', '#ff6b8a');
+        cuore.scale.setScalar(0.4);
+        cuore.position.copy(ab.m.gruppo.position).add(new THREE.Vector3(0, 1.5 * sc.base, 0));
+        this.scene.add(cuore);
+        this.effimeri.push({ o: cuore, vita: 1.6, vel: new THREE.Vector3(0, 0.6, 0) });
+      }
+    }
+    if (D > 3.6) {
+      this.scene.remove(sc.alone, sc.raggi, sc.luce);
+      // il guscio di sotto resta un po' nel nido, poi sparisce
+      const gusci = sc.gusci;
+      setTimeout(() => gusci.forEach((g) => this.scene.remove(g)), 6000);
+      const fatto = sc.fatto;
+      this.schiusaIn = null;
+      fatto();
+    }
+  }
+
+  /** Una crepa a zig-zag sul lato dell'uovo che guarda la telecamera. */
+  private crepa(u: THREE.Group, n: number) {
+    const verso = Math.atan2(this.posCam.x - u.position.x, this.posCam.z - u.position.z);
+    const m = new THREE.MeshBasicMaterial({ color: '#3a2a1a' });
+    const punti: THREE.Vector3[] = [];
+    const da = n === 0 ? -0.45 : n === 1 ? 0.35 : -1.2;
+    const a = n === 0 ? 0.45 : n === 1 ? 1.25 : -0.35;
+    const passi = 6;
+    for (let i = 0; i <= passi; i++) {
+      const phi = verso + da + ((a - da) * i) / passi;
+      const y = 0.46 + (i % 2 ? 0.035 : -0.028) * (0.7 + Math.random() * 0.6) + n * 0.03;
+      const dy = (y - 0.38) / 0.39;
+      const r = 0.3 * Math.sqrt(Math.max(0, 1 - dy * dy)) * 1.03;
+      punti.push(new THREE.Vector3(Math.sin(phi) * r, y, Math.cos(phi) * r));
+    }
+    if (n === 2) punti.push(new THREE.Vector3(punti[3].x * 0.98, 0.62, punti[3].z * 0.98));
+    const g = new THREE.Group();
+    for (let i = 1; i < punti.length; i++) {
+      const p1 = n === 2 && i === punti.length - 1 ? punti[3] : punti[i - 1], p2 = punti[i];
+      const len = p1.distanceTo(p2);
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.014, len), m);
+      seg.position.copy(p1).add(p2).multiplyScalar(0.5);
+      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), p2.clone().sub(p1).normalize());
+      g.add(seg);
+    }
+    u.add(g);
+  }
+
+  /** Ferma (o fa ripartire) il disegno del bosco, ad esempio mentre si guarda dentro una casa. */
+  sospendi(si: boolean) {
+    cancelAnimationFrame(this.raf);
+    if (!si) {
+      this.orologio.getDelta();
+      this.ciclo();
+    }
   }
 
   distruggi() {

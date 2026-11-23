@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { aggiornaTempo, app, avvia, vai, type Schermata } from './lib/app.svelte';
+  import { aggiornaTempo, app, avvia, chiudiGuidaIcona, vai, type Schermata } from './lib/app.svelte';
+  import { STORIA } from './lib/gioco';
   import Animale from './schermate/Animale.svelte';
   import Diario from './schermate/Diario.svelte';
   import Impostazioni from './schermate/Impostazioni.svelte';
@@ -8,6 +9,14 @@
   import Statistiche from './schermate/Statistiche.svelte';
   import Storia from './schermate/Storia.svelte';
   import Gioco from './schermate/Gioco.svelte';
+  import GuidaIcona from './componenti/GuidaIcona.svelte';
+  import ComeSiGioca from './componenti/ComeSiGioca.svelte';
+  import { doveSiamo } from './lib/telefono';
+
+  // promemoria piccolo finché il villaggio è aperto nel browser invece che dall'icona
+  const dove = doveSiamo();
+  let promemoriaChiuso = $state(false);
+  let promemoria = $derived(!promemoriaChiuso && (dove === 'iphone' || dove === 'android' || dove === 'dentro-app') && app.schermata === 'villaggio' && app.codaDialoghi.length === 0);
 
   onMount(() => {
     avvia();
@@ -16,6 +25,9 @@
     document.addEventListener('visibilitychange', quandoTorna);
     return () => document.removeEventListener('visibilitychange', quandoTorna);
   });
+
+  // pallino sulla Storia quando c'è un capitolo ancora da leggere
+  let storiaNuova = $derived(!!app.stato?.capitoli.some((id) => STORIA.some((c) => c.id === id) && !app.capitoliLetti.includes(id)));
 
   const voci: { s: Schermata; nome: string; icona: string }[] = [
     { s: 'villaggio', nome: 'Villaggio', icona: 'M4 20 L4 11 L12 4 L20 11 L20 20 Z M10 20 L10 14 L14 14 L14 20' },
@@ -30,6 +42,11 @@
   <div class="pagina centro" style="padding-top:40vh"><p class="tenue">…</p></div>
 {:else if app.schermata === 'intro'}
   <Intro />
+{:else if app.schermata === 'icona' && !app.stato}
+  <div class="pagina" style="padding-top:28px">
+    <h1 style="text-align:center">Il villaggio di Giada</h1>
+    <GuidaIcona onfatto={chiudiGuidaIcona} />
+  </div>
 {:else}
   {#if app.schermata === 'villaggio'}<Gioco />
   {:else if app.schermata === 'diario'}<Diario />
@@ -37,14 +54,32 @@
   {:else if app.schermata === 'storia'}<Storia />
   {:else if app.schermata === 'statistiche'}<Statistiche />
   {:else if app.schermata === 'impostazioni'}<Impostazioni />
+  {:else if app.schermata === 'guida'}
+    <div class="pagina"><h1>Come si gioca</h1><ComeSiGioca onfine={() => vai('villaggio')} /></div>
+  {:else if app.schermata === 'icona'}
+    <div class="pagina"><h1>Icona sul telefono</h1><GuidaIcona onfatto={chiudiGuidaIcona} /></div>
+  {/if}
+
+  {#if promemoria}
+    <div class="promemoria appare">
+      <button class="apri" onclick={() => vai('icona')}>📲 Metti l'icona sul telefono</button>
+      <button class="chiudi" aria-label="Chiudi" onclick={() => (promemoriaChiuso = true)}>×</button>
+    </div>
   {/if}
 
   <nav class="barra">
     {#each voci as v}
       <button class:attivo={app.schermata === v.s || (v.s === 'villaggio' && app.schermata === 'animale')} onclick={() => vai(v.s)}>
+        {#if v.s === 'storia' && storiaNuova}<span class="avviso" aria-label="capitolo nuovo"></span>{/if}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d={v.icona} /></svg>
         {v.nome}
       </button>
     {/each}
   </nav>
 {/if}
+
+<style>
+  .promemoria { position: fixed; left: 12px; top: calc(76px + env(safe-area-inset-top)); z-index: 30; display: flex; gap: 6px; align-items: center; }
+  .promemoria .apri { font-size: 0.92rem; padding: 8px 16px; background: var(--foglia); }
+  .promemoria .chiudi { padding: 4px 11px; font-size: 1.1rem; background: var(--panna-2); color: var(--inchiostro); text-shadow: none; }
+</style>

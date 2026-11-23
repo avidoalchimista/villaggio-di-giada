@@ -6,6 +6,8 @@
   import { COLORE_VIRTU, NOME_FASE, NOME_VIRTU } from '../lib/etichette';
   import { accorda, conArticolo, NOME_MANTO, REGOLE } from '../lib/gioco';
   import { VIRTU } from '../lib/tipi';
+  import { indossati } from '../lib/vestiti';
+  import { carattereDi, descrizioneCarattere, nomeCarattere } from '../lib/carattere';
 
   let a = $derived(app.stato!.animali.find((x) => x.id === app.animaleAperto)!);
   let nome = $state('');
@@ -29,6 +31,7 @@
         <h1 style="margin-top:8px">{a.nome} <span class="sesso">{a.sesso === 'f' ? '♀' : '♂'}</span></h1>
         <p class="tenue">{conArticolo(a)} {NOME_MANTO[a.specie][a.aspetto?.manto ?? 0]} · {a.mestiere ?? NOME_FASE[a.fase]}</p>
         {#if a.aspetto}<p class="segno">Segno particolare: <strong>{a.aspetto.tratto}</strong></p>{/if}
+        {#if a.vestiti?.length}<p class="tenue">Si è fatt{a.sesso === 'f' ? 'a' : 'o'} da sol{a.sesso === 'f' ? 'a' : 'o'}: {indossati(a).map((k) => k.nome).join(', ')}</p>{/if}
         {#if a.abilita?.length}<p class="tenue">Sa: {a.abilita.map((x) => REGOLE.abilita.find((d) => d.id === x)?.nome.toLowerCase()).join(', ')}</p>{/if}
       {:else}
         <h2 style="margin-top:8px">Come si chiama {conArticolo(a)}?</h2>
@@ -38,6 +41,16 @@
         </div>
       {/if}
     </div>
+
+    {#if a.nome && a.fase !== 'uovo'}
+      {@const c = carattereDi(a)}
+      <div class="vignetta carattere">
+        <span class="didascalia">Il suo carattere</span>
+        <h2>{c.emoji} {nomeCarattere(a)}</h2>
+        <p>{descrizioneCarattere(a, a.nome)}</p>
+        <p class="tenue"><strong>Ama:</strong> {c.ama}.<br /><strong>Non sopporta:</strong> {c.nonSopporta}.<br /><strong>Dice sempre:</strong> «{c.intercalare}»</p>
+      </div>
+    {/if}
 
     {#if a.addormentato}
       <div class="nuvola">{accorda(frasi.animali.addormentato[0], a)}</div>
@@ -80,6 +93,8 @@
 <style>
   .sesso { font-size: 1.2rem; color: var(--testo-tenue); }
   .segno { margin: 6px 0 2px; }
+  .carattere h2 { margin: 4px 0 6px; }
+  .carattere p { margin: 6px 0; }
   .barra-riga { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 8px; margin: 6px 0; font-size: 0.95rem; }
   .barra { height: 12px; border: 2px solid var(--inchiostro); border-radius: 3px; background: #fffaf0; overflow: hidden; }
   .barra div { height: 100%; }

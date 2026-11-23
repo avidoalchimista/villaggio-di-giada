@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import diz from '../dati/dizionario.json';
+import { EMOZIONI, FORZE } from './tipi';
 import { analizza, normalizza, preparaDizionario, principali, type VoceDizionario } from './analisi';
 
 const R = preparaDizionario(diz.voci as VoceDizionario[]);
@@ -30,6 +31,22 @@ describe('dizionario', () => {
   it("non riconosce pezzi dentro altre parole", () => {
     const a = analizza('Ho visto un ombrellone.', R); // "bell*" non deve scattare
     expect(a.forze.bellezza).toBeUndefined();
+  });
+
+  it('ogni voce usa solo forze ed emozioni esistenti, senza doppioni', () => {
+    const viste = new Set<string>();
+    for (const v of diz.voci as VoceDizionario[]) {
+      expect(viste.has(v.p), `doppione: ${v.p}`).toBe(false);
+      viste.add(v.p);
+      for (const k of Object.keys(v.f ?? {})) expect(FORZE, v.p).toContain(k);
+      for (const k of Object.keys(v.e ?? {})) expect(EMOZIONI, v.p).toContain(k);
+    }
+  });
+
+  it('le voci nuove non scattano su parole simili', () => {
+    const a = analizza('Ho fatto un puzzle e ho mangiato al buffet.', R); // "puzza", "buffo"
+    expect(a.emozioni).toEqual({});
+    expect(a.forze).toEqual({});
   });
 });
 
@@ -76,8 +93,10 @@ describe('regole composte', () => {
 
 describe('segnali seri', () => {
   it('riconosce le frasi di malessere serio', () => {
-    expect(analizza('Non ce la faccio più.', R).segnaliSeri).toBe(true);
+    expect(analizza('A volte vorrei farla finita.', R).segnaliSeri).toBe(true);
+    expect(analizza('Mi viene voglia di farmi del male.', R).segnaliSeri).toBe(true);
     expect(analizza('Oggi giornata no, ma domani va meglio.', R).segnaliSeri).toBe(false);
+    expect(analizza('Non ce la faccio più con questo lavoro.', R).segnaliSeri).toBe(false); // sfogo normale, il corvo non si allarma
   });
 });
 

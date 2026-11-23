@@ -73,6 +73,8 @@ export interface Animale {
   aspetto: Aspetto; // com'è fatto: unico nel villaggio
   studio: { id: string; inizio: string; fine: string } | null; // cosa sta imparando ora
   emozione?: Emozione; // l'emozione della pagina che l'ha fatto nascere: si vede nella sua casa
+  vestiti?: string[]; // capi che si è fatto da solo crescendo (vedi vestiti.ts)
+  carattere?: string; // sognatore, allegro, ordinato... (vedi carattere.ts): diverso per ognuno
 }
 
 export interface Aspetto {
@@ -108,6 +110,7 @@ export interface Evento {
   data: string;
   tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne';
   testo: string;
+  animale?: string; // di chi parla (per inquadrarlo)
 }
 
 export interface StatoGioco {
@@ -132,6 +135,7 @@ export interface StatoGioco {
   contatore: number; // per gli id
   ultimoBackupRicordato: string | null;
   arredo?: Arredo; // come Giada ha sistemato il villaggio (vedi arredo.ts)
+  sorprese: Evento[]; // eventi importanti non ancora mostrati in primo piano
 }
 
 export function zeriVirtu(): Record<Virtu, number> {
