@@ -9,6 +9,7 @@ import {
 } from './gioco';
 import { GUIDA, type PaginaGuida } from '../dati/guida';
 import { doveSiamo } from './telefono';
+import { migliora, ritiraCassa } from './migliorie';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
 export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni' | 'icona' | 'guida';
@@ -162,6 +163,22 @@ export async function costruisciQui(id: string): Promise<Evento | null> {
   const ev = costruisci(app.stato, id, dataDiOggi());
   if (ev) await salvaStato();
   return ev;
+}
+
+/** Migliora la casa-bottega di un animale con le castagne. */
+export async function miglioraCasa(id: string): Promise<Evento | null> {
+  if (!app.stato) return null;
+  const ev = migliora(app.stato, id, dataDiOggi());
+  if (ev) await salvaStato();
+  return ev;
+}
+
+/** Entrando in casa, Giada ritira le castagne che la bottega ha messo da parte. */
+export async function ritiraIncasso(id: string): Promise<number> {
+  if (!app.stato) return 0;
+  const n = ritiraCassa(app.stato, id);
+  if (n) await salvaStato();
+  return n;
 }
 
 export async function rinominaAnimale(id: string, nome: string): Promise<Evento[]> {
