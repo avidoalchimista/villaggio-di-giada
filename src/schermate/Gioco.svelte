@@ -9,10 +9,13 @@
   import { leggiMeta, scriviMeta } from '../lib/db';
   import frasi from '../dati/frasi.json';
   import {
-    app, chiudiMentreEriVia, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, vai,
+    app, cambiaArredo, chiudiMentreEriVia, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, vai,
     type RigaDialogo,
   } from '../lib/app.svelte';
   import { giorniTra } from '../lib/date';
+  import { arredoDi, sposta } from '../lib/arredo';
+  import { nomeMestiere } from '../lib/mestieri';
+  import * as THREE from 'three';
   import {
     abilitaPossibili, accorda, conArticolo, nomeAnimale, REGOLE, statoCostruzione, STORIA, testoRichiesta, type DefAbilita,
   } from '../lib/gioco';
@@ -24,7 +27,7 @@
   let scena = $state.raw<Scena | null>(null);
   let s = $derived(app.stato!);
 
-  type Dialogo = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' };
+  type Dialogo = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' | 'casa'; chiave?: string };
   let dialogo = $state<Dialogo | null>(null);
   let chiediNome = $state<Animale | null>(null);
   let insegnaA = $state<Animale | null>(null);
@@ -33,6 +36,8 @@
   let menu = $state(false);
   let arreda = $state(false);
   let aiuolaDaAprire = $state<string | null>(null);
+  let casaNuova = $state<string | null>(null); // la casa di cui Giada sceglie il posto
+  const giaChiesto = new Set<string>(); // "più tardi": non si richiede finché non si riapre il villaggio
   let quadroAperto = $state<string | null>(null);
   // sbirciare dentro una casa (o nella tana dei piccoli sotto il grande albero)
   let casa = $state<{ proprietario: Animale | null; abitanti: Animale[] } | null>(null);
@@ -137,6 +142,18 @@
     }
   }
 
+  /** «Salta»: le sorprese rimaste si danno per viste e si torna subito al villaggio. */
+  async function saltaTutto() {
+    if (!sp?.pronto) return;
+    const resto = sp.passi.slice(sp.i);
+    sp = null;
+    for (const e of resto) await segnaSorpresaVista(e);
+    scena?.lasciaTutti();
+    scena?.fineCinema();
+    if (poi) dialogo = poi;
+    poi = null;
+  }
+
   async function nomeNelloSpettacolo() {
     if (!sp?.nome || !nome.trim()) return;
     const a = sp.nome;
@@ -194,6 +211,14 @@
     const sorprese = sorpreseDaMostrare();
     scena.trattieni(sorprese.filter((e) => e.tipo === 'schiusa').map((e) => e.animale!));
     scena.aggiorna($state.snapshot(app.stato!) as typeof s);
+    // le case che c'erano già restano dove sono: da ora in poi il posto delle case nuove lo sceglie Giada
+    if (s.arredo?.caseFissate === undefined) {
+      const vecchie = scena.caseSenzaPosto();
+      cambiaArredo((st) => {
+        for (const k of vecchie) { const p = scena!.postoDi(k); if (p) sposta(st, k, p); }
+        arredoDi(st).caseFissate = true;
+      });
+    }
     aggiornaMeteo();
     timerMeteo = setInterval(aggiornaMeteo, 60_000);
 
@@ -256,6 +281,41 @@
     const snap = JSON.stringify(app.stato);
     if (scena && snap) scena.aggiorna(JSON.parse(snap));
   });
+
+  // chi si costruisce la casa chiede a Giada dove metterla (quando non sta succedendo altro)
+  $effect(() => {
+    void JSON.stringify(app.stato?.arredo?.posti);
+    void app.stato?.animali.map((a) => a.mestiere).join();
+    void app.stato?.edifici.length;
+    if (!scena || sp || dialogo || arreda || casa || menu || chiediNome || insegnaA) return;
+    const k = scena.caseSenzaPosto().find((x) => !giaChiesto.has(x));
+    if (!k) return;
+    giaChiesto.add(k);
+    const a = k.startsWith('b:') ? s.animali.find((x) => x.id === k.slice(2)) : undefined;
+    const ed = k.startsWith('e:') ? REGOLE.edifici.find((e) => e.tipo === k.slice(2)) : undefined;
+    scena.guarda(new THREE.Vector3(scena.postoDi(k)?.x ?? 0, 0, scena.postoDi(k)?.z ?? 0));
+    dialogo = a
+      ? { tipo: 'casa', chiave: k, righe: [{ chi: chiDice(a), voce: 'animale', testo: `Giada! Mi costruisco la mia casa da ${a.mestiere ? nomeMestiere(a) : 'grande'}! Dove la metto? Scegli tu il posto più bello.` }] }
+      : { tipo: 'casa', chiave: k, righe: [corvo('', `Cra! Si costruisce ${(ed?.nome ?? 'un edificio nuovo').toLowerCase()}! Dove lo mettiamo? Scegli tu il posto.`)] };
+  });
+
+  function scegliPostoCasa(k: string) {
+    dialogo = null;
+    casaNuova = k;
+    arreda = true;
+  }
+
+  function fineArredo() {
+    // se Giada ha detto «Fatto» senza spostarla, la casa resta lì dov'è: quel posto ora è suo
+    const k = casaNuova;
+    if (k && scena && !s.arredo?.posti[k]) {
+      const p = scena.postoDi(k);
+      if (p) cambiaArredo((st) => sposta(st, k, p));
+    }
+    arreda = false;
+    aiuolaDaAprire = null;
+    casaNuova = null;
+  }
 
   async function tocco(b: Bersaglio) {
     if (chiediNome || insegnaA || sp) return;
@@ -383,6 +443,7 @@
       <div class="banda">
         <div class="titolo-cinema">{sp.titolo}</div>
         {#if sp.passi.length > 1}<div class="conta">{sp.i + 1} di {sp.passi.length}</div>{/if}
+        {#if sp.pronto && sp.passi.length - sp.i > 2}<button class="salta" onclick={saltaTutto}>Salta ⏭</button>{/if}
       </div>
       <div class="sottotitolo-cinema">
         {#key sp.testo}
@@ -400,7 +461,7 @@
       </div>
     </div>
   {:else if arreda && scena}
-    <Arredo scena={scena} apri={aiuolaDaAprire} onchiudi={() => { arreda = false; aiuolaDaAprire = null; }} />
+    <Arredo scena={scena} apri={aiuolaDaAprire} nuova={casaNuova} onchiudi={fineArredo} />
   {:else}
   <header class="hud-alto">
     <div class="sinistra">
@@ -448,6 +509,10 @@
             {#if a.mestiere}<button class="tondo grigio" onclick={() => entra(a)}>🏠 Casa</button>{/if}
             <button class="tondo grigio" onclick={() => { dialogo = null; vai('animale', a.id); }}>Scheda</button>
             <button class="tondo grigio" onclick={() => (dialogo = null)}>Ciao!</button>
+          {:else if dialogo?.tipo === 'casa' && dialogo.chiave}
+            {@const k = dialogo.chiave}
+            <button class="tondo" onclick={() => scegliPostoCasa(k)}>📍 Scegli il posto</button>
+            <button class="tondo grigio" onclick={() => (dialogo = null)}>Più tardi</button>
           {:else if dialogo?.tipo === 'backup'}
             <button class="tondo" onclick={() => { dialogo = null; vai('impostazioni'); }}>Salviamo</button>
             <button class="tondo grigio" onclick={() => { dialogo = null; segnaBackupFatto(); }}>Più tardi</button>
@@ -565,6 +630,10 @@
   }
   .sottotitolo-cinema input { max-width: 320px; }
   .sottotitolo-cinema .riga { display: flex; gap: 10px; }
+  .salta {
+    position: absolute; right: 12px; top: calc(14px + env(safe-area-inset-top)); padding: 6px 14px; font-size: 0.85rem; pointer-events: auto;
+    background: rgba(255, 255, 255, 0.15); color: #fff; border: 2px solid rgba(255, 255, 255, 0.5); box-shadow: none; text-shadow: none;
+  }
   .avanti { min-width: 160px; animation: entra 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
   @keyframes appare { from { opacity: 0; } }
   @keyframes scendeBanda { from { transform: translateY(-100%); } }

@@ -11,7 +11,7 @@
   import type { EventoArredo, ModoArredo, Scena } from '../scena/scena';
   import Pittura from './Pittura.svelte';
 
-  let { scena, onchiudi, apri = null }: { scena: Scena; onchiudi: () => void; apri?: string | null } = $props();
+  let { scena, onchiudi, apri = null, nuova = null }: { scena: Scena; onchiudi: () => void; apri?: string | null; nuova?: string | null } = $props();
   let s = $derived(app.stato!);
   let a = $derived(app.stato!.arredo!);
 
@@ -57,7 +57,8 @@
     if (k.startsWith('e:')) return REGOLE.edifici.find((e) => e.tipo === k.slice(2))?.nome ?? "L'edificio";
     if (k.startsWith('b:')) {
       const an = s.animali.find((x) => x.id === k.slice(2));
-      return an ? `La casa di ${an.nome || nomeAnimale(an)}` : 'La casa';
+      if (!an) return 'La casa';
+      return an.nome ? `La casa di ${an.nome}` : `La casa ${nomeAnimale(an).replace(/^il /, 'del ').replace(/^lo /, 'dello ').replace(/^la /, 'della ').replace(/^l'/, "dell'")}`;
     }
     if (k.startsWith('a:')) return "L'aiuola";
     if (k.startsWith('q:')) return 'Il quadretto';
@@ -94,6 +95,11 @@
   }
 
   onMount(() => {
+    if (nuova) {
+      // una casa nuova: è già scelta, Giada la trascina dove vuole
+      scegli(nuova);
+      messaggio = `📍 ${nomeDi(nuova)}: trascinala dove vuoi (o tocca il prato), girala con le frecce, poi tocca «Fatto ✓».`;
+    }
     if (apri) {
       modo = 'orto';
       aiuolaAperta = apri;
