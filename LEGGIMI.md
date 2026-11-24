@@ -41,6 +41,9 @@ Giada non può aprirla per caso: non c'è più nessun tocco segreto, si usano du
 - `https://avidoalchimista.github.io/villaggio-di-giada/?prova` accende il pannello prove in fondo ad Altro
   (+1/+7/+30 giorni, +7/+30/+90/+365 giorni con diario finto per vedere gli sviluppi, fai crescere tutti, +100 castagne, azzera tutto). Resta acceso su quel telefono finché
   non premi «Nascondi questo pannello» o azzeri.
+- Nel pannello prove c'è anche «🎂 Prova la festa di compleanno»: fa vedere subito la festa di paese del 24 luglio
+  (vedi `src/lib/festa.ts` e `src/scena/festa.ts`). Il vero giorno la festa parte da sola appena Giada apre il gioco;
+  se quel giorno non passa, la torta la aspetta fino al 27 luglio.
 - `https://avidoalchimista.github.io/villaggio-di-giada/?azzera` chiede conferma e cancella tutto da quel telefono:
   villaggio, diario, giorni simulati e pannello prove. Il gioco riparte dall'inizio.
 
