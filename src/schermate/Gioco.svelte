@@ -5,6 +5,8 @@
   import Pesca from '../componenti/Pesca.svelte';
   import Acquario from '../componenti/Acquario.svelte';
   import Luogo from '../componenti/Luogo.svelte';
+  import Escursione from '../componenti/Escursione.svelte';
+  import { escursionePossibile, type Giornata } from '../lib/escursioni';
   import { BIOMA, type DefBioma } from '../lib/biomi';
   import Dialogo from '../componenti/Dialogo.svelte';
   import { fraseCarattere } from '../lib/carattere';
@@ -35,7 +37,7 @@
   let scena = $state.raw<Scena | null>(null);
   let s = $derived(app.stato!);
 
-  type Dialogo = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' | 'casa'; chiave?: string };
+  type Dialogo = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' | 'casa' | 'escursione'; chiave?: string };
   let dialogo = $state<Dialogo | null>(null);
   let chiediNome = $state<Animale | null>(null);
   let insegnaA = $state<Animale | null>(null);
@@ -81,6 +83,14 @@
     scena?.fineCinema();
   }
   let luogo = $state<DefBioma | null>(null);
+  // l'escursione nei posti lontani: si apre dopo una giornata particolare scritta nel diario
+  let gitaPossibile = $derived(escursionePossibile(s, app.voci, dataDiOggi()));
+  let gita = $state<{ voce: string; giornata: Giornata } | null>(null);
+  function apriGita() {
+    const g = gitaPossibile;
+    dialogo = null;
+    if (g) gita = { voce: g.voce.id, giornata: g.giornata };
+  }
   let tempo = $state<Meteo>('sole');
   // il compleanno di Giada: il villaggio è addobbato (e, se la festa non c'è ancora stata, la si fa appena entra)
   let inFesta = $derived(app.provaCompleanno > 0 || villaggioInFesta(s, dataDiOggi()));
@@ -381,6 +391,14 @@
       if (c) primo = { righe: [corvo('', `Lo sapevi? ${c.testo}`)] };
     }
     if (primo && !primo.righe.length) primo = null;
+    // dopo una giornata particolare scritta nel diario, il corvo propone una gita in un posto lontano
+    if (daDiario && gitaPossibile) {
+      const g = gitaPossibile.giornata;
+      const invito = g === 'felice'
+        ? 'Che giornata speciale! Per festeggiare, perché non fai una gita in uno dei posti lontani? Laggiù ci aspettano.'
+        : 'Dopo una giornata così, cra, a volte fa bene andare un po\' lontano. Ti va una gita? Nei posti lontani c\'è chi ha delle storie da raccontarti.';
+      primo = { righe: [...(primo?.righe ?? []), corvo('', invito)], tipo: 'escursione' };
+    }
     if (sorprese.length) {
       const titolo = daDiario ? 'Guarda!' : 'Mentre eri via…';
       // dopo una giornata difficile prima parla il corvo, con calma; altrimenti subito la sorpresa
@@ -416,7 +434,7 @@
     void JSON.stringify(app.stato?.arredo?.posti);
     void app.stato?.animali.map((a) => a.mestiere).join();
     void app.stato?.edifici.length;
-    if (!scena || sp || dialogo || arreda || casa || menu || chiediNome || insegnaA || acquario || luogo || pesca) return;
+    if (!scena || sp || dialogo || arreda || casa || menu || chiediNome || insegnaA || acquario || luogo || pesca || gita) return;
     const k = scena.caseSenzaPosto().find((x) => !giaChiesto.has(x));
     if (!k) return;
     giaChiesto.add(k);
@@ -449,7 +467,7 @@
   }
 
   async function tocco(b: Bersaglio) {
-    if (chiediNome || insegnaA || sp || fs || pesca || acquario || luogo) return;
+    if (chiediNome || insegnaA || sp || fs || pesca || acquario || luogo || gita) return;
     const n = s.numeroVoci + Math.floor(Date.now() / 1000);
     if (b.tipo === 'quaderno') return vai('diario');
     if (b.tipo === 'laghetto') return vaiAPescare();
@@ -585,6 +603,9 @@
   {#if acquario}
     <div class="sotto-acquario"><Acquario onchiudi={chiudiAcquario} /></div>
   {/if}
+  {#if gita}
+    <Escursione {scena} voce={gita.voce} giornata={gita.giornata} onchiudi={() => (gita = null)} />
+  {/if}
   {#if luogo}
     {@const l = luogo}
     <div class="sotto-acquario"><Luogo luogo={l} onchiudi={() => { luogo = null; scena?.fineCinema(); }} /></div>
@@ -692,6 +713,9 @@
             {@const k = dialogo.chiave}
             <button class="tondo" onclick={() => scegliPostoCasa(k)}>📍 Scegli il posto</button>
             <button class="tondo grigio" onclick={() => (dialogo = null)}>Più tardi</button>
+          {:else if dialogo?.tipo === 'escursione' && gitaPossibile}
+            <button class="tondo" onclick={apriGita}>🎒 Andiamo!</button>
+            <button class="tondo grigio" onclick={() => (dialogo = null)}>Più tardi</button>
           {:else if dialogo?.tipo === 'backup'}
             <button class="tondo" onclick={() => { dialogo = null; vai('impostazioni'); }}>Salviamo</button>
             <button class="tondo grigio" onclick={() => { dialogo = null; segnaBackupFatto(); }}>Più tardi</button>
@@ -709,7 +733,7 @@
           dialogo = { righe: [{ chi: 'Corvo', voce: 'corvo', testo: ev.testo }] };
         }}
       />
-    {:else if !acquario && !luogo}
+    {:else if !acquario && !luogo && !gita}
       <div class="azioni-basso">
         <button class="bottone-diario" onclick={() => vai('diario')}>
           <span class="icona">📖</span> Scrivi nel diario
@@ -718,6 +742,9 @@
           🔨<span class="punto" class:visibile={puoCostruire}></span>
         </button>
         <button class="bottone-costruisci arreda" onclick={() => (arreda = true)} aria-label="Arreda">🪴</button>
+        {#if gitaPossibile}
+          <button class="bottone-costruisci gita" onclick={apriGita} aria-label="Escursione">🎒<span class="punto visibile"></span></button>
+        {/if}
       </div>
       <p class="suggerimento">Tocca chi vuoi · 1 dito muove · 2 dita zoom e giro</p>
     {/if}
@@ -783,6 +810,7 @@
   .vuoto, .aiuto { font-size: 0.85rem; color: #c4cff0; margin: 8px 2px; }
   .chiudi { align-self: center; }
   .arreda { background: #3f7a4a; }
+  .gita { background: #c8842a; }
   .quadro-grande { position: absolute; inset: 0; z-index: 10; background: rgba(10, 14, 40, 0.7); display: flex; align-items: center; justify-content: center; border: none; border-radius: 0; box-shadow: none; padding: 24px; }
   .quadro-grande img { width: 100%; max-width: 420px; image-rendering: pixelated; border: 14px solid #9a6a40; border-radius: 6px; box-shadow: 0 10px 30px #0008; }
   /* primo piano: bande da film, titolo e didascalia */

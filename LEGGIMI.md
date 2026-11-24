@@ -10,6 +10,9 @@ Regalo di Natale 2026. Specifica completa: `../CLAUDE gioco per giada.md`.
   (il primo 25-35 giorni dopo il suo arrivo); `src/scena/sentieri3d.ts` il sentiero nel bosco, il portale col nome e il paesaggio in fondo
 - `src/lib/acquario.ts` l'acquario (costruzione da 100 castagne, dopo il laghetto): i pesci pescati ci finiscono dentro, quelli dei posti lontani si comprano;
   `src/scena/acquario3d.ts` l'edificio con la vasca e i pesci che nuotano
+- `src/lib/escursioni.ts` le escursioni: dopo una giornata particolare (triste, paura, rabbia, stanca, felice) Giada può andare
+  in un posto scoperto con l'animale del cuore; la gente del posto e cosa dice per ogni giornata. `src/scena/gita3d.ts` la gita vista nel villaggio;
+  `src/componenti/Escursione.svelte` la scelta e il racconto
 - `src/dati/` tutti i testi, modificabili senza toccare il codice:
   `dizionario.json`, `questionario.json`, `frasi.json` (corvo, animali, conforto), `storia.json`, `regole.json` (numeri del gioco)
 - `src/schermate/` le schermate; `src/componenti/` corvo e ritratti

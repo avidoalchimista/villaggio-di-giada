@@ -30,7 +30,7 @@ export const BIOMI: DefBioma[] = [
   {
     id: 'neve', nome: 'Le Montagne di Neve', villaggio: 'Borgo Fiocco', simbolo: '🏔️', angolo: 150, colore: '#7ab0d8', terra: '#eef4fa',
     descrizione: 'Su in alto, dove fa freddo e nevica quasi sempre. Le case hanno i tetti bianchi e i camini che fumano.',
-    abitanti: 'ermellini, stambecchi e marmotte', commercio: 'pesci dei laghi gelati, lana calda, cioccolata',
+    abitanti: 'lepri bianche, ermellini e marmotte', commercio: 'pesci dei laghi gelati, lana calda, cioccolata',
     scoperta: 'Giada! Giada! Rosicchiando un albero ho visto un sentiero nascosto: sale sale… fino alle Montagne di Neve! Lassù c\'è un villaggio, Borgo Fiocco. Ho messo un cartello all\'inizio del sentiero.',
     pesci: [
       p('salmerino', 'Salmerino alpino', '#7a8aa0', '#f4a070', '#e8704a', 'lungo', [20, 40], 2, 'Vive nei laghi di montagna, sotto il ghiaccio. La pancia è arancione come un tramonto.'),
@@ -41,7 +41,7 @@ export const BIOMI: DefBioma[] = [
   {
     id: 'mare', nome: 'La Costa del Mare', villaggio: 'Porto Conchiglia', simbolo: '🌊', angolo: 30, colore: '#3a9ad0', terra: '#f2e2b0',
     descrizione: 'Il sentiero scende fino alla spiaggia: sabbia, conchiglie, barchette colorate e il faro bianco e rosso.',
-    abitanti: 'gabbiani, foche e granchi', commercio: 'pesci del mare, conchiglie, sale',
+    abitanti: 'papere di mare, gabbiani e foche', commercio: 'pesci del mare, conchiglie, sale',
     scoperta: 'Sniff sniff… sento odore di sale! Giada, dietro gli alberi ho trovato un sentiero che scende fino al mare! C\'è un porto, Porto Conchiglia, con le barche colorate. Ho messo un cartello.',
     pesci: [
       p('pagliaccio', 'Pesce pagliaccio', '#f07a2a', '#ffffff', '#1a1a1a', 'tondo', [6, 11], 2, 'Arancione con le strisce bianche, vive tra i tentacoli degli anemoni.'),
@@ -53,7 +53,7 @@ export const BIOMI: DefBioma[] = [
   {
     id: 'fiume', nome: 'Il Fiume delle Cascate', villaggio: 'Ponte dei Salici', simbolo: '💦', angolo: 215, colore: '#5aa878', terra: '#b89a6a',
     descrizione: 'Un fiume largo con tre cascate, i salici che toccano l\'acqua e un mulino ad acqua che gira giorno e notte.',
-    abitanti: 'lontre, aironi e rane', commercio: 'pesci di fiume, farina del mulino, cesti di vimini',
+    abitanti: 'asini mugnai, lontre e aironi', commercio: 'pesci di fiume, farina del mulino, cesti di vimini',
     scoperta: 'Giada, senti che rumore? È una cascata! Ho trovato un sentiero che porta al Fiume delle Cascate. C\'è un paese con i salici, Ponte dei Salici: le lontre ti salutano!',
     pesci: [
       p('barbo', 'Barbo', '#a89a6a', '#efe6c8', '#c88a5a', 'lungo', [25, 60], 2, 'Ha quattro baffi per cercare il cibo tra i sassi del fiume.'),
@@ -64,7 +64,7 @@ export const BIOMI: DefBioma[] = [
   {
     id: 'ciliegi', nome: 'Il Giardino dei Ciliegi', villaggio: 'Petali Rosa', simbolo: '🌸', angolo: 325, colore: '#e88aa8', terra: '#d8b8a0',
     descrizione: 'Colline piene di ciliegi in fiore, ponticelli rossi e laghetti tranquilli dove si specchiano le lanterne.',
-    abitanti: 'gru, tanuki e scoiattoli volanti', commercio: 'carpe koi, tè, ventagli di carta',
+    abitanti: 'daini, gru e scoiattoli volanti', commercio: 'carpe koi, tè, ventagli di carta',
     scoperta: 'Giada! Oggi mi è caduto un petalo rosa sul naso… e seguendo i petali ho trovato un sentiero! Porta al Giardino dei Ciliegi, dove c\'è il villaggio di Petali Rosa.',
     pesci: [
       p('koi', 'Carpa koi', '#ffffff', '#fff4ec', '#f05a3a', 'normale', [30, 70], 2, 'Bianca con le macchie rosse: dicono che porti fortuna.'),
@@ -75,7 +75,7 @@ export const BIOMI: DefBioma[] = [
   {
     id: 'oasi', nome: 'L\'Oasi delle Palme', villaggio: 'Duna Dorata', simbolo: '🌴', angolo: 245, colore: '#e0a84a', terra: '#f0d090',
     descrizione: 'In mezzo al deserto caldo, un laghetto verde con le palme, i datteri e le tende colorate.',
-    abitanti: 'cammelli, fennec e suricati', commercio: 'pesci dell\'oasi, datteri, tappeti',
+    abitanti: 'cavalli del deserto, cammelli e fennec', commercio: 'pesci dell\'oasi, datteri, tappeti',
     scoperta: 'Che caldo! Giada, ho trovato un sentiero di sabbia che va lontano lontano, fino all\'Oasi delle Palme. Laggiù c\'è Duna Dorata: i fennec hanno le orecchie più grandi delle mie!',
     pesci: [
       p('arcobaleno', 'Pesce arcobaleno', '#5ab0e0', '#f0e070', '#f07a5a', 'normale', [6, 12], 3, 'Cambia colore quando nuota: azzurro, giallo, rosso…'),
@@ -86,7 +86,7 @@ export const BIOMI: DefBioma[] = [
   {
     id: 'coralli', nome: 'L\'Isola dei Coralli', villaggio: 'Baia Turchese', simbolo: '🐢', angolo: 290, colore: '#2ac0b8', terra: '#f6ead0',
     descrizione: 'Un\'isoletta con l\'acqua turchese e il fondale pieno di coralli. Ci si arriva con la zattera dal fondo del sentiero.',
-    abitanti: 'tartarughe, pappagalli e delfini', commercio: 'pesci tropicali, noci di cocco, perle',
+    abitanti: 'pappagalli, tartarughe e delfini', commercio: 'pesci tropicali, noci di cocco, perle',
     scoperta: 'Giada, non ci crederai! Il sentiero più lungo che abbia mai trovato: arriva al mare e lì c\'è una zattera che porta all\'Isola dei Coralli! Gli abitanti di Baia Turchese ci aspettano.',
     pesci: [
       p('chirurgo', 'Pesce chirurgo blu', '#2a6ad8', '#f2d03a', '#1a2a6a', 'tondo', [15, 30], 2, 'Blu come il mare profondo, con la coda gialla.'),

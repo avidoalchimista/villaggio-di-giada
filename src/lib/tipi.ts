@@ -2,6 +2,7 @@
 import type { Acquario } from './acquario';
 import type { Arredo } from './arredo';
 import type { Castoro } from './castoro';
+import type { Escursione } from './escursioni';
 
 export const VIRTU = ['coraggio', 'umanita', 'saggezza', 'giustizia', 'temperanza', 'trascendenza'] as const;
 export type Virtu = (typeof VIRTU)[number];
@@ -149,6 +150,8 @@ export interface StatoGioco {
   pesca?: Pescato; // i pesci presi da Giada al laghetto (vedi pesca.ts)
   castoro?: Castoro; // il castoro che rosicchia gli alberi del bosco (vedi castoro.ts)
   acquario?: Acquario; // i pesci nell'acquario (vedi acquario.ts)
+  escursioni?: Escursione[]; // le gite nei posti lontani (vedi escursioni.ts)
+  compagno?: string; // l'animale del cuore di Giada, quello che parte con lei in escursione
 }
 
 export interface Pescato {

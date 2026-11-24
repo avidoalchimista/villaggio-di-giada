@@ -20,6 +20,8 @@ import { CURVA, materiale, materialeTerreno, spriteTesto } from './ps1';
 import type { Meteo } from '../lib/meteo';
 import { cappellinoDiFesta, Festa, POSTO_TORTA } from './festa';
 import { Pescata } from './pesca3d';
+import { Gita } from './gita3d';
+import { ABITANTI } from '../lib/escursioni';
 import { AcquarioInScena, CENTRO_VASCA } from './acquario3d';
 import { SentieriInScena, sulSentiero } from './sentieri3d';
 import { BIOMA, biomiScoperti, type DefBioma } from '../lib/biomi';
@@ -217,6 +219,7 @@ export class Scena {
   private giaAggiornataSentieri = false;
   private castoro = new CastoroInScena();
   private acquario: AcquarioInScena | null = null;
+  private gita: Gita | null = null;
   private sentieri = new SentieriInScena();
   private angoliSentieri: number[] = [];
   private lanterne: THREE.Mesh[] = [];
@@ -1771,6 +1774,7 @@ export class Scena {
     this.aggiornaSchiusa(dt, t);
     this.castoro.anima(t, dt, this.momento() === 'notte');
     this.acquario?.anima(t, dt);
+    this.gita?.aggiorna(dt, t);
     this.sentieri.anima(t);
     this.stelline = this.stelline.filter((st) => {
       st.vita -= dt;
@@ -1814,6 +1818,7 @@ export class Scena {
     if (ab.ammicca <= 0) ab.ammicca = 2 + Math.random() * 4;
     for (const o of ab.m.occhi) o.scale.y = ab.dati.addormentato ? 0.12 : chiusi ? 0.15 : 1;
     if (this.pescata?.id === ab.dati.id) return; // pesca: lo muove pesca3d.ts
+    if (this.gita?.id === ab.dati.id) { g.visible = false; return; } // è via in escursione (vedi gita3d.ts)
 
     if (ab.dati.addormentato) {
       this.dormi(ab, dt, t);
@@ -2838,6 +2843,56 @@ export class Scena {
       out.set(b.id, ((scelto % 360) + 360) % 360);
     }
     return out;
+  }
+
+  /**
+   * Parte l'escursione: l'animale va giù per il sentiero del posto lontano (la telecamera lo segue da dietro);
+   * in fondo lo aspetta qualcuno del posto e la telecamera si mette di lato per vederli chiacchierare.
+   */
+  iniziaGita(id: string, luogo: string, quandoArriva: () => void): boolean {
+    const ab = this.abitanti.get(id);
+    const gradi = this.sentieri.angoloDi(luogo);
+    const locale = ABITANTI[luogo];
+    if (!ab || gradi === undefined || !locale) return false;
+    this.fineGita();
+    const gita = new Gita(ab.dati, ab.m.gruppo.scale.x, gradi, this.raggio, locale, ab.m.gruppo.position);
+    this.gita = gita;
+    this.scene.add(gita.gruppo);
+    ab.m.gruppo.visible = false;
+    if (ab.attivita) this.fineAttivita(ab);
+    const sc = ab.m.gruppo.scale.x;
+    this.cine = { segui: () => gita.fuoco(), dist: 4.8 + sc, alt: 2.6, guardaY: 0.5, angolo: gita.angoloDietro(), torna: true, oggetto: gita.gruppo };
+    gita.quandoArriva = () => {
+      this.cine = { segui: () => gita.mezzo(), dist: 5.4, alt: 2.0, guardaY: 0.3, angolo: gita.angoloTreQuarti(), torna: true, oggetto: gita.gruppo };
+      quandoArriva();
+    };
+    return true;
+  }
+
+  /** Si torna a casa: l'animale risale il sentiero, poi riappare nel villaggio. */
+  tornaDallaGita(quandoTorna: () => void) {
+    const gita = this.gita;
+    if (!gita) return quandoTorna();
+    gita.quandoTorna = () => { this.fineGita(); quandoTorna(); };
+    gita.torna();
+    this.cine = { segui: () => gita.fuoco(), dist: 6, alt: 2.8, guardaY: 0.5, angolo: gita.angoloDietro(), torna: true, oggetto: gita.gruppo };
+  }
+
+  /** Fine dell'escursione (anche a metà): l'animale vero ricompare. */
+  fineGita() {
+    const g = this.gita;
+    if (!g) return;
+    this.gita = null;
+    this.scene.remove(g.gruppo);
+    const ab = this.abitanti.get(g.id);
+    if (ab) {
+      ab.m.gruppo.visible = true;
+      // riappare all'imbocco del sentiero, come se tornasse proprio da lì
+      const p = g.fuoco();
+      ab.m.gruppo.position.set(p.x, 0, p.z);
+      ab.meta.copy(this.puntoCasuale());
+    }
+    this.fineCinema();
   }
 
   /** Quanti pesci nuotano nell'acquario (per le prove). */
