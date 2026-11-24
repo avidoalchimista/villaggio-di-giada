@@ -1,6 +1,7 @@
 // Il castoro: dopo qualche giorno arriva al limite del bosco e si mette a rosicchiare un albero,
 // con tutta la calma del mondo: ci mette una settimana per albero. Quando l'albero cade, lo racconta a Giada.
 // Gli alberi caduti restano come ceppi; dopo un po' ricrescono (così il bosco non sparisce mai).
+import { angoliSentieri, sentieriDelGiorno, type Sentiero } from './biomi';
 import { hash } from './caso';
 import { giorniTra } from './date';
 import type { Evento, StatoGioco } from './tipi';
@@ -11,6 +12,8 @@ export interface Castoro {
   inizio: string; // da quando lo rosicchia
   tagliati: number[]; // gli ultimi alberi caduti (angoli): lì c'è un ceppo
   totale: number; // quanti alberi ha fatto cadere in tutto
+  sentieri?: Sentiero[]; // i sentieri verso i posti lontani che ha scoperto (vedi biomi.ts)
+  prossimoSentiero?: string; // quando trova il prossimo
 }
 
 /** Dopo quanti giorni di villaggio arriva il castoro. */
@@ -30,6 +33,8 @@ function prossimoAlbero(s: StatoGioco, c: Pick<Castoro, 'tagliati' | 'totale' | 
     const dalViale = Math.abs(((a - 90 + 540) % 360) - 180);
     if (dalViale < 35) continue;
     if (c?.tagliati.some((t) => Math.abs(((a - t + 540) % 360) - 180) < 12)) continue;
+    // gli alberi lungo i sentieri che ha scoperto non ci sono più: lì non c'è niente da rosicchiare
+    if (angoliSentieri(s).some((t) => Math.abs(((a - t + 540) % 360) - 180) < 14)) continue;
     return a;
   }
   return 270;
@@ -60,6 +65,7 @@ export function castoroDelGiorno(s: StatoGioco, giorno: string, out: Evento[]) {
     return;
   }
   const c = s.castoro;
+  sentieriDelGiorno(s, giorno, out); // ogni mese o due trova un sentiero verso un posto lontano
   if (giorniTra(c.inizio, giorno) < GIORNI_PER_ALBERO) return;
   c.tagliati.push(c.albero);
   if (c.tagliati.length > CEPPI) c.tagliati.splice(0, c.tagliati.length - CEPPI);

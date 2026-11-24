@@ -21,7 +21,7 @@
   let fase = $state<Fase>('scegli');
   let chi = $state<Animale | null>(null);
   let quaderno = $state(false);
-  let preso = $state<{ pesce: DefPesce; cm: number; ghiande: number; nuovo: boolean; record: boolean } | null>(null);
+  let preso = $state<{ pesce: DefPesce; cm: number; ghiande: number; nuovo: boolean; record: boolean; vasca?: string } | null>(null);
   let lotta = $state<Lotta | null>(null);
   let pesce: DefPesce | null = null; // chi ha abboccato (si decide quando abbocca)
   let r2 = 0.5;
@@ -170,7 +170,7 @@
     scena?.inquadraPescato();
     fase = 'preso';
     const r = await pescaQui(pesce.id, cm);
-    const p = { pesce, cm, ghiande: r?.ghiande ?? 0, nuovo: !!r?.nuovo, record: !!r?.record };
+    const p = { pesce, cm, ghiande: r?.ghiande ?? 0, nuovo: !!r?.nuovo, record: !!r?.record, vasca: r?.vasca };
     dopo(1300, () => (preso = p));
   }
 
@@ -297,6 +297,8 @@
       <p>{preso.pesce.frase}</p>
       <p class="chi-pesca">L'ha {preso.pesce.forma === 'cosa' ? 'ripescato' : 'pescato'} {nome(chi)}!</p>
       {#if preso.ghiande}<p class="premio">+{preso.ghiande} castagna 🌰</p>{/if}
+      {#if preso.vasca === 'dentro'}<p class="vasca">🐠 Va a nuotare nell'acquario!</p>
+      {:else if preso.vasca === 'pieno'}<p class="vasca">Nell'acquario ce ne sono già abbastanza: torna nel laghetto.</p>{/if}
       <div class="bottoni">
         <button class="grigio" onclick={cambiaAnimale}>Un altro</button>
         <button onclick={lancia}>🎣 Ancora!</button>
@@ -385,6 +387,7 @@
   }
   @keyframes pop { from { transform: scale(0.5); opacity: 0; } }
   .carta p { margin: 6px 0; font-weight: 700; }
+  .vasca { font-size: 0.85rem; font-weight: 800; color: #2a6fb0; margin: 2px 0 6px; }
   .nuovo { position: absolute; top: -14px; right: 16px; background: #e05a4a; color: #fff; font-weight: 900; padding: 2px 10px; border-radius: 999px; transform: rotate(6deg); }
   .pesce-svg { width: 100%; max-height: 80px; }
   .nome-pesce { font-weight: 900; font-size: 1.3rem; }

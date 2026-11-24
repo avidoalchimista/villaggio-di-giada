@@ -3,6 +3,9 @@
   import { onDestroy, onMount } from 'svelte';
   import Casa from '../componenti/Casa.svelte';
   import Pesca from '../componenti/Pesca.svelte';
+  import Acquario from '../componenti/Acquario.svelte';
+  import Luogo from '../componenti/Luogo.svelte';
+  import { BIOMA, type DefBioma } from '../lib/biomi';
   import Dialogo from '../componenti/Dialogo.svelte';
   import { fraseCarattere } from '../lib/carattere';
   import MenuCostruisci from '../componenti/MenuCostruisci.svelte';
@@ -67,6 +70,17 @@
     pesca = null;
     scena?.finePesca();
   }
+  // guardare i pesci dell'acquario, e la cartolina di un posto lontano
+  let acquario = $state(false);
+  function apriAcquario() {
+    dialogo = null;
+    if (scena?.inquadraAcquario()) acquario = true;
+  }
+  function chiudiAcquario() {
+    acquario = false;
+    scena?.fineCinema();
+  }
+  let luogo = $state<DefBioma | null>(null);
   let tempo = $state<Meteo>('sole');
   // il compleanno di Giada: il villaggio è addobbato (e, se la festa non c'è ancora stata, la si fa appena entra)
   let inFesta = $derived(app.provaCompleanno > 0 || villaggioInFesta(s, dataDiOggi()));
@@ -77,7 +91,7 @@
   const corvo = (id: string, testo?: string): RigaDialogo => ({ chi: 'Corvo', testo: testo ?? C[id], voce: 'corvo', audioId: testo ? undefined : id });
   const scegli = <T,>(l: T[], k: number) => l[Math.abs(k) % l.length];
   // (il castoro racconta lui quello che fa)
-  const dalCorvo = (eventi: Evento[]): RigaDialogo[] => eventi.map((e) => (e.tipo === 'castoro' ? { chi: 'Castoro', voce: 'animale' as const, testo: e.testo } : { chi: 'Corvo', voce: 'corvo' as const, testo: e.testo }));
+  const dalCorvo = (eventi: Evento[]): RigaDialogo[] => eventi.map((e) => (e.tipo === 'castoro' || e.tipo === 'sentiero' ? { chi: 'Castoro', voce: 'animale' as const, testo: e.testo } : { chi: 'Corvo', voce: 'corvo' as const, testo: e.testo }));
   const chiDice = (a: Animale) => `${a.nome || nomeAnimale(a)} ${simbolo(a)}`;
 
   // ---------- primo piano: schiusa e sorprese "mentre eri via" ----------
@@ -93,6 +107,7 @@
     const tutte = s.sorprese ?? [];
     const ok = tutte.filter((e) => {
       if (e.tipo === 'storia') return true;
+      if (e.tipo === 'sentiero') return !!e.luogo && !!BIOMA[e.luogo];
       const a = s.animali.find((x) => x.id === e.animale);
       if (!a) return false;
       if (e.tipo === 'uovo') return a.fase === 'uovo' || tutte.some((x) => x.tipo === 'schiusa' && x.animale === a.id);
@@ -131,7 +146,8 @@
         nome = '';
       }
     } else {
-      if (e.tipo === 'storia') scena.inquadra({ tipo: 'corvo' });
+      if (e.tipo === 'sentiero' && e.luogo) scena.inquadraSentiero(e.luogo);
+      else if (e.tipo === 'storia') scena.inquadra({ tipo: 'corvo' });
       else if (a && e.tipo === 'uovo') scena.inquadra({ tipo: 'uovo', id: a.id });
       else if (a && e.tipo === 'edificio') {
         const ed = s.edifici.find((x) => x.gestore === a.id);
@@ -139,7 +155,7 @@
       } else if (a) scena.inquadra({ tipo: 'animale', id: a.id });
       await pausa(1200);
       if (!sp) return;
-      sp.testo = e.tipo === 'storia' ? `${e.testo}. Il corvo ha una storia nuova da raccontarti!` : e.testo;
+      sp.testo = e.tipo === 'storia' ? `${e.testo}. Il corvo ha una storia nuova da raccontarti!` : e.tipo === 'sentiero' ? `🦫 ${e.testo}` : e.testo;
     }
     sp.pronto = true;
   }
@@ -400,16 +416,18 @@
     void JSON.stringify(app.stato?.arredo?.posti);
     void app.stato?.animali.map((a) => a.mestiere).join();
     void app.stato?.edifici.length;
-    if (!scena || sp || dialogo || arreda || casa || menu || chiediNome || insegnaA) return;
+    if (!scena || sp || dialogo || arreda || casa || menu || chiediNome || insegnaA || acquario || luogo || pesca) return;
     const k = scena.caseSenzaPosto().find((x) => !giaChiesto.has(x));
     if (!k) return;
     giaChiesto.add(k);
     const a = k.startsWith('b:') ? s.animali.find((x) => x.id === k.slice(2)) : undefined;
-    const ed = k.startsWith('e:') ? REGOLE.edifici.find((e) => e.tipo === k.slice(2)) : undefined;
+    const ed = k.startsWith('e:') ? REGOLE.edifici.find((e) => e.tipo === k.slice(2)) : k.startsWith('c:') ? REGOLE.costruzioni.find((c) => c.id === k.slice(2)) : undefined;
     scena.guarda(new THREE.Vector3(scena.postoDi(k)?.x ?? 0, 0, scena.postoDi(k)?.z ?? 0));
     dialogo = a
       ? { tipo: 'casa', chiave: k, righe: [{ chi: chiDice(a), voce: 'animale', testo: `Giada! Mi costruisco la mia casa da ${a.mestiere ? nomeMestiere(a) : 'grande'}! Dove la metto? Scegli tu il posto più bello.` }] }
-      : { tipo: 'casa', chiave: k, righe: [corvo('', `Cra! Si costruisce ${(ed?.nome ?? 'un edificio nuovo').toLowerCase()}! Dove lo mettiamo? Scegli tu il posto.`)] };
+      : k === 'c:acquario'
+        ? { tipo: 'casa', chiave: k, righe: [corvo('', 'Cra! Che meraviglia, l\'acquario è pronto! È grande grande: l\'abbiamo messo un po\' in disparte, ma puoi spostarlo dove vuoi. Scegli tu il posto, poi toccalo per guardare i pesci.')] }
+        : { tipo: 'casa', chiave: k, righe: [corvo('', `Cra! Si costruisce ${(ed?.nome ?? 'un edificio nuovo').toLowerCase()}! Dove lo mettiamo? Scegli tu il posto.`)] };
   });
 
   function scegliPostoCasa(k: string) {
@@ -431,10 +449,17 @@
   }
 
   async function tocco(b: Bersaglio) {
-    if (chiediNome || insegnaA || sp || fs || pesca) return;
+    if (chiediNome || insegnaA || sp || fs || pesca || acquario || luogo) return;
     const n = s.numeroVoci + Math.floor(Date.now() / 1000);
     if (b.tipo === 'quaderno') return vai('diario');
     if (b.tipo === 'laghetto') return vaiAPescare();
+    if (b.tipo === 'acquario') return apriAcquario();
+    if (b.tipo === 'sentiero') {
+      dialogo = null;
+      luogo = BIOMA[b.id] ?? null;
+      scena?.inquadraSentiero(b.id); // la telecamera guarda lontano, giù per il sentiero
+      return;
+    }
     if (b.tipo === 'aiuola') {
       aiuolaDaAprire = b.id;
       arreda = true;
@@ -557,6 +582,13 @@
   {#if pesca}
     <Pesca {scena} momento={pesca} onchiudi={smettiDiPescare} />
   {/if}
+  {#if acquario}
+    <div class="sotto-acquario"><Acquario onchiudi={chiudiAcquario} /></div>
+  {/if}
+  {#if luogo}
+    {@const l = luogo}
+    <div class="sotto-acquario"><Luogo luogo={l} onchiudi={() => { luogo = null; scena?.fineCinema(); }} /></div>
+  {/if}
   {#if erroreGrafica}
     <div class="errore">Questo telefono non riesce a disegnare il bosco in 3D.</div>
   {/if}
@@ -677,7 +709,7 @@
           dialogo = { righe: [{ chi: 'Corvo', voce: 'corvo', testo: ev.testo }] };
         }}
       />
-    {:else}
+    {:else if !acquario && !luogo}
       <div class="azioni-basso">
         <button class="bottone-diario" onclick={() => vai('diario')}>
           <span class="icona">📖</span> Scrivi nel diario
@@ -696,6 +728,7 @@
 <style>
   .gioco { user-select: none; -webkit-user-select: none; position: fixed; inset: 0; max-width: 560px; margin: 0 auto; overflow: hidden; background: #bfe3f2; }
   .mondo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  .sotto-acquario { position: absolute; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 5; }
   .errore { position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; background: var(--panna); padding: 16px; border-radius: 18px; }
   .hud-alto { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; pointer-events: none; }
   .sinistra { display: flex; gap: 8px; align-items: flex-start; min-width: 0; max-width: 62%; }

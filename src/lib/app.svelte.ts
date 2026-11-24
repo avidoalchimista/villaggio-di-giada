@@ -11,6 +11,8 @@ import { GUIDA, type PaginaGuida } from '../dati/guida';
 import { festeggia as festeggiaCompleanno } from './festa';
 import { doveSiamo } from './telefono';
 import { prendiPesce } from './pesca';
+import { compraPesce, mettiInVasca, riempiAllInizio } from './acquario';
+import { trovaSentiero } from './biomi';
 import { migliora, ritiraCassa } from './migliorie';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
@@ -165,8 +167,18 @@ export async function salvaVoce(testo: string, forze: Punteggi<Forza>, emozioni:
 export async function costruisciQui(id: string): Promise<Evento | null> {
   if (!app.stato) return null;
   const ev = costruisci(app.stato, id, dataDiOggi());
+  // l'acquario nuovo non è vuoto: gli animali ci mettono un pesce di ogni tipo già pescato
+  if (ev && id === 'acquario') riempiAllInizio(app.stato, dataDiOggi());
   if (ev) await salvaStato();
   return ev;
+}
+
+/** Compra un pesce da un villaggio lontano per l'acquario. */
+export async function compraPesceQui(id: string) {
+  if (!app.stato) return 'no' as const;
+  const r = compraPesce(app.stato, id, dataDiOggi());
+  if (r === 'ok') await salvaStato();
+  return r;
 }
 
 /** Migliora la casa-bottega di un animale con le castagne. */
@@ -215,8 +227,10 @@ export async function raccogliQui(): Promise<number> {
 export async function pescaQui(id: string, cm: number) {
   if (!app.stato) return null;
   const r = prendiPesce(app.stato, id, cm, dataDiOggi());
+  // se c'è l'acquario, il pesce va a nuotare lì
+  const vasca = mettiInVasca(app.stato, id, cm, 'laghetto', dataDiOggi());
   await salvaStato();
-  return r;
+  return { ...r, vasca };
 }
 
 export async function insegnaQui(animale: string, abilita: string): Promise<Evento | null> {
@@ -252,6 +266,15 @@ export async function soffiaCandeline(): Promise<Evento | null> {
 export function provaFestaDiCompleanno() {
   app.provaCompleanno = 1;
   vai('villaggio');
+}
+
+/** Modalità prova: il castoro trova subito il prossimo sentiero (come se fosse passato un mese). */
+export async function provaSentiero(): Promise<boolean> {
+  if (!app.stato?.castoro) return false;
+  const out: Evento[] = [];
+  const b = trovaSentiero(app.stato, dataDiOggi(), out);
+  if (b) await salvaStato();
+  return !!b;
 }
 
 /** Modalità prova: castagne extra. */

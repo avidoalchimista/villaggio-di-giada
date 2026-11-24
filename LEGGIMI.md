@@ -6,6 +6,10 @@ Regalo di Natale 2026. Specifica completa: `../CLAUDE gioco per giada.md`.
 
 - `src/lib/analisi.ts` motore del diario (dizionario, negazioni, intensità, regole composte, segnali seri)
 - `src/lib/gioco.ts` regole del villaggio (uova, crescita, mestieri, edifici, sonno, storia, tempo che passa)
+- `src/lib/biomi.ts` i posti lontani (montagne di neve, mare, fiume, ciliegi, oasi, isola dei coralli): il castoro ne scopre il sentiero ogni 1-2 mesi
+  (il primo 25-35 giorni dopo il suo arrivo); `src/scena/sentieri3d.ts` il sentiero nel bosco, il portale col nome e il paesaggio in fondo
+- `src/lib/acquario.ts` l'acquario (costruzione da 100 castagne, dopo il laghetto): i pesci pescati ci finiscono dentro, quelli dei posti lontani si comprano;
+  `src/scena/acquario3d.ts` l'edificio con la vasca e i pesci che nuotano
 - `src/dati/` tutti i testi, modificabili senza toccare il codice:
   `dizionario.json`, `questionario.json`, `frasi.json` (corvo, animali, conforto), `storia.json`, `regole.json` (numeri del gioco)
 - `src/schermate/` le schermate; `src/componenti/` corvo e ritratti
@@ -44,6 +48,7 @@ Giada non può aprirla per caso: non c'è più nessun tocco segreto, si usano du
 - Nel pannello prove c'è anche «🎂 Prova la festa di compleanno»: fa vedere subito la festa di paese del 24 luglio
   (vedi `src/lib/festa.ts` e `src/scena/festa.ts`). Il vero giorno la festa parte da sola appena Giada apre il gioco;
   se quel giorno non passa, la torta la aspetta fino al 27 luglio.
+- Nel pannello prove c'è «🦫 Trova un sentiero»: il castoro trova subito il prossimo posto lontano (serve che sia già arrivato, dopo 10 giorni).
 - `https://avidoalchimista.github.io/villaggio-di-giada/?azzera` chiede conferma e cancella tutto da quel telefono:
   villaggio, diario, giorni simulati e pannello prove. Il gioco riparte dall'inizio.
 

@@ -1,4 +1,5 @@
 // Modello dati del Villaggio di Giada (vedi specifica, sezione 6).
+import type { Acquario } from './acquario';
 import type { Arredo } from './arredo';
 import type { Castoro } from './castoro';
 
@@ -115,8 +116,9 @@ export interface Edificio {
 
 export interface Evento {
   data: string;
-  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne' | 'compleanno' | 'castoro';
+  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne' | 'compleanno' | 'castoro' | 'sentiero';
   testo: string;
+  luogo?: string; // per 'sentiero': il posto lontano scoperto (vedi biomi.ts)
   animale?: string; // di chi parla (per inquadrarlo)
 }
 
@@ -146,6 +148,7 @@ export interface StatoGioco {
   compleanni?: string[]; // giorni in cui il villaggio ha festeggiato il compleanno di Giada (vedi festa.ts)
   pesca?: Pescato; // i pesci presi da Giada al laghetto (vedi pesca.ts)
   castoro?: Castoro; // il castoro che rosicchia gli alberi del bosco (vedi castoro.ts)
+  acquario?: Acquario; // i pesci nell'acquario (vedi acquario.ts)
 }
 
 export interface Pescato {
