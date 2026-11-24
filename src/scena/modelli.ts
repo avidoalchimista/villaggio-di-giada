@@ -1576,7 +1576,7 @@ function chioma(i: number) {
   }
   return cacheChioma.get(k)!;
 }
-const corteccia = () => mat('#ffffff', { map: texture(64, macchie(['#8a5a36', '#6d4428', '#a06a40'], 1, 11)) });
+export const corteccia = () => mat('#ffffff', { map: texture(64, macchie(['#8a5a36', '#6d4428', '#a06a40'], 1, 11)) });
 
 export function creaAlbero(scala = 1, tinta = 0, conContorno = true): THREE.Group {
   const g = new THREE.Group();

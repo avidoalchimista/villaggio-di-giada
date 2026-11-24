@@ -26,7 +26,7 @@
 
   const AIUTO: Record<ModoArredo, string> = {
     sposta: 'Tocca una cosa per sceglierla, poi trascinala o tocca dove vuoi metterla.',
-    togli: `Con l'accetta: tocca alberi, cespugli e sassi per toglierli. Albero 🌰${PREZZI.albero}, cespuglio o sasso 🌰${PREZZI.cespuglio}, fiori ed erba gratis.`,
+    togli: `Con l'accetta: ogni tocco è un colpo. Un albero cade dopo 5 colpi (🌰${PREZZI.albero}), un cespuglio dopo 2, un sasso dopo 3 (🌰${PREZZI.cespuglio}). Fiori ed erba si raccolgono gratis.`,
     sentiero: 'Trascina il dito per disegnare il sentiero. Con due dita sposti la vista.',
     orto: `Compra un'aiuola, mettila dove vuoi e toccala per piantare i semi.`,
     quadri: 'Dipingi quadretti, metti cartelli per indicare la via e recinti.',
