@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   compraSemi, dipingiSentiero, fasePianta, giorniAllaFioritura, metteVia, nuovaAiuola, nuovoOggetto, pianta, PREZZI, sposta, togliNatura,
+  altezzaTerreno, arredoVuoto, GIORNI_RICRESCITA, LIVELLO_ACQUA, palata, toltoAncora,
 } from './arredo';
 import { aggiungiGiorni } from './date';
 import { emozioneDellaPagina, normalizzaStato, nuovoStato } from './gioco';
@@ -90,5 +91,40 @@ describe('arredo', () => {
         for (let j = 0; j < i; j++) expect(Math.hypot(x - p[j][0], z - p[j][1])).toBeGreaterThan(7.9);
       }
     }
+  });
+});
+
+describe('la pala e gli alberi abbattuti', () => {
+  const stato = () => ({ ghiande: 10, arredo: arredoVuoto() }) as unknown as Parameters<typeof palata>[0];
+
+  it('scavare fa una buca (con acqua) e costa una castagna a palata', () => {
+    const s = stato();
+    for (let k = 0; k < 3; k++) palata(s, 4, 4, 'scava');
+    expect(s.ghiande).toBe(7);
+    expect(altezzaTerreno(s.arredo!.terreno, 4, 4)).toBeLessThan(LIVELLO_ACQUA);
+    expect(altezzaTerreno(s.arredo!.terreno, 8, 8)).toBe(0);
+  });
+
+  it('alzare fa una montagnola, spianare la riporta giù gratis', () => {
+    const s = stato();
+    for (let k = 0; k < 5; k++) palata(s, -3, 2, 'alza');
+    expect(altezzaTerreno(s.arredo!.terreno, -3, 2)).toBeGreaterThan(0.5);
+    const g = s.ghiande;
+    for (let k = 0; k < 20; k++) palata(s, -3, 2, 'spiana');
+    expect(s.ghiande).toBe(g);
+    expect(Math.abs(altezzaTerreno(s.arredo!.terreno, -3, 2))).toBeLessThan(0.05);
+  });
+
+  it('non si scava dove non è libero, né senza castagne', () => {
+    const s = stato();
+    expect(palata(s, 0, 0, 'scava', () => false)).toBe(false);
+    s.ghiande = 0;
+    expect(palata(s, 0, 0, 'scava')).toBe(false);
+  });
+
+  it("dove è stato abbattuto un albero resta libero a lungo, poi la natura torna", () => {
+    expect(toltoAncora([1, 2, '2026-01-01'], '2026-03-01')).toBe(true);
+    expect(toltoAncora([1, 2, '2026-01-01'], aggiungiGiorni('2026-01-01', GIORNI_RICRESCITA + 1))).toBe(false);
+    expect(toltoAncora([1, 2], '2030-01-01')).toBe(true); // quelli di prima restano liberi per sempre
   });
 });

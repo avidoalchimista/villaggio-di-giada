@@ -7,7 +7,7 @@ import { emozioneDellaPagina, REGOLE } from '../lib/gioco';
 import { defMestiere, virtuMestiere, type DefMestiere } from '../lib/mestieri';
 import { creaBici, creaMoto, trovaPostazione } from './botteghe';
 import { CastoroInScena } from './castoro';
-import { arredoVuoto, fasePianta, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arredo, type Posto } from '../lib/arredo';
+import { altezzaTerreno, arredoVuoto, fasePianta, LATO_TERRENO, LIVELLO_ACQUA, N_TERRENO, PASSO_TERRENO, toltoAncora, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arredo, type Posto } from '../lib/arredo';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
   aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo, SIMBOLI_MESTIERE,
@@ -45,7 +45,7 @@ export type Bersaglio =
   | { tipo: 'sentiero'; id: string };
 
 /** Cosa sta facendo Giada quando arreda il villaggio. */
-export type ModoArredo = 'sposta' | 'togli' | 'sentiero' | 'orto' | 'quadri';
+export type ModoArredo = 'sposta' | 'togli' | 'sentiero' | 'terreno' | 'orto' | 'quadri';
 
 /** Quello che succede arredando: la schermata lo salva nello stato. */
 export type EventoArredo =
@@ -229,6 +229,9 @@ export class Scena {
   private nido = creaNido();
   private prato!: THREE.Mesh;
   private matTerreno!: THREE.MeshLambertMaterial;
+  private terreno!: THREE.Mesh;
+  private acquaScavata!: THREE.Mesh;
+  private chiaveTerreno = '';
   private strutture = new Map<string, THREE.Object3D>();
   private grande: THREE.Object3D | null = null;
   private giaAggiornata = false;
@@ -332,9 +335,35 @@ export class Scena {
   private costruisciFissi() {
     // suolo: erba e terra mescolate in coordinate del mondo (niente piastrelle che si ripetono)
     this.matTerreno = materialeTerreno();
-    this.prato = new THREE.Mesh(new THREE.PlaneGeometry(240, 240, 96, 96), this.matTerreno);
+    // il prato lontano (quadri da 2,5 m) ha un buco in mezzo: lì c'è il terreno che Giada modella con la pala
+    // (un vertice ogni mezzo metro), così si possono scavare laghetti e alzare montagnole
+    const lontano = new THREE.PlaneGeometry(240, 240, 96, 96);
+    const idx = lontano.index!.array, tenuti: number[] = [];
+    const pv = lontano.attributes.position;
+    const mezzo = LATO_TERRENO / 2;
+    for (let q = 0; q < idx.length; q += 6) {
+      const tri = [idx[q], idx[q + 1], idx[q + 2], idx[q + 3], idx[q + 4], idx[q + 5]];
+      const cx = tri.reduce((a, v) => a + pv.getX(v), 0) / 6, cy = tri.reduce((a, v) => a + pv.getY(v), 0) / 6;
+      if (Math.abs(cx) < mezzo && Math.abs(cy) < mezzo) continue;
+      tenuti.push(...tri);
+    }
+    lontano.setIndex(tenuti);
+    this.prato = new THREE.Mesh(lontano, this.matTerreno);
     this.prato.rotation.x = -Math.PI / 2;
     this.scene.add(this.prato);
+    this.terreno = new THREE.Mesh(new THREE.PlaneGeometry(LATO_TERRENO, LATO_TERRENO, N_TERRENO, N_TERRENO), this.matTerreno);
+    this.terreno.rotation.x = -Math.PI / 2;
+    this.scene.add(this.terreno);
+    // l'acqua dei laghetti scavati: un velo appena sotto il prato, si vede solo dove il terreno è più basso
+    this.acquaScavata = new THREE.Mesh(
+      new THREE.PlaneGeometry(LATO_TERRENO, LATO_TERRENO, 60, 60),
+      materiale({ color: '#4f9fd4', emissive: '#2a6f9a', emissiveIntensity: 0.25, rim: 0.6 }),
+    );
+    this.acquaScavata.rotation.x = -Math.PI / 2;
+    this.acquaScavata.position.y = LIVELLO_ACQUA + 0.02;
+    this.acquaScavata.visible = false;
+    this.acquaScavata.raycast = () => {};
+    this.scene.add(this.acquaScavata);
 
     // all'inizio la radura è selvatica: qualche sasso e un tronco caduto
     for (const [x, z, s] of [[3.4, -1.2, 0.6], [-2.2, -3.0, 0.45], [2.4, 3.6, 0.5], [-4.6, 3.2, 0.7]]) {
@@ -477,7 +506,7 @@ export class Scena {
   private allarga(r: number) {
     const arrotondato = Math.round(r * 2) / 2;
     const occupati = this.occupati();
-    const chiave = arrotondato + '|' + this.angoliSentieri.join(',') + '|' + JSON.stringify(this.arredo.tolti) + '|' + occupati.map(([x, z, d]) => `${x.toFixed(1)},${z.toFixed(1)},${d}`).join(';');
+    const chiave = arrotondato + '|' + this.angoliSentieri.join(',') + '|' + JSON.stringify(this.arredo.tolti) + '|' + this.oggi + '|' + this.chiaveTerreno.length + '|' + occupati.map(([x, z, d]) => `${x.toFixed(1)},${z.toFixed(1)},${d}`).join(';');
     if (chiave === this.chiaveBosco) return;
     this.chiaveBosco = chiave;
     r = arrotondato;
@@ -485,11 +514,18 @@ export class Scena {
     this.bosco.clear();
     // dove Giada ha tolto qualcosa non ricresce niente
     // dove passano i sentieri verso i posti lontani il bosco si apre
-    const tolto = (x: number, z: number, d = 0.9) => this.arredo.tolti.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < d) || sulSentiero(this.angoliSentieri, x, z, r - 1.2, 1.5 + d * 0.6);
+    // (dove è stato abbattuto qualcosa resta libero a lungo: GIORNI_RICRESCITA giorni)
+    const attivi = this.arredo.tolti.filter((t) => toltoAncora(t, this.oggi));
+    const tolto = (x: number, z: number, d = 0.9) => attivi.some(([tx, tz]) => Math.hypot(x - tx, z - tz) < d) || sulSentiero(this.angoliSentieri, x, z, r - 1.2, 1.5 + d * 0.6);
     // dove c'è già qualcosa (case con i loro attrezzi, costruzioni, il nido...) la natura si fa da parte
     const piazzate = this.improntePiazzate(true);
     const sopra = (x: number, z: number, r: number) => piazzate.some((i) => !!spintaFuori(x, z, r + 0.1, i));
-    for (const o of this.selvatici.children) o.visible = !tolto(o.position.x, o.position.z, 1.2) && !sopra(o.position.x, o.position.z, 0.45);
+    for (const o of this.selvatici.children) {
+      const hy = this.altezza(o.position.x, o.position.z);
+      o.userData.y0 ??= o.position.y;
+      o.position.y = (o.userData.y0 as number) + hy;
+      o.visible = !tolto(o.position.x, o.position.z, 1.2) && !sopra(o.position.x, o.position.z, 0.45) && hy > LIVELLO_ACQUA + 0.04;
+    }
     let k = 0;
     for (let anello = 0; anello < 3; anello++) {
       const ra = r + 1.5 + anello * 2.6;
@@ -504,7 +540,9 @@ export class Scena {
         albero.userData.pino = pino;
         const jitter = ((i * 13) % 7) / 10 - 0.3;
         const x = Math.cos(a) * (ra + jitter), z = Math.sin(a) * (ra + jitter);
-        if (tolto(x, z, 1.1)) continue;
+        if (tolto(x, z, 1.7)) continue; // lo spazio di un albero abbattuto resta libero davvero
+        if (this.tagli.some((tg) => Math.hypot(tg.bersaglio.position.x - x, tg.bersaglio.position.z - z) < 1)) continue; // quello che si sta tagliando
+        if (this.altezza(x, z) < LIVELLO_ACQUA + 0.05) continue;
         // niente alberi sopra le case (e le loro postazioni) che stanno al limite del bosco
         if (occupati.some(([px, pz, d]) => d >= 3 && Math.hypot(x - px, z - pz) < d + 0.4)) continue;
         if (sopra(x, z, 1.0 * albero.scale.x)) continue; // né il tronco né la chioma dentro una casa
@@ -530,9 +568,11 @@ export class Scena {
         const rr = seme === 3 ? 0.55 : seme === 5 ? 0.9 : seme === 6 ? 0.45 : 0;
         if (rr && grosse.some(([gx, gz, gr]) => Math.hypot(x - gx, z - gz) < rr + gr)) continue;
         if (rr) grosse.push([x, z, rr]);
+        const hy = this.altezza(x, z);
+        if (hy < LIVELLO_ACQUA + 0.04) continue; // nell'acqua niente fiori né sassi
         const o = f(i);
         o.userData.cosa = seme === 3 || seme === 5 ? 'cespuglio' : seme === 6 ? 'sasso' : 'piccolo';
-        o.position.set(x, o.position.y, z);
+        o.position.set(x, o.position.y + hy, z);
         o.rotation.y = i * 1.7;
         this.bosco.add(o);
       }
@@ -751,7 +791,10 @@ export class Scena {
     this.aggiornaOggetti();
     this.aggiornaSentiero(s);
     this.raggio = Math.max(this.raggio, Math.round(raggio * 2) / 2);
+    this.aggiornaTerreno();
     this.risolviPosti();
+    // sulle montagnole le cose stanno sopra, non dentro
+    for (const [k, g] of this.cosePiazzate()) if (!k.startsWith('lanterna') && g.parent === this.scene) g.position.y = Math.max(0, this.altezza(g.position.x, g.position.z));
     // i sentieri verso i posti lontani scoperti dal castoro (dove non c'è una casa davanti)
     const scoperti = biomiScoperti(s);
     const angoli = this.angoliPerSentieri(scoperti);
@@ -762,6 +805,51 @@ export class Scena {
     this.giaAggiornataSentieri = true;
     this.acquario?.aggiornaPesci(s.acquario?.pesci ?? []);
     this.castoro.aggiorna(s.castoro, s.ultimoAccesso, this.bosco, this.raggio);
+  }
+
+  /** Altezza del prato in (x, z): sopra zero le montagnole, sotto i laghetti scavati. */
+  altezza(x: number, z: number): number {
+    if (Math.abs(x) >= LATO_TERRENO / 2 || Math.abs(z) >= LATO_TERRENO / 2) return 0;
+    return altezzaTerreno(this.arredo.terreno, x, z);
+  }
+
+  /** C'è acqua (un laghetto scavato da Giada) in (x, z)? */
+  inAcqua(x: number, z: number): boolean {
+    return this.altezza(x, z) < LIVELLO_ACQUA;
+  }
+
+  /** Dove si può usare la pala: dentro la radura, non sotto case, costruzioni, nido, castagno... */
+  liberoPerPala(x: number, z: number): boolean {
+    if (Math.hypot(x, z) > this.raggio - 0.5) return false;
+    const piazzate = this.chiaveImpronte === this.chiaveTerreno + this.chiaveBosco ? this.improntePala : (this.improntePala = this.improntePiazzate(true), this.chiaveImpronte = this.chiaveTerreno + this.chiaveBosco, this.improntePala);
+    return !piazzate.some((i) => !!spintaFuori(x, z, 0.45, i));
+  }
+  private improntePala: Impronta[] = [];
+  private chiaveImpronte = '';
+
+  /** Rifà le altezze del terreno vicino (e l'acqua dei laghetti scavati) quando Giada usa la pala. */
+  private aggiornaTerreno() {
+    const t = this.arredo.terreno ?? {};
+    const chiave = Object.keys(t).length + ':' + JSON.stringify(t);
+    if (chiave === this.chiaveTerreno) return;
+    this.chiaveTerreno = chiave;
+    this.chiaveImpronte = '';
+    const geo = this.terreno.geometry as THREE.PlaneGeometry;
+    const pos = geo.attributes.position;
+    let acqua = false;
+    for (let v = 0; v < pos.count; v++) {
+      // il piano è girato: la sua y è la -z del mondo, la sua z è l'altezza
+      const i = Math.round(pos.getX(v) / PASSO_TERRENO), j = Math.round(-pos.getY(v) / PASSO_TERRENO);
+      const h = (t[`${i},${j}`] ?? 0) / 100;
+      pos.setZ(v, h);
+      if (h < LIVELLO_ACQUA) acqua = true;
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    this.acquaScavata.visible = acqua;
+    this.chiaveBosco = ''; // i fiori e i sassi seguono il terreno (e nell'acqua non ci sono)
+    this.ostacoliTra = 0;
   }
 
   /**
@@ -1286,7 +1374,7 @@ export class Scena {
       this.trascina.y = e.clientY;
       if (this.trascina.dipinge) {
         const p = this.puntoSuolo(e.clientX, e.clientY);
-        if (p && (!this.trascina.ultimo || p.distanceTo(this.trascina.ultimo) > 0.2)) {
+        if (p && (!this.trascina.ultimo || p.distanceTo(this.trascina.ultimo) > (this.modo === 'terreno' ? 0.45 : 0.2))) {
           this.trascina.ultimo = p;
           this.onArredo({ tipo: 'dipingi', x: p.x, z: p.z });
         }
@@ -1372,7 +1460,7 @@ export class Scena {
     if (!this.modo || !this.trascina) return;
     const p = this.puntoSuolo(x, y);
     if (!p) return;
-    if (this.modo === 'sentiero') {
+    if (this.modo === 'sentiero' || this.modo === 'terreno') {
       this.trascina.dipinge = true;
       this.trascina.ultimo = p;
       this.onArredo({ tipo: 'dipingi', x: p.x, z: p.z });
@@ -1679,6 +1767,15 @@ export class Scena {
     }
     this.morbido = Math.max(0, this.morbido - dt);
     const k = cin || this.morbido > 0 ? Math.min(1, dt * 2.4) : 1;
+    // (se un conto è andato storto la telecamera non resta persa nel nulla: riparte da dove dovrebbe essere)
+    if (!Number.isFinite(this.centro.x + this.centro.z) || !Number.isFinite(this.centroVoluto.x + this.centroVoluto.z)) { this.centro.set(0, 0, 0); this.centroVoluto.set(0, 0, 0); }
+    if (!Number.isFinite(voluta.x + voluta.y + voluta.z) || !Number.isFinite(guarda.x + guarda.y + guarda.z)) {
+      this.cine = null;
+      guarda = new THREE.Vector3(this.centro.x, 0.6, this.centro.z);
+      voluta = new THREE.Vector3(this.centro.x, 7, this.centro.z + 10);
+    }
+    if (!Number.isFinite(this.posCam.x + this.posCam.y + this.posCam.z)) this.posCam.copy(voluta);
+    if (!Number.isFinite(this.guardaCam.x + this.guardaCam.y + this.guardaCam.z)) this.guardaCam.copy(guarda);
     this.posCam.lerp(voluta, k);
     this.guardaCam.lerp(guarda, k);
     this.camera.position.copy(this.posCam);
@@ -2188,6 +2285,17 @@ export class Scena {
       sx += -uz * lato * forza - ux * forza * 0.3;
       sz += ux * lato * forza - uz * forza * 0.3;
     }
+    // e intorno ai laghetti scavati: guarda un passo avanti, se c'è acqua gira
+    if (this.arredo.terreno) {
+      for (const avanti of [0.6, 1.2]) {
+        const ax = p.x + dir.x * avanti, az = p.z + dir.z * avanti;
+        if (!this.inAcqua(ax, az) || dist < avanti) continue;
+        const lato = ab.latoSterza ??= hash(ab.dati.id) % 2 ? 1 : -1;
+        sx += -dir.z * lato * 1.6 / avanti;
+        sz += dir.x * lato * 1.6 / avanti;
+        break;
+      }
+    }
     // e intorno agli altri animali che stanno fermi (seduti, al lavoro, a dormire)
     for (const b of this.abitanti.values()) {
       if (b === ab || this.trattenuti.has(b.dati.id)) continue;
@@ -2222,6 +2330,8 @@ export class Scena {
     const tutti = [...this.abitanti.values()].filter((ab) => !this.trattenuti.has(ab.dati.id) && ab.dati.id !== this.pescata?.id && ab.m.gruppo.visible);
     // chi sta fermo apposta (dorme, lavora alla postazione, chiacchiera) si sposta meno degli altri
     const fermo = (ab: Abitante) => ab.dati.addormentato || (ab.pausa <= 0 && ab.meta.distanceTo(ab.m.gruppo.position) < 0.15 && !!ab.attivita) || this.allaPostazione(ab) || (!!ab.amico && ab.incontro > 0);
+    // (nessuno si perde nel nulla: se un conto è andato storto torna a casa)
+    for (const ab of tutti) { const q = ab.m.gruppo.position; if (!Number.isFinite(q.x + q.y + q.z)) { q.copy(this.casa(ab)); ab.meta.copy(q); } }
     const caps = new Map<Abitante, Capsula>();
     for (let giro = 0; giro < 3; giro++) {
       // tra animali: ognuno il suo spazio (corpo contro corpo, per tutta la lunghezza)
@@ -2279,7 +2389,14 @@ export class Scena {
             p.z += lg.position.z - x * sr + z * cr - qz;
           }
         }
+        // i laghetti scavati da Giada: si sta sulla riva, dalla parte più alta
+        if (this.arredo.terreno) this.fuoriDallAcqua(p, c.r);
       }
+    }
+    // sulle montagnole si sale, nelle buche si scende
+    if (this.arredo.terreno) for (const ab of tutti) {
+      const p = ab.m.gruppo.position;
+      p.y = Math.max(LIVELLO_ACQUA, this.altezza(p.x, p.z));
     }
     // chi cammina ma non si avvicina più alla meta per un po' (qualcosa in mezzo): si ferma lì e cambia idea
     for (const ab of tutti) {
@@ -2305,6 +2422,23 @@ export class Scena {
           if (ab.attivita && ab.attivita.id !== 'lavoro') this.fineAttivita(ab);
         }
       }
+    }
+  }
+
+  /** Se (p) o il suo corpo è nell'acqua di un laghetto scavato, lo porta sulla riva più vicina (salendo). */
+  private fuoriDallAcqua(p: THREE.Vector3, r: number) {
+    if (!this.inAcqua(p.x, p.z) && !this.inAcqua(p.x + r, p.z) && !this.inAcqua(p.x - r, p.z) && !this.inAcqua(p.x, p.z + r) && !this.inAcqua(p.x, p.z - r)) return;
+    // cerca a cerchi sempre più larghi il punto asciutto più vicino (con il corpo intero all'asciutto)
+    for (let d = 0.15; d <= 6; d += 0.15) {
+      const n = Math.max(8, Math.round(d * 10));
+      let meglio: [number, number] | null = null, hm = -Infinity;
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2, x = p.x + Math.cos(a) * d, z = p.z + Math.sin(a) * d;
+        if (this.inAcqua(x, z) || this.inAcqua(x + r, z) || this.inAcqua(x - r, z) || this.inAcqua(x, z + r) || this.inAcqua(x, z - r)) continue;
+        const h = this.altezza(x, z);
+        if (h > hm) { hm = h; meglio = [x, z]; }
+      }
+      if (meglio) { p.x = meglio[0]; p.z = meglio[1]; return; }
     }
   }
 
