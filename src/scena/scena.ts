@@ -1,6 +1,7 @@
 // La radura del villaggio in 3D. Gli animali girano liberi, dormono, festeggiano.
 // Il villaggio si allarga quando arrivano nuovi abitanti e nascono nuovi mestieri.
 import { RisoluzioneAdattiva, preparaAnisotropia } from './qualita';
+import { Cielo } from './cielo';
 import * as THREE from 'three';
 import { hash } from '../lib/caso';
 import { COLORE_VIRTU } from '../lib/etichette';
@@ -228,6 +229,7 @@ export function postiCase(n: number, raggio: number): [number, number][] {
 export class Scena {
   private renderer: THREE.WebGLRenderer;
   private qualita: RisoluzioneAdattiva;
+  private cielo = new Cielo();
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
   private sole = new THREE.DirectionalLight('#fff1d6', 2.2);
@@ -348,7 +350,7 @@ export class Scena {
     this.renderer.toneMapping = THREE.NoToneMapping;
 
     this.scene.fog = new THREE.Fog('#a9cfe4', 60, 80);
-    this.scene.add(this.ambiente, this.sole);
+    this.scene.add(this.ambiente, this.sole, this.cielo.mesh);
     this.sole.position.set(6, 12, 8);
 
     this.costruisciFissi();
@@ -1957,6 +1959,7 @@ export class Scena {
     (this.scene.fog as THREE.Fog).color = cielo;
     // la nebbia non copre mai il villaggio: sta solo oltre il bosco, al confine (vedi orizzonte());
     // col tempo brutto arriva un po' più vicina, ma le case si vedono sempre
+    this.cielo.aggiorna(h, cielo, giorno, Math.max(0, tramonto), coperto, this.meteo === 'pioggia' || this.meteo === 'temporale');
     this.nebbiaMeteo = this.meteo === 'nebbia' ? 0.8 : this.meteo === 'pioggia' || this.meteo === 'temporale' || this.meteo === 'neve' ? 0.92 : 1;
     this.sole.intensity *= 1 - coperto * 0.7;
     this.ambiente.intensity *= 1 - coperto * 0.15;
@@ -1972,6 +1975,7 @@ export class Scena {
     this.qualita.passo(dtVero);
     const dt = Math.min(0.05, dtVero);
     const t = this.orologio.elapsedTime;
+    this.cielo.passo(t);
 
     // telecamera da avventura: guarda un punto della radura che si sposta col dito, bassa (circa 35°)
     this.raggioMostrato += (this.raggio - this.raggioMostrato) * Math.min(1, dt * 1.5);
@@ -2037,6 +2041,7 @@ export class Scena {
     this.camera.position.copy(this.posCam);
     this.camera.lookAt(this.guardaCam);
     this.orizzonte();
+    this.cielo.inquadra(this.camera, CURVA.valore);
     if (cin) this.liberaVista(cin.oggetto);
     else if (this.nascostiCine.size) this.rimettiNascosti();
 
