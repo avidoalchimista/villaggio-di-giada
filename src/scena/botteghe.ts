@@ -3,7 +3,7 @@
 // dell'animale (creaCasaAnimale in modelli.ts), che ha la forma della sua specie.
 import * as THREE from 'three';
 import { defMestiere, type DefMestiere } from '../lib/mestieri';
-import { creaFiore, creaLanterna, creaPino, geo, mat, mesh, varia } from './modelli';
+import { creaFiore, creaLanterna, creaPino, geo, mat, mesh, unisciPezzi, varia } from './modelli';
 import { contorno, ombra, strisce, texture } from './ps1';
 
 const legno = () => mat('#ffffff', { map: texture(64, (c, l) => { c.fillStyle = '#c4935e'; c.fillRect(0, 0, l, l); c.fillStyle = '#a87a48'; for (let y = 0; y < l; y += 16) c.fillRect(0, y, l, 3); }) });
@@ -508,7 +508,7 @@ export function creaAttrezzo(id: string, d?: DefMestiere): THREE.Group {
     case 'cornici': for (let i = 0; i < 3; i++) { const t = add(g, mesh(geo.scatola(0.35, 0.45, 0.04), mat(['#e0b23c', '#9a6a40', '#f4efe6'][i], { rim: 0.4 })), -0.3 + i * 0.3, 0.35, 0); t.rotation.x = -0.2; add(t, mesh(geo.scatola(0.25, 0.35, 0.01), mat(['#bfe4ff', '#f6d8e0', '#d8f0c8'][i])), 0, 0, 0.025); } add(g, mesh(geo.scatola(1.0, 0.1, 0.2), legno()), 0, 0.05, -0.05); break;
     default: break;
   }
-  return g;
+  return unisciPezzi(g);
 }
 
 function stoffaRotolo(i: number) {

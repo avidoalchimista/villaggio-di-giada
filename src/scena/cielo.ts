@@ -81,8 +81,7 @@ void main() {
     float n = fbm(pn);
     float soglia = mix(0.6, 0.34, uNuvole);
     float nuvola = smoothstep(soglia, soglia + 0.08, n) * smoothstep(0.02, 0.3, h);
-    // lato verso il sole più chiaro, pancia più scura: sembrano soffici
-    float ombra = smoothstep(soglia, soglia + 0.3, fbm(pn + vec3(0.0, -0.35, 0.0)));
+    float ombra = smoothstep(soglia + 0.04, soglia + 0.3, n); // dove la nuvola è più spessa, un'ombra morbida (un solo calcolo: leggero sul telefono)
     vec3 bianco = mix(vec3(1.0, 0.99, 0.96), uSoleCol, 0.25);
     vec3 pancia = mix(uOrizzonte, uZenit, 0.35) * 0.95;
     vec3 colNuvola = mix(bianco, pancia, ombra * 0.55);
