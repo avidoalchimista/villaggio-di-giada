@@ -49,7 +49,7 @@
     { "id": "staccionata", "nome": "La staccionata", "descrizione": "Un recinto di legno intorno al nido, per proteggere le uova.", "costo": 14 },
     { "id": "lanterne", "nome": "Le lanterne", "descrizione": "Fanno luce lungo il sentiero quando scende la sera.", "costo": 18, "richiede": "sentiero" },
     { "id": "panchina", "nome": "La panchina", "descrizione": "Per sedersi a guardare il tramonto.", "costo": 16, "richiede": "sentiero" },
-    { "id": "laghetto", "nome": "Il laghetto", "descrizione": "Con le ninfee, le canne e i pesci che saltano. Toccalo per pescare!", "costo": 28 },
+    { "id": "laghetto", "nome": "Il laghetto", "descrizione": "Con le ninfee, le canne e i pesci che saltano. Toccalo e manda qualcuno a pescare!", "costo": 28 },
     { "id": "falo", "nome": "Il falò", "descrizione": "Ci si scalda la sera e si raccontano storie.", "costo": 30, "pagine": 10 },
     { "id": "ponticello", "nome": "Il ponticello", "descrizione": "Un piccolo ponte di legno sul laghetto.", "costo": 26, "richiede": "laghetto" },
     { "id": "pozzo", "nome": "Il pozzo", "descrizione": "Di pietra, con il secchio e la carrucola.", "costo": 45, "pagine": 20 },

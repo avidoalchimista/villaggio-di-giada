@@ -1,4 +1,4 @@
-// La pesca al laghetto: Giada lancia la lenza, aspetta che il galleggiante vada giù e tira su.
+// La pesca al laghetto: Giada manda un animale sul pontile, lui lancia la lenza, si aspetta il segnale e si tira su.
 // Ogni pesce finisce nel suo quaderno dei pesci; i primi pesci del giorno danno qualche ghianda.
 import { hash, rng } from './caso';
 import { REGOLE } from './gioco';
@@ -82,4 +82,95 @@ export function prendiPesce(s: StatoGioco, id: string, cm: number, oggi: string)
 /** Quanto aspetta il galleggiante prima che qualcuno abbocchi (secondi): sempre un po' diverso. */
 export function attesa(seme: number): number {
   return 1.8 + rng(hash(String(seme)))() * 4.5;
+}
+
+// ---------- la pesca vista da fuori: un animale lancia, Giada aspetta il segnale e poi tira (o lascia fare a lui) ----------
+
+/** Chi è bravo a pescare (l'ha imparato o fa il pescatore): aspetta meno, ha più tempo per ferrare e tira meglio. */
+export function esperto(a: { abilita: string[]; mestiere: string | null }): boolean {
+  return a.abilita.includes('pescare') || a.mestiere === 'pescatore';
+}
+
+/** Quanto tempo c'è per toccare quando il pesce abbocca (secondi). */
+export function finestraAbbocco(bravo: boolean): number {
+  return bravo ? 2.2 : 1.6;
+}
+
+/**
+ * Il recupero "Tiro io": ogni tocco avvolge un po' di lenza ma la tende; la tensione scende da sola
+ * se si aspetta. Ogni tanto il pesce dà uno strattone: lì la lenza si tende da sola e bisogna fermarsi,
+ * se no si rompe. Se si lascia la lenza molle troppo a lungo il pesce torna al largo.
+ */
+export interface Lotta {
+  distanza: number; // 1 = dove ha abboccato, 0 = a riva
+  tensione: number; // 0 … 1 (a 1 la lenza si rompe)
+  strattone: number; // secondi di strattone che restano (0 = il pesce è calmo)
+  prossimo: number; // secondi al prossimo strattone
+  forza: number; // quanto tira questo pesce
+  bravo: boolean;
+  esito: null | 'preso' | 'rotta' | 'scappato';
+}
+
+export const LOTTA = {
+  avvolgi: 0.05, // distanza recuperata a ogni tocco (pesce calmo)
+  avvolgiStrattone: 0.012,
+  tendi: 0.1, // tensione aggiunta a ogni tocco
+  tendiStrattone: 0.2,
+  allenta: 0.5, // al secondo, quando non si tocca
+  tiraStrattone: 0.28, // al secondo, la tensione che mette il pesce durante lo strattone
+  scappa: 0.07, // al secondo: quanto torna al largo durante lo strattone
+};
+
+export function nuovaLotta(pesce: DefPesce, bravo: boolean, r: () => number = Math.random): Lotta {
+  return { distanza: 1, tensione: 0.15, strattone: 0, prossimo: 1.2 + r() * 1.2, forza: 0.75 + pesce.raro * 0.12, bravo, esito: null };
+}
+
+/** Giada tocca lo schermo: la lenza si avvolge un po'. */
+export function tiraLenza(l: Lotta) {
+  if (l.esito) return;
+  const sconto = l.bravo ? 0.75 : 1;
+  if (l.strattone > 0) {
+    l.distanza -= LOTTA.avvolgiStrattone;
+    l.tensione += LOTTA.tendiStrattone * sconto * l.forza;
+  } else {
+    l.distanza -= LOTTA.avvolgi;
+    l.tensione += LOTTA.tendi * sconto;
+  }
+  controlla(l);
+}
+
+/** Il tempo che passa durante il recupero. */
+export function passoLotta(l: Lotta, dt: number, r: () => number = Math.random) {
+  if (l.esito) return;
+  if (l.strattone > 0) {
+    l.strattone -= dt;
+    l.tensione += LOTTA.tiraStrattone * l.forza * (l.bravo ? 0.8 : 1) * dt;
+    l.distanza = Math.min(1.2, l.distanza + LOTTA.scappa * l.forza * dt);
+    if (l.strattone <= 0) { l.strattone = 0; l.prossimo = 1.4 + r() * 1.8; }
+  } else {
+    l.tensione = Math.max(0, l.tensione - LOTTA.allenta * dt);
+    l.prossimo -= dt;
+    if (l.prossimo <= 0 && l.distanza > 0.12) l.strattone = 0.7 + r() * 0.6 * l.forza;
+  }
+  controlla(l);
+}
+
+function controlla(l: Lotta) {
+  if (l.tensione >= 1) { l.tensione = 1; l.esito = 'rotta'; }
+  else if (l.distanza <= 0) { l.distanza = 0; l.esito = 'preso'; }
+  else if (l.distanza >= 1.2) l.esito = 'scappato';
+}
+
+/**
+ * "Fai tu": l'animale tira su da solo. Chi è bravo non perde quasi mai il pesce;
+ * gli altri ogni tanto se lo lasciano scappare.
+ */
+export function recuperoDaSolo(bravo: boolean, raro: number, r: number): boolean {
+  return r < (bravo ? 0.97 : 0.88) - (raro - 1) * 0.03;
+}
+
+/** La misura del pesce: tirando da sé si prendono anche i più grossi. */
+export function misura(pesce: DefPesce, r: number, tiratoDaGiada: boolean): number {
+  const k = tiratoDaGiada ? Math.sqrt(r) : r * r;
+  return Math.round(pesce.cm[0] + (pesce.cm[1] - pesce.cm[0]) * k);
 }

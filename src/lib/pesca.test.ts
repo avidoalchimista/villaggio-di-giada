@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { nuovoStato } from './gioco';
-import { cosaAbbocca, PESCI, pesciDelMomento, prendiPesce } from './pesca';
+import { cosaAbbocca, esperto, finestraAbbocco, misura, nuovaLotta, passoLotta, PESCI, pesciDelMomento, prendiPesce, recuperoDaSolo, tiraLenza } from './pesca';
 import { conArticolo } from './gioco';
 import { zeriForze } from './tipi';
 
@@ -41,5 +41,54 @@ describe('pesca', () => {
     expect(conArticolo({ specie: 'uccellino', sesso: 'f' })).toBe("l'uccellina");
     expect(conArticolo({ specie: 'papera', sesso: 'm' })).toBe('il papero');
     expect(conArticolo({ specie: 'maiale', sesso: 'f' })).toBe('la maialina');
+  });
+});
+
+describe('pesca vista da fuori', () => {
+  const carpa = PESCI.find((p) => p.id === 'carpa')!;
+  const storione = PESCI.find((p) => p.id === 'storione')!;
+  const fisso = () => 0.5;
+
+  // gioca il recupero: tocca `tps` volte al secondo, e se `paziente` si ferma durante gli strattoni
+  function gioca(pesce: typeof carpa, tps: number, paziente: boolean, bravo = false) {
+    const l = nuovaLotta(pesce, bravo, fisso);
+    const dt = 1 / 60;
+    let prossimoTocco = 0;
+    for (let t = 0; t < 60 && !l.esito; t += dt) {
+      passoLotta(l, dt, fisso);
+      prossimoTocco -= dt;
+      const aspetta = paziente && (l.strattone > 0 || l.tensione > 0.7);
+      if (prossimoTocco <= 0 && !aspetta) { tiraLenza(l); prossimoTocco = 1 / tps; }
+    }
+    return l.esito;
+  }
+
+  it('chi tocca con calma e si ferma agli strattoni tira su il pesce', () => {
+    expect(gioca(carpa, 5, true)).toBe('preso');
+    expect(gioca(storione, 5, true)).toBe('preso');
+  });
+
+  it('chi tocca come un matto senza fermarsi rompe la lenza', () => {
+    expect(gioca(carpa, 12, false)).toBe('rotta');
+  });
+
+  it('chi non tocca mai lascia scappare il pesce', () => {
+    expect(gioca(carpa, 0.0001, false)).toBe('scappato');
+  });
+
+  it('chi è bravo a pescare ha più tempo per ferrare e perde meno pesci', () => {
+    expect(esperto({ abilita: ['pescare'], mestiere: null })).toBe(true);
+    expect(esperto({ abilita: [], mestiere: 'pescatore' })).toBe(true);
+    expect(esperto({ abilita: [], mestiere: null })).toBe(false);
+    expect(finestraAbbocco(true)).toBeGreaterThan(finestraAbbocco(false));
+    let bravi = 0, altri = 0;
+    for (let i = 0; i < 100; i++) { if (recuperoDaSolo(true, 2, i / 100)) bravi++; if (recuperoDaSolo(false, 2, i / 100)) altri++; }
+    expect(bravi).toBeGreaterThan(altri);
+    expect(altri).toBeGreaterThan(70);
+  });
+
+  it('tirando da sé si prendono pesci più grossi', () => {
+    expect(misura(carpa, 0.5, true)).toBeGreaterThan(misura(carpa, 0.5, false));
+    expect(misura(carpa, 1, true)).toBe(carpa.cm[1]);
   });
 });

@@ -19,6 +19,7 @@ import {
 import { CURVA, materiale, materialeTerreno, spriteTesto } from './ps1';
 import type { Meteo } from '../lib/meteo';
 import { cappellinoDiFesta, Festa, POSTO_TORTA } from './festa';
+import { Pescata } from './pesca3d';
 
 export type Bersaglio =
   | { tipo: 'animale'; id: string }
@@ -246,6 +247,8 @@ export class Scena {
   private morbido = 0; // secondi di passaggio dolce dopo il primo piano
   private posCam = new THREE.Vector3(0, 8, 14);
   private guardaCam = new THREE.Vector3(0, 0.6, 0);
+  /** chi sta pescando in fondo al pontile, mandato da Giada (vedi pesca3d.ts) */
+  pescata: Pescata | null = null;
   private trattenuti = new Set<string>(); // nati ma ancora mostrati come uova, finché non si vede la schiusa
   private ultimoStato: StatoGioco | null = null;
   private schiusaIn: {
@@ -287,7 +290,7 @@ export class Scena {
     // niente tone mapping: così nebbia e cielo hanno esattamente lo stesso colore (prima gli alberi lontani sembravano fantasmi)
     this.renderer.toneMapping = THREE.NoToneMapping;
 
-    this.scene.fog = new THREE.Fog('#a9cfe4', 24, 62);
+    this.scene.fog = new THREE.Fog('#a9cfe4', 60, 80);
     this.scene.add(this.ambiente, this.sole);
     this.sole.position.set(6, 12, 8);
 
@@ -312,7 +315,7 @@ export class Scena {
   private costruisciFissi() {
     // suolo: erba e terra mescolate in coordinate del mondo (niente piastrelle che si ripetono)
     this.matTerreno = materialeTerreno();
-    this.prato = new THREE.Mesh(new THREE.PlaneGeometry(130, 130, 64, 64), this.matTerreno);
+    this.prato = new THREE.Mesh(new THREE.PlaneGeometry(240, 240, 96, 96), this.matTerreno);
     this.prato.rotation.x = -Math.PI / 2;
     this.scene.add(this.prato);
 
@@ -882,6 +885,7 @@ export class Scena {
 
   /** Rifà il modello dell'animale se è cresciuto, ha vestiti nuovi o deve cambiarsi (divisa da lavoro). */
   private rifaiSeServe(ab: Abitante) {
+    if (this.pescata?.id === ab.dati.id) return; // mentre pesca tiene il modello che ha
     const a = ab.dati;
     const divisa = this.vuoleDivisa(ab);
     const chiave = `${a.fase}|${(a.vestiti ?? []).join(',')}|${a.mestiere ?? ''}|${divisa ? 'divisa' : ''}`;
@@ -902,7 +906,8 @@ export class Scena {
     }
     ab.m.gruppo.userData.chiave = chiave;
     // i cuccioli hanno già testa grande e corpo corto (vedi creaAnimale); qui cresce solo un po' la grandezza
-    const scala = ({ cucciolo: 1.15, giovane: 1.22, adulto: 1.28, maestro: 1.32, uovo: 1 } as const)[a.fase];
+    // (erano un po' giganti accanto alle case: ora un quarto più piccoli)
+    const scala = ({ cucciolo: 0.86, giovane: 0.92, adulto: 0.96, maestro: 1.0, uovo: 1 } as const)[a.fase];
     ab.m.gruppo.scale.setScalar(scala * ((ab.m.gruppo.userData.taglia as number) ?? 1));
     const proporzione = ({ cucciolo: 1.12, giovane: 1.0, adulto: 0.9, maestro: 0.9, uovo: 1 } as const)[a.fase];
     ab.m.testa.scale.setScalar(proporzione);
@@ -1481,6 +1486,27 @@ export class Scena {
   /** Solo per le prove: forza un'ora del giorno (null = ora vera). */
   oraFinta: number | null = null;
 
+  private nebbiaMeteo = 1;
+
+  /**
+   * La nebbia sta solo al confine: comincia oltre il bosco dalla parte lontana del villaggio
+   * (così case e animali si vedono tutti) e oltre il confine la telecamera non disegna niente.
+   */
+  private orizzonte() {
+    const nebbia = this.scene.fog as THREE.Fog;
+    const cam = this.posCam;
+    const daCentro = Math.hypot(cam.x, cam.z);
+    const bosco = this.raggio + 7; // l'ultimo anello di alberi
+    const vicino = (daCentro + bosco) * this.nebbiaMeteo + 2;
+    nebbia.near = vicino;
+    nebbia.far = vicino + 16;
+    const far = Math.round(nebbia.far + 4);
+    if (this.camera.far !== far) {
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
   private luceDelGiorno() {
     const ora = new Date();
     const h = this.oraFinta ?? ora.getHours() + ora.getMinutes() / 60;
@@ -1498,10 +1524,9 @@ export class Scena {
     cielo.lerp(new THREE.Color('#8b96a2').multiplyScalar(0.3 + 0.7 * giorno), coperto * 0.8);
     this.scene.background = cielo;
     (this.scene.fog as THREE.Fog).color = cielo;
-    const nebbia = this.scene.fog as THREE.Fog;
-    if (this.meteo === 'nebbia') { nebbia.near = 3; nebbia.far = 24; }
-    else if (this.meteo === 'pioggia' || this.meteo === 'temporale' || this.meteo === 'neve') { nebbia.near = 12; nebbia.far = 42; }
-    else { nebbia.near = 24; nebbia.far = 62; }
+    // la nebbia non copre mai il villaggio: sta solo oltre il bosco, al confine (vedi orizzonte());
+    // col tempo brutto arriva un po' più vicina, ma le case si vedono sempre
+    this.nebbiaMeteo = this.meteo === 'nebbia' ? 0.8 : this.meteo === 'pioggia' || this.meteo === 'temporale' || this.meteo === 'neve' ? 0.92 : 1;
     this.sole.intensity *= 1 - coperto * 0.7;
     this.ambiente.intensity *= 1 - coperto * 0.15;
     const notte = 1 - giorno;
@@ -1550,6 +1575,7 @@ export class Scena {
     this.guardaCam.lerp(guarda, k);
     this.camera.position.copy(this.posCam);
     this.camera.lookAt(this.guardaCam);
+    this.orizzonte();
     if (cin) this.liberaVista(cin.oggetto);
     else if (this.nascostiCine.size) this.rimettiNascosti();
 
@@ -1592,6 +1618,7 @@ export class Scena {
     }
     const lago = this.strutture.get('laghetto');
     if (lago) animaLaghetto(lago, t);
+    this.pescata?.aggiorna(dt, t);
     if (this.pale) this.pale.rotation.z += dt * (this.meteo === 'vento' || this.meteo === 'temporale' ? 2.2 : 0.6);
     // le case migliorate: il fumo del camino sale piano, la bandiera sventola
     for (const b of this.botteghe.values()) {
@@ -1676,6 +1703,7 @@ export class Scena {
     const chiusi = ab.ammicca < 0.12 && ab.ammicca > 0;
     if (ab.ammicca <= 0) ab.ammicca = 2 + Math.random() * 4;
     for (const o of ab.m.occhi) o.scale.y = ab.dati.addormentato ? 0.12 : chiusi ? 0.15 : 1;
+    if (this.pescata?.id === ab.dati.id) return; // pesca: lo muove pesca3d.ts
 
     if (ab.dati.addormentato) {
       this.dormi(ab, dt, t);
@@ -1868,6 +1896,11 @@ export class Scena {
       o.push({ x: c.position.x, z: c.position.z, r: 0.42 * c.scale.x });
     }
     o.push(...this.castoro.ostacoli());
+    // mentre qualcuno pesca, gli altri non si mettono sul pontile davanti a lui
+    if (this.pescata) {
+      const pp = this.pescata.piedi;
+      o.push({ x: pp.x, z: pp.z, r: 1.6 });
+    }
     this.ostacoli = o;
   }
 
@@ -1920,7 +1953,7 @@ export class Scena {
       this.rifaiOstacoli();
     }
     const lg = this.strutture.get('laghetto');
-    const tutti = [...this.abitanti.values()].filter((ab) => !this.trattenuti.has(ab.dati.id));
+    const tutti = [...this.abitanti.values()].filter((ab) => !this.trattenuti.has(ab.dati.id) && ab.dati.id !== this.pescata?.id);
     // chi sta fermo apposta (dorme, lavora alla postazione, chiacchiera) non si fa spostare dagli altri
     const fermo = (ab: Abitante) => ab.dati.addormentato || (ab.pausa <= 0 && ab.meta.distanceTo(ab.m.gruppo.position) < 0.15 && !!ab.attivita) || this.allaPostazione(ab) || (!!ab.amico && ab.incontro > 0);
     for (const ab of tutti) {
@@ -2556,6 +2589,7 @@ export class Scena {
     const ora = new Set<THREE.Object3D>();
     const prova = (o: THREE.Object3D) => {
       if (o === bersaglio || o === this.bosco || o === this.selvatici || o === this.prato) return;
+      if (this.pescata && (o === this.strutture.get('laghetto') || o === this.strutture.get('ponticello'))) return;
       if (o instanceof THREE.Light || o instanceof THREE.Points || o instanceof THREE.Sprite) return;
       if (!o.visible && !this.nascostiCine.has(o)) return;
       const p = o.position;
@@ -2802,6 +2836,67 @@ export class Scena {
       g.add(seg);
     }
     u.add(g);
+  }
+
+  // ---------- la pesca: Giada manda un animale in fondo al pontile ----------
+
+  /** L'animale va a pescare: si mette in fondo al pontile e la telecamera lo guarda da dietro le spalle. */
+  iniziaPesca(id: string): Pescata | null {
+    const lago = this.strutture.get('laghetto');
+    const ab = this.abitanti.get(id);
+    if (!lago || !ab || this.trattenuti.has(id)) return null;
+    if (this.pescata) this.finePesca();
+    if (ab.attivita) this.fineAttivita(ab);
+    if (ab.amico) { const b = this.abitanti.get(ab.amico); if (b) b.amico = null; ab.amico = null; }
+    if (ab.canna) { ab.canna.parent?.remove(ab.canna); ab.canna = null; }
+    if (ab.mezzo) { ab.mezzo.parent?.remove(ab.mezzo); ab.mezzo = null; }
+    for (const z of ab.z) z.parent?.remove(z);
+    ab.z = [];
+    if (ab.balloon) ab.balloon.visible = false;
+    ab.pausa = 999;
+    ab.salto = 0;
+    const da = ab.m.gruppo.position.clone();
+    for (let i = 0; i < 6; i++) this.stellina(da.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.3 + Math.random(), (Math.random() - 0.5) * 1.2)));
+    const p = new Pescata(this.scene, ab.m, lago, id);
+    this.pescata = p;
+    this.ostacoliTra = 0;
+    for (let i = 0; i < 6; i++) this.stellina(p.piedi.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.3 + Math.random(), (Math.random() - 0.5) * 1.2)));
+    const sc = ab.m.gruppo.scale.x;
+    // da dietro, un po' di lato: si vedono l'animale, la canna e il galleggiante sull'acqua
+    this.cine = { segui: () => p.fuoco(), dist: 4.2 + sc * 0.6, alt: 2.5 + sc * 0.3, guardaY: 0.2, angolo: p.verso + Math.PI + 0.7, oggetto: ab.m.gruppo };
+    return p;
+  }
+
+  /** Il pesce è preso: la telecamera gira davanti all'animale che lo fa vedere. */
+  inquadraPescato() {
+    const p = this.pescata;
+    if (!p || !this.cine) return;
+    const sc = p.m.gruppo.scale.x;
+    // (dallo stesso lato di prima, così la telecamera gira intorno e non gli passa attraverso)
+    this.cine = { ...this.cine, segui: () => p.piedi.clone().setY(0), dist: 3.2 + sc * 0.6, alt: 1.2 + sc * 0.4, guardaY: 0.7 * sc + 0.3, angolo: p.verso - 1.15 };
+  }
+
+  /** Torna alla vista da dietro (per un altro lancio). */
+  inquadraLancio() {
+    const p = this.pescata;
+    if (!p || !this.cine) return;
+    const sc = p.m.gruppo.scale.x;
+    this.cine = { ...this.cine, segui: () => p.fuoco(), dist: 4.2 + sc * 0.6, alt: 2.5 + sc * 0.3, guardaY: 0.2, angolo: p.verso + Math.PI + 0.7 };
+  }
+
+  /** Basta pescare: l'animale scende dal pontile e la telecamera torna quella di sempre. */
+  finePesca() {
+    const p = this.pescata;
+    if (!p) return;
+    p.distruggi();
+    this.pescata = null;
+    const ab = this.abitanti.get(p.id);
+    if (ab) {
+      ab.pausa = 1.5;
+      ab.meta.copy(ab.m.gruppo.position);
+      ab.salto = 0.5;
+    }
+    this.fineCinema();
   }
 
   /** Ferma (o fa ripartire) il disegno del bosco, ad esempio mentre si guarda dentro una casa. */
