@@ -10,7 +10,7 @@ import { arredoVuoto, fasePianta, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arr
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
   aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo, SIMBOLI_MESTIERE,
-  creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, creaCastagno, creaCastagna, creaCanna,
+  creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, ampiezzaPasso, creaCastagno, creaCastagna, creaCanna,
   animaLaghetto, puntoLago, creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto,
@@ -877,8 +877,7 @@ export class Scena {
       if (ab.attivita?.id === 'lavoro' && ab.m.accessorio) ab.m.accessorio.visible = true;
     }
     ab.m.gruppo.userData.chiave = chiave;
-    // i cuccioli sono piccoli e con la testa enorme; crescendo il corpo si allunga in piedi,
-    // ma la grandezza cresce poco: un adulto è un cucciolo cresciuto, non un gigante
+    // i cuccioli hanno già testa grande e corpo corto (vedi creaAnimale); qui cresce solo un po' la grandezza
     const scala = ({ cucciolo: 1.15, giovane: 1.22, adulto: 1.28, maestro: 1.32, uovo: 1 } as const)[a.fase];
     ab.m.gruppo.scale.setScalar(scala * ((ab.m.gruppo.userData.taglia as number) ?? 1));
     const proporzione = ({ cucciolo: 1.12, giovane: 1.0, adulto: 0.9, maestro: 0.9, uovo: 1 } as const)[a.fase];
@@ -1575,8 +1574,11 @@ export class Scena {
     const fase = ab.dati.fase;
     const cammina = ab.pausa <= 0 && dist >= 0.15;
 
-    // postura: i cuccioli a quattro zampe, i giovani si alzano quando stanno fermi, gli adulti stanno in piedi
-    const erettoVoluto = fase === 'cucciolo' ? 0 : fase === 'giovane' ? (cammina ? 0 : 0.6) : 1;
+    // postura: tutti a quattro zampe come gli animali veri; si alzano sulle zampe dietro solo per lavorare
+    // (con l'attrezzo in mano) e per andare in moto o in bici
+    const alLavoro = ab.attivita?.id === 'lavoro' && fase !== 'cucciolo';
+    const inSella = alLavoro && !!defMestiere(ab.dati.mestiere)?.lavoro.mezzo;
+    const erettoVoluto = inSella || (alLavoro && !cammina) ? 1 : 0;
     ab.eretto += (erettoVoluto - ab.eretto) * Math.min(1, dt * 3);
     posa(ab.m, ab.eretto);
 
@@ -1658,7 +1660,7 @@ export class Scena {
       return;
     }
 
-    // camminata: i cuccioli trotterellano a quattro zampe, gli adulti camminano su due
+    // camminata: a quattro zampe (su due solo se si stava ancora rimettendo giù)
     const gioca = ab.amico && fase === 'cucciolo';
     const vel = (fase === 'cucciolo' ? (gioca ? 1.5 : 0.7) : 0.95) * (ab.dati.umore > 50 ? 1 : 0.6);
     dir.normalize();
@@ -1674,10 +1676,10 @@ export class Scena {
       ab.m.corpo.rotation.z = Math.sin(ab.passo) * 0.06; // ondeggia da un piede all'altro
       ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i % 2 === 0 ? 0 : Math.PI) + (i < 2 ? Math.PI : 0)) * (i < 2 ? 0.5 : 0.65)));
     } else {
-      ab.passo += dt * (gioca ? 16 : 11);
+      ab.passo += dt * (gioca ? 16 : 11) * (0.6 + 0.4 * ampiezzaPasso(ab.m)); // le zampe lunghe fanno passi più lenti
       ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.1;
       ab.m.testa.rotation.z = Math.sin(ab.passo) * 0.06;
-      ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7));
+      ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(ab.m)));
     }
     if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(ab.passo) * 0.4;
   }

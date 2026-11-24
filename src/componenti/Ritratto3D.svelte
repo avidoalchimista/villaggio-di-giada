@@ -26,19 +26,22 @@
     sole.position.set(3, 5, 4);
     scena.add(sole);
     const m = creaAnimale(animale);
-    const e = animale.fase === 'cucciolo' ? 0 : animale.fase === 'giovane' ? 0.6 : 1;
-    posa(m, e);
+    // a quattro zampe, come un animale vero; l'inquadratura si adatta alla sua sagoma
+    posa(m, 0);
     m.gruppo.scale.setScalar(1.6);
     scena.add(m.gruppo);
+    const box = new THREE.Box3().setFromObject(m.gruppo);
+    const centro = box.getCenter(new THREE.Vector3());
+    const misura = box.getSize(new THREE.Vector3());
+    const lato = Math.max(misura.x, misura.y, misura.z);
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
-    const altezza = e > 0.5 ? 1.5 : 1.2;
-    camera.position.set(0, altezza + 0.6, 5.2);
-    camera.lookAt(0, altezza, 0);
+    camera.position.set(0, centro.y + lato * 0.25, lato * 2.4 + 1);
+    camera.lookAt(0, centro.y, 0);
     const prima = CURVA.valore;
     const giro = () => {
       raf = requestAnimationFrame(giro);
       const t = performance.now() / 1000;
-      m.gruppo.rotation.y = Math.sin(t * 0.6) * 0.9;
+      m.gruppo.rotation.y = 0.75 + Math.sin(t * 0.6) * 0.5; // di tre quarti, così si vede la sagoma
       m.testa.rotation.z = Math.sin(t * 1.1) * 0.08;
       CURVA.valore = 0; // nel ritratto niente mondo curvo
       renderer!.render(scena, camera);
