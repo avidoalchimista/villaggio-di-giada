@@ -3,6 +3,8 @@ import type { Acquario } from './acquario';
 import type { Arredo } from './arredo';
 import type { Castoro } from './castoro';
 import type { Escursione } from './escursioni';
+import type { Funghi } from './funghi';
+import type { Museo } from './museo';
 
 export const VIRTU = ['coraggio', 'umanita', 'saggezza', 'giustizia', 'temperanza', 'trascendenza'] as const;
 export type Virtu = (typeof VIRTU)[number];
@@ -152,6 +154,8 @@ export interface StatoGioco {
   acquario?: Acquario; // i pesci nell'acquario (vedi acquario.ts)
   escursioni?: Escursione[]; // le gite nei posti lontani (vedi escursioni.ts)
   compagno?: string; // l'animale del cuore di Giada, quello che parte con lei in escursione
+  funghi?: Funghi; // chi è a funghi e il cestino di Giada (vedi funghi.ts)
+  museo?: Museo; // le cose trovate in giro e i funghi esposti (vedi museo.ts)
 }
 
 export interface Pescato {
