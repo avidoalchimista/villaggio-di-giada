@@ -23,6 +23,8 @@ import { Pescata } from './pesca3d';
 import { Gita } from './gita3d';
 import { ABITANTI } from '../lib/escursioni';
 import { AcquarioInScena, CENTRO_VASCA } from './acquario3d';
+import { animaScintilla, creaScintilla, MuseoInScena, PORTA_MUSEO } from './museo3d';
+import { ritrovamentoDelGiorno } from '../lib/museo';
 import { SentieriInScena, sulSentiero } from './sentieri3d';
 import { BIOMA, biomiScoperti, type DefBioma } from '../lib/biomi';
 import { Taglio, type CosaTagliata } from './taglio';
@@ -42,6 +44,8 @@ export type Bersaglio =
   | { tipo: 'laghetto' }
   | { tipo: 'castoro' }
   | { tipo: 'acquario' }
+  | { tipo: 'museo' }
+  | { tipo: 'ritrovamento' }
   | { tipo: 'sentiero'; id: string };
 
 /** Cosa sta facendo Giada quando arreda il villaggio. */
@@ -165,7 +169,11 @@ const POSTI_COSTRUZIONI: Record<string, [number, number, number]> = {
   mulino: [5.8, -3.6, -0.8],
   // grande e un po' in disparte, di lato al viale d'ingresso (poi Giada lo mette dove vuole)
   acquario: [6.4, 9.2, Math.atan2(-6.4, -9.2)],
+  museo: [-6.4, 9.2, Math.atan2(6.4, -9.2)],
 };
+
+/** Le costruzioni grandi come una casa: stanno in disparte al bordo finché Giada non sceglie il posto. */
+const GRANDI = new Set(['acquario', 'museo']);
 
 /**
  * Posti automatici per edifici e botteghe: un arco dietro la radura e poi i lati,
@@ -219,6 +227,10 @@ export class Scena {
   private giaAggiornataSentieri = false;
   private castoro = new CastoroInScena();
   private acquario: AcquarioInScena | null = null;
+  private museo: MuseoInScena | null = null;
+  private scintilla: THREE.Group | null = null; // la cosa che brilla per terra (vedi lib/museo.ts)
+  private aFunghi = new Set<string>(); // chi è nel bosco a cercare funghi
+  private versoIlBosco = new Map<string, THREE.Vector3>(); // dove va chi parte per i funghi
   private gita: Gita | null = null;
   private sentieri = new SentieriInScena();
   private angoliSentieri: number[] = [];
@@ -592,6 +604,7 @@ export class Scena {
       case 'torretta': g = creaTorretta(); break;
       case 'mulino': { const m = creaMulino(); g = m.gruppo; this.pale = m.pale; break; }
       case 'acquario': { this.acquario = new AcquarioInScena(); g = this.acquario.gruppo; g.userData.bersaglio = { tipo: 'acquario' }; break; }
+      case 'museo': { this.museo = new MuseoInScena(); g = this.museo.gruppo; g.userData.bersaglio = { tipo: 'museo' }; break; }
     }
     if (!g) return;
     if (pos) {
@@ -693,15 +706,16 @@ export class Scena {
     // chi ha già un posto (scelto da Giada o fissato) resta lì; le case nuove cercano un posto libero,
     // lontano dalle altre, senza far spostare quelle che ci sono già
     const presi: [number, number][] = posti.filter((k) => this.arredo.posti[k]).map((k) => [this.arredo.posti[k].x, this.arredo.posti[k].z]);
-    for (const [id, d] of Object.entries(POSTI_COSTRUZIONI)) if (this.strutture.has(id) && id !== 'acquario') presi.push([this.arredo.posti['c:' + id]?.x ?? d[0], this.arredo.posti['c:' + id]?.z ?? d[1]]);
-    // l'acquario è grande: finché Giada non sceglie, sta in disparte al bordo della radura, come una casa
-    let postoAcquario: Posto | null = null;
-    if (this.strutture.has('acquario')) {
-      const pa = this.arredo.posti['c:acquario'];
+    for (const [id, d] of Object.entries(POSTI_COSTRUZIONI)) if (this.strutture.has(id) && !GRANDI.has(id)) presi.push([this.arredo.posti['c:' + id]?.x ?? d[0], this.arredo.posti['c:' + id]?.z ?? d[1]]);
+    // l'acquario e il museo sono grandi: finché Giada non sceglie, stanno in disparte al bordo della radura, come una casa
+    const postiGrandi = new Map<string, Posto>();
+    for (const id of GRANDI) {
+      if (!this.strutture.has(id)) continue;
+      const pa = this.arredo.posti['c:' + id];
       if (pa) presi.push([pa.x, pa.z]);
       else {
-        const [x, z] = postiCase(posti.length + 40, raggio).find(([x, z]) => presi.every(([px, pz]) => Math.hypot(x - px, z - pz) > 9.5)) ?? [POSTI_COSTRUZIONI.acquario[0], POSTI_COSTRUZIONI.acquario[1]];
-        postoAcquario = { x, z, r: Math.atan2(-x, -z) };
+        const [x, z] = postiCase(posti.length + 40, raggio).find(([x, z]) => presi.every(([px, pz]) => Math.hypot(x - px, z - pz) > 9.5)) ?? [POSTI_COSTRUZIONI[id][0], POSTI_COSTRUZIONI[id][1]];
+        postiGrandi.set(id, { x, z, r: Math.atan2(-x, -z) });
         presi.push([x, z]);
       }
     }
@@ -742,8 +756,8 @@ export class Scena {
       if (FISSE.has(id)) continue;
       const d = POSTI_COSTRUZIONI[id] ?? [0, 0, 0];
       // il ponticello segue il laghetto, se non l'ha spostato a parte
-      const base = id === 'acquario' && postoAcquario ? postoAcquario : id === 'ponticello' && this.arredo.posti['c:laghetto'] && !this.arredo.posti['c:ponticello']
-        ? { ...this.arredo.posti['c:laghetto'], r: this.arredo.posti['c:laghetto'].r + Math.PI / 2 + 0.15 } : { x: d[0], z: d[1], r: d[2] };
+      const base = postiGrandi.get(id) ?? (id === 'ponticello' && this.arredo.posti['c:laghetto'] && !this.arredo.posti['c:ponticello']
+        ? { ...this.arredo.posti['c:laghetto'], r: this.arredo.posti['c:laghetto'].r + Math.PI / 2 + 0.15 } : { x: d[0], z: d[1], r: d[2] });
       this.posiziona(g, 'c:' + id, base);
     }
     this.aggiornaAiuole();
@@ -761,6 +775,8 @@ export class Scena {
     if (this.giaAggiornataSentieri) for (const b of nuovi) { const p = this.sentieri.portale(b.id); if (p) this.coriandoli(p.getWorldPosition(new THREE.Vector3()).setY(2.4), ['#f2c94c', '#ffffff', b.colore]); }
     this.giaAggiornataSentieri = true;
     this.acquario?.aggiornaPesci(s.acquario?.pesci ?? []);
+    this.aggiornaScintilla(s);
+    this.aggiornaFunghi(s);
     this.castoro.aggiorna(s.castoro, s.ultimoAccesso, this.bosco, this.raggio);
   }
 
@@ -915,7 +931,7 @@ export class Scena {
   private occupati(): [number, number, number][] {
     const out: [number, number, number][] = [];
     for (const [k, o] of this.mobili()) {
-      const d = k.startsWith('o:') ? 0.8 : k.startsWith('q:') ? 0.9 : k.startsWith('a:') ? 1.3 : k === 'castagno' ? 2.6 : k.startsWith('b:') || k === 'c:acquario' ? 3.8 : k.startsWith('e:') ? 3 : 2.2;
+      const d = k.startsWith('o:') ? 0.8 : k.startsWith('q:') ? 0.9 : k.startsWith('a:') ? 1.3 : k === 'castagno' ? 2.6 : k.startsWith('b:') || k === 'c:acquario' || k === 'c:museo' ? 3.8 : k.startsWith('e:') ? 3 : 2.2;
       out.push([o.position.x, o.position.z, d]);
     }
     return out;
@@ -929,7 +945,7 @@ export class Scena {
 
   /** Case e edifici che non hanno ancora un posto deciso (sono nel posto automatico). */
   caseSenzaPosto(): string[] {
-    return [...[...this.edifici.keys()].map((t) => 'e:' + t), ...[...this.botteghe.keys()].map((id) => 'b:' + id), ...(this.acquario ? ['c:acquario'] : [])].filter((k) => !this.arredo.posti[k]);
+    return [...[...this.edifici.keys()].map((t) => 'e:' + t), ...[...this.botteghe.keys()].map((id) => 'b:' + id), ...(this.acquario ? ['c:acquario'] : []), ...(this.museo ? ['c:museo'] : [])].filter((k) => !this.arredo.posti[k]);
   }
 
   /** Sceglie (o toglie la scelta) di una cosa da spostare. */
@@ -1553,8 +1569,8 @@ export class Scena {
     ray.setFromCamera(ndc, this.camera);
     const candidati: THREE.Object3D[] = [
       this.corvo.gruppo, this.quaderno, this.castagne, this.nido, ...(this.grande ? [this.grande] : []), ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
-      ...this.aiuole.values(), ...this.quadri.values(), ...(this.strutture.has('laghetto') ? [this.strutture.get('laghetto')!] : []),
-      ...[...this.abitanti.values()].map((a) => a.m.gruppo), this.castoro.gruppo,
+      ...this.aiuole.values(), ...this.quadri.values(), ...['laghetto', 'acquario', 'museo'].filter((id) => this.strutture.has(id)).map((id) => this.strutture.get(id)!),
+      ...[...this.abitanti.values()].filter((a) => a.m.gruppo.visible).map((a) => a.m.gruppo), this.castoro.gruppo, this.sentieri.gruppo, ...(this.scintilla ? [this.scintilla] : []),
     ];
     const hit = ray.intersectObjects(candidati, true)[0];
     if (!hit) return;
@@ -1774,6 +1790,8 @@ export class Scena {
     this.aggiornaSchiusa(dt, t);
     this.castoro.anima(t, dt, this.momento() === 'notte');
     this.acquario?.anima(t, dt);
+    this.museo?.anima(t);
+    if (this.scintilla) animaScintilla(this.scintilla, t);
     this.gita?.aggiorna(dt, t);
     this.sentieri.anima(t);
     this.stelline = this.stelline.filter((st) => {
@@ -1819,6 +1837,7 @@ export class Scena {
     for (const o of ab.m.occhi) o.scale.y = ab.dati.addormentato ? 0.12 : chiusi ? 0.15 : 1;
     if (this.pescata?.id === ab.dati.id) return; // pesca: lo muove pesca3d.ts
     if (this.gita?.id === ab.dati.id) { g.visible = false; return; } // è via in escursione (vedi gita3d.ts)
+    if (this.aFunghi.has(ab.dati.id)) { this.vaNelBosco(ab, dt); return; } // è a cercare funghi
 
     if (ab.dati.addormentato) {
       this.dormi(ab, dt, t);
@@ -2088,7 +2107,7 @@ export class Scena {
   private postoSenzaUrti(k: string, g: THREE.Object3D, x: number, z: number, altre?: Impronta[]): { x: number; z: number } | null {
     const tutte = altre ?? this.cosePiazzate().filter(([kk]) => kk !== k).flatMap(([kk, o]) => kk.startsWith('lanterna') ? [improntaDi(o, { nome: kk, tonda: true })].filter((i): i is Impronta => !!i) : this.improntaCosa(kk, o));
     const x0 = g.position.x, z0 = g.position.z;
-    const casa = k.startsWith('b:') || k.startsWith('e:') || k === 'c:acquario';
+    const casa = k.startsWith('b:') || k.startsWith('e:') || k === 'c:acquario' || k === 'c:museo';
     const lim = casa ? this.raggio + 9 : Math.max(3, this.raggio - 1);
     let trovato: { x: number; z: number } | null = null;
     for (let giro = 0; giro <= 24 && !trovato; giro++) {
@@ -2801,6 +2820,121 @@ export class Scena {
     } catch {
       /* niente vibrazione */
     }
+  }
+
+  /** Telecamera davanti alle colonne del museo. */
+  inquadraMuseo(): boolean {
+    const g = this.museo?.gruppo;
+    if (!g) return false;
+    const p = new THREE.Vector3();
+    this.cine = { segui: () => g.localToWorld(p.copy(PORTA_MUSEO)).setY(0), dist: 13, alt: 4.2, guardaY: 0.8, angolo: g.rotation.y, oggetto: g };
+    return true;
+  }
+
+  // ---------- la cosa che brilla per terra (il ritrovamento del giorno) ----------
+
+  private firmaScintilla = '';
+
+  private aggiornaScintilla(s: StatoGioco) {
+    const r = ritrovamentoDelGiorno(s, s.ultimoAccesso);
+    const firma = r ? `${s.ultimoAccesso}|${r.id}|${Math.round(this.raggio)}` : '';
+    if (firma === this.firmaScintilla) return;
+    this.firmaScintilla = firma;
+    if (!r) {
+      if (this.scintilla) {
+        // vola via con i coriandoli: Giada l'ha presa
+        this.coriandoli(this.scintilla.position.clone().setY(0.6), ['#fff4b0', '#ffd860', '#ffffff']);
+        this.scene.remove(this.scintilla);
+        this.scintilla = null;
+      }
+      return;
+    }
+    if (!this.scintilla) {
+      this.scintilla = creaScintilla();
+      this.scene.add(this.scintilla);
+    }
+    // un posto libero nella radura: si parte dal punto del giorno e si gira finché non c'è niente sopra
+    const occ = this.occupati();
+    const lim = Math.max(3, this.raggio - 2);
+    for (let k = 0; k < 24; k++) {
+      const a = r.angolo + k * 0.9, d = 2 + ((r.distanza + k * 0.17) % 1) * (lim - 2);
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (k === 23 || occ.every(([ox, oz, od]) => Math.hypot(x - ox, z - oz) > od + 0.6)) {
+        this.scintilla.position.set(x, 0, z);
+        break;
+      }
+    }
+  }
+
+  /** Dove sta la cosa che brilla (per le prove e la telecamera). */
+  get postoScintilla(): THREE.Vector3 | null {
+    return this.scintilla?.position.clone() ?? null;
+  }
+
+  // ---------- a cercare funghi: chi parte va verso il bosco e sparisce tra gli alberi, chi torna ricompare lì ----------
+
+  private aggiornaFunghi(s: StatoGioco) {
+    const fuori = new Set((s.funghi?.fuori ?? []).map((c) => c.animale));
+    for (const id of fuori) {
+      if (this.aFunghi.has(id)) continue;
+      this.aFunghi.add(id);
+      const ab = this.abitanti.get(id);
+      if (!ab) continue;
+      if (ab.attivita) this.fineAttivita(ab);
+      if (ab.amico) { const b = this.abitanti.get(ab.amico); if (b) b.amico = null; ab.amico = null; }
+      const p = ab.m.gruppo.position;
+      const a = Math.hypot(p.x, p.z) > 0.5 ? Math.atan2(p.z, p.x) : Math.random() * Math.PI * 2;
+      if (this.giaAggiornataFunghi && ab.m.gruppo.visible) {
+        // si incammina con il cestino verso il bosco
+        this.versoIlBosco.set(id, new THREE.Vector3(Math.cos(a) * (this.raggio + 3), 0, Math.sin(a) * (this.raggio + 3)));
+        this.fumetto(ab, '🍄');
+      } else ab.m.gruppo.visible = false;
+    }
+    for (const id of [...this.aFunghi]) {
+      if (fuori.has(id)) continue;
+      this.aFunghi.delete(id);
+      this.versoIlBosco.delete(id);
+      const ab = this.abitanti.get(id);
+      if (!ab) continue;
+      // ricompare al bordo del bosco, contento, con i coriandoli
+      const a = Math.random() * Math.PI * 2;
+      ab.m.gruppo.position.set(Math.cos(a) * (this.raggio - 1.5), 0, Math.sin(a) * (this.raggio - 1.5));
+      ab.m.gruppo.visible = true;
+      ab.meta.copy(this.puntoCasuale());
+      ab.salto = 1;
+      this.coriandoli(ab.m.gruppo.position.clone().setY(1), ['#d84a3a', '#f4ecd8', '#f0b030']);
+      this.fumetto(ab, '🍄');
+    }
+    this.giaAggiornataFunghi = true;
+  }
+  private giaAggiornataFunghi = false;
+
+  private vaNelBosco(ab: Abitante, dt: number) {
+    const g = ab.m.gruppo;
+    const meta = this.versoIlBosco.get(ab.dati.id);
+    if (!g.visible || !meta) { g.visible = false; return; }
+    const dir = meta.clone().sub(g.position).setY(0);
+    const dist = dir.length();
+    if (dist < 0.3 || Math.hypot(g.position.x, g.position.z) > this.raggio + 1.5) {
+      g.visible = false;
+      this.versoIlBosco.delete(ab.dati.id);
+      return;
+    }
+    dir.normalize();
+    g.position.addScaledVector(dir, Math.min(dist, 1.6 * dt));
+    const verso = Math.atan2(dir.x, dir.z);
+    g.rotation.y += Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y)) * Math.min(1, dt * 6);
+    ab.eretto += (0 - ab.eretto) * Math.min(1, dt * 3);
+    posa(ab.m, ab.eretto);
+    ab.passo += dt * 13 * (0.6 + 0.4 * ampiezzaPasso(ab.m));
+    ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.1;
+    ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(ab.m)));
+    if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(ab.passo) * 0.4;
+  }
+
+  /** Chi è nel bosco a cercare funghi e non si vede (per le prove). */
+  get nelBosco(): string[] {
+    return [...this.aFunghi].filter((id) => !this.abitanti.get(id)?.m.gruppo.visible);
   }
 
   /** Telecamera davanti alla vetrata dell'acquario, per guardare i pesci. */

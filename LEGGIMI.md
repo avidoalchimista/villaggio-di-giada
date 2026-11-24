@@ -10,6 +10,10 @@ Regalo di Natale 2026. Specifica completa: `../CLAUDE gioco per giada.md`.
   (il primo 25-35 giorni dopo il suo arrivo); `src/scena/sentieri3d.ts` il sentiero nel bosco, il portale col nome e il paesaggio in fondo
 - `src/lib/acquario.ts` l'acquario (costruzione da 100 castagne, dopo il laghetto): i pesci pescati ci finiscono dentro, quelli dei posti lontani si comprano;
   `src/scena/acquario3d.ts` l'edificio con la vasca e i pesci che nuotano
+- `src/lib/funghi.ts` i funghi: Giada manda un animale nel bosco (bottone 🍄), sta via 12-20 minuti (o fino al giorno dopo) e torna con funghi veri
+  della stagione (22 specie, alcune rare, alcune velenose). Si cucinano (da Giada o da un animale cuoco, che guadagna castagne) o si portano al museo
+- `src/lib/museo.ts` il museo (costruzione da 80 castagne): ogni giorno nel villaggio brilla per terra una cosa da trovare (23 ritrovamenti),
+  più la sala dei funghi. Ogni pezzo nuovo porta castagne di biglietti. `src/scena/museo3d.ts` l'edificio, la cosa che brilla e i funghi in 3D
 - `src/lib/escursioni.ts` le escursioni: dopo una giornata particolare (triste, paura, rabbia, stanca, felice) Giada può andare
   in un posto scoperto con l'animale del cuore; la gente del posto e cosa dice per ogni giornata. `src/scena/gita3d.ts` la gita vista nel villaggio;
   `src/componenti/Escursione.svelte` la scelta e il racconto
@@ -51,6 +55,7 @@ Giada non può aprirla per caso: non c'è più nessun tocco segreto, si usano du
 - Nel pannello prove c'è anche «🎂 Prova la festa di compleanno»: fa vedere subito la festa di paese del 24 luglio
   (vedi `src/lib/festa.ts` e `src/scena/festa.ts`). Il vero giorno la festa parte da sola appena Giada apre il gioco;
   se quel giorno non passa, la torta la aspetta fino al 27 luglio.
+- Nel pannello prove ci sono «🍄 Fai tornare dai funghi» (chi è nel bosco torna subito) e «✨ Nuova cosa da trovare».
 - Nel pannello prove c'è «🦫 Trova un sentiero»: il castoro trova subito il prossimo posto lontano (serve che sia già arrivato, dopo 10 giorni).
 - `https://avidoalchimista.github.io/villaggio-di-giada/?azzera` chiede conferma e cancella tutto da quel telefono:
   villaggio, diario, giorni simulati e pannello prove. Il gioco riparte dall'inizio.

@@ -1,7 +1,7 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
   import GuidaIcona from '../componenti/GuidaIcona.svelte';
-  import { app, vai, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, provaSentiero, provaFestaDiCompleanno, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
+  import { app, vai, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, provaSentiero, richiamaDaiFunghi, nuovoRitrovamento, provaFestaDiCompleanno, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
   import { giorniTra } from '../lib/date';
 
@@ -139,6 +139,11 @@
       <p style="margin-top:12px">Il castoro trova un sentiero verso un posto lontano ogni mese o due. Per farglielo trovare adesso (serve che il castoro sia già arrivato):</p>
       <div class="riga" style="flex-wrap:wrap">
         <button class="secondario tondo" onclick={async () => { if (await provaSentiero()) vai('villaggio'); else messaggio = 'Il castoro non è ancora arrivato (arriva dopo 10 giorni), oppure ha già trovato tutti i sentieri.'; }}>🦫 Trova un sentiero</button>
+      </div>
+      <p style="margin-top:12px">Funghi e museo: far tornare subito chi è nel bosco a cercare funghi, o rimettere per terra una cosa da trovare.</p>
+      <div class="riga" style="flex-wrap:wrap">
+        <button class="secondario tondo" onclick={async () => { await richiamaDaiFunghi(); vai('villaggio'); }}>🍄 Fai tornare dai funghi</button>
+        <button class="secondario tondo" onclick={async () => { await nuovoRitrovamento(); vai('villaggio'); }}>✨ Nuova cosa da trovare</button>
       </div>
       <p style="margin-top:12px"><button class="tondo" onclick={() => confirm('Cancello TUTTO il villaggio e il diario da questo telefono?') && azzeraTutto()}>Azzera tutto</button></p>
       <p style="margin-top:12px"><button class="secondario tondo" onclick={esciDallaProva}>Nascondi questo pannello</button></p>

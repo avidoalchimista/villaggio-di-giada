@@ -55,7 +55,8 @@
     { "id": "pozzo", "nome": "Il pozzo", "descrizione": "Di pietra, con il secchio e la carrucola.", "costo": 45, "pagine": 20 },
     { "id": "torretta", "nome": "La torretta del corvo", "descrizione": "Il corvo potrà vedere tutto il bosco da lassù.", "costo": 60, "pagine": 30 },
     { "id": "mulino", "nome": "Il mulino a vento", "descrizione": "Le pale girano e il villaggio diventa un vero paese.", "costo": 90, "pagine": 45 },
-    { "id": "acquario", "nome": "L'acquario", "descrizione": "Un acquario grande grande, con le vetrate e la cupola blu. Dentro nuotano tutti i pesci che peschi al laghetto, e un giorno anche quelli dei villaggi lontani. Lo metti dove vuoi tu.", "costo": 100, "richiede": "laghetto" }
+    { "id": "acquario", "nome": "L'acquario", "descrizione": "Un acquario grande grande, con le vetrate e la cupola blu. Dentro nuotano tutti i pesci che peschi al laghetto, e un giorno anche quelli dei villaggi lontani. Lo metti dove vuoi tu.", "costo": 100, "richiede": "laghetto" },
+    { "id": "museo", "nome": "Il museo", "descrizione": "Con le colonne e la cupola. Dentro metti le cose che trovi in giro (piume, fossili, cristalli…) e i funghi che portano gli animali dal bosco. Lo metti dove vuoi tu.", "costo": 80, "pagine": 12 }
   ],
   "edifici": [
     { "tipo": "chiosco", "nome": "Il chiosco", "gestore": "cuoco", "virtu": "umanita", "utentiMinimi": 1 },
