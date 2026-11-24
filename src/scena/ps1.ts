@@ -5,6 +5,7 @@
 // - mondo curvo: il terreno scende con la distanza, così si vedono prato e cielo insieme
 // - contorni scuri morbidi (guscio rovesciato) per l'effetto illustrazione
 import * as THREE from 'three';
+import { ANISOTROPIA } from './qualita';
 
 export const CURVA = { valore: 0.0042 };
 
@@ -92,7 +93,7 @@ export function texture(lato: number, disegna: (c: CanvasRenderingContext2D, lat
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(ripeti, ripeti);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = Math.min(4, ANISOTROPIA.valore);
   return t;
 }
 
@@ -206,7 +207,7 @@ function texDaFunzione(lato: number, f: (x: number, y: number, i: number) => [nu
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.generateMipmaps = true;
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
+  t.anisotropy = ANISOTROPIA.valore;
   t.needsUpdate = true;
   return t;
 }

@@ -1,5 +1,6 @@
 // La radura del villaggio in 3D. Gli animali girano liberi, dormono, festeggiano.
 // Il villaggio si allarga quando arrivano nuovi abitanti e nascono nuovi mestieri.
+import { RisoluzioneAdattiva, preparaAnisotropia } from './qualita';
 import * as THREE from 'three';
 import { hash } from '../lib/caso';
 import { COLORE_VIRTU } from '../lib/etichette';
@@ -226,6 +227,7 @@ export function postiCase(n: number, raggio: number): [number, number][] {
 
 export class Scena {
   private renderer: THREE.WebGLRenderer;
+  private qualita: RisoluzioneAdattiva;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
   private sole = new THREE.DirectionalLight('#fff1d6', 2.2);
@@ -338,7 +340,9 @@ export class Scena {
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // risoluzione che si adatta: nitida quando si può, mai a scatti
+    this.qualita = new RisoluzioneAdattiva(this.renderer);
+    preparaAnisotropia(this.renderer);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     // niente tone mapping: così nebbia e cielo hanno esattamente lo stesso colore (prima gli alberi lontani sembravano fantasmi)
     this.renderer.toneMapping = THREE.NoToneMapping;
@@ -1964,7 +1968,9 @@ export class Scena {
 
   private ciclo = () => {
     this.raf = requestAnimationFrame(this.ciclo);
-    const dt = Math.min(0.05, this.orologio.getDelta());
+    const dtVero = this.orologio.getDelta();
+    this.qualita.passo(dtVero);
+    const dt = Math.min(0.05, dtVero);
     const t = this.orologio.elapsedTime;
 
     // telecamera da avventura: guarda un punto della radura che si sposta col dito, bassa (circa 35°)
