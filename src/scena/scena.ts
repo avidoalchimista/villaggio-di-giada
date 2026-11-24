@@ -5,13 +5,14 @@ import { hash } from '../lib/caso';
 import { COLORE_VIRTU } from '../lib/etichette';
 import { emozioneDellaPagina, REGOLE } from '../lib/gioco';
 import { defMestiere, virtuMestiere, type DefMestiere } from '../lib/mestieri';
-import { creaBici, creaMoto } from './botteghe';
+import { creaBici, creaMoto, trovaPostazione } from './botteghe';
+import { CastoroInScena } from './castoro';
 import { arredoVuoto, fasePianta, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arredo, type Posto } from '../lib/arredo';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
   aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo, SIMBOLI_MESTIERE,
   creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, ampiezzaPasso, creaCastagno, creaCastagna, creaCanna,
-  animaLaghetto, puntoLago, creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
+  animaLaghetto, puntoLago, fuoriDalLago, SAGOMA_CASA, creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto,
 } from './modelli';
@@ -30,7 +31,8 @@ export type Bersaglio =
   | { tipo: 'castagne' }
   | { tipo: 'aiuola'; id: string }
   | { tipo: 'quadretto'; id: string }
-  | { tipo: 'laghetto' };
+  | { tipo: 'laghetto' }
+  | { tipo: 'castoro' };
 
 /** Cosa sta facendo Giada quando arreda il villaggio. */
 export type ModoArredo = 'sposta' | 'togli' | 'sentiero' | 'orto' | 'quadri';
@@ -113,7 +115,9 @@ interface Abitante {
   salto: number;
   ammicca: number;
   z: THREE.Sprite[];
-  attivita: { id: string; tempo: number; prossimo: number; tappa?: number } | null; // cosa sta facendo tra quelle che sa fare
+  // cosa sta facendo tra quelle che sa fare; per il lavoro `giro` vuol dire che è in giro (consegne, visite)
+  // e non alla sua postazione: in giro non si fanno i gesti del mestiere
+  attivita: { id: string; tempo: number; prossimo: number; tappa?: number; giro?: boolean } | null;
   canna: THREE.Object3D | null;
   mezzo: THREE.Object3D | null; // la moto o la bici di chi lavora in giro
   eretto: number; // 0 = quattro zampe, 1 = in piedi
@@ -122,13 +126,19 @@ interface Abitante {
   prossimoBalloon: number;
   balloon: THREE.Sprite | null;
   sveglio: number; // di notte: secondi di veglia dopo una carezza
+  ultimoColpo?: number; // per le scintille e i trucioli del lavoro
+  latoSterza?: number; // da che parte gira intorno a quello che ha davanti
+  deviazione?: THREE.Vector3 | null; // un passo di lato per girare intorno a quello che lo blocca
+  fermo: number; // secondi in cui cammina senza riuscire ad avvicinarsi (bloccato da qualcosa)
+  distPrima: number;
 }
 
 /** Grandezza della radura: cresce con gli abitanti, i mestieri e le costruzioni. */
 export function raggioVillaggio(s: StatoGioco): number {
   const nati = s.animali.filter((a) => a.fase !== 'uovo').length;
   const mestieri = s.animali.filter((a) => a.mestiere).length;
-  return Math.min(22, 12 + nati * 0.6 + mestieri * 0.8 + s.edifici.length * 1.0 + (s.costruzioni?.length ?? 0) * 0.3);
+  // (le case sono larghe: davanti hanno la postazione di lavoro, quindi il villaggio cresce di più per ogni mestiere)
+  return Math.min(26, 12 + nati * 0.6 + mestieri * 1.1 + s.edifici.length * 1.2 + (s.costruzioni?.length ?? 0) * 0.3);
 }
 
 /** Dove va ogni costruzione: [x, z, rotazione]. */
@@ -147,16 +157,19 @@ const POSTI_COSTRUZIONI: Record<string, [number, number, number]> = {
 
 /**
  * Posti automatici per edifici e botteghe: un arco dietro la radura e poi i lati,
- * almeno 6 metri l'uno dall'altro; quando non c'è più posto, un secondo giro più largo.
+ * almeno 8 metri l'uno dall'altro (ogni casa ha la sua postazione di lavoro accanto alla porta);
+ * quando non c'è più posto, un secondo giro più largo.
  * Il viale d'ingresso (davanti, verso la telecamera) resta sempre libero.
  */
 export function postiCase(n: number, raggio: number): [number, number][] {
   const out: [number, number][] = [];
   // verso il bordo della radura, non in mezzo: più il villaggio è grande, più le case stanno larghe
-  const giri = [Math.max(7, raggio - 4), Math.max(9, raggio - 1.2)];
+  // (il secondo giro è 7 metri più in fuori, a cavallo del bosco: lì gli alberi si fanno da parte)
+  const primo = Math.max(8, raggio - 4);
+  const giri = [primo, primo + 7];
   for (const [g, d] of giri.entries()) {
     if (d < 6) continue;
-    const passo = 6.6 / d; // angolo per stare a ~6,6 m di distanza
+    const passo = 8.4 / d; // angolo per stare a ~8,4 m di distanza
     const offset = g * passo * 0.5;
     for (let k = 0; out.length < n; k++) {
       const lato = k === 0 ? 0 : Math.ceil(k / 2) * (k % 2 ? 1 : -1);
@@ -166,7 +179,7 @@ export function postiCase(n: number, raggio: number): [number, number][] {
       if (Math.abs(lato * passo) > Math.PI) break;
       if (dalViale < 0.9) continue;
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
-      if (out.some(([px, pz]) => Math.hypot(x - px, z - pz) < 6)) continue;
+      if (out.some(([px, pz]) => Math.hypot(x - px, z - pz) < 8)) continue;
       out.push([x, z]);
     }
     if (out.length >= n) break;
@@ -174,7 +187,7 @@ export function postiCase(n: number, raggio: number): [number, number][] {
   // se proprio non c'è posto (tantissime case), si stringono sul giro esterno
   while (out.length < n) {
     const a = Math.PI * 1.5 + (out.length * 0.61) % (Math.PI * 1.4) - Math.PI * 0.7;
-    out.push([Math.cos(a) * 15, Math.sin(a) * 15]);
+    out.push([Math.cos(a) * 18, Math.sin(a) * 18]);
   }
   return out;
 }
@@ -191,6 +204,7 @@ export class Scena {
   private edifici = new Map<string, THREE.Group>();
   private botteghe = new Map<string, THREE.Group>();
   private bosco = new THREE.Group();
+  private castoro = new CastoroInScena();
   private lanterne: THREE.Mesh[] = [];
   private lucciole: THREE.Points;
   private corvo = creaCorvo();
@@ -279,6 +293,7 @@ export class Scena {
 
     this.costruisciFissi();
     this.scene.add(this.bosco);
+    this.scene.add(this.castoro.gruppo);
     this.lucciole = this.creaLucciole();
     this.scene.add(this.lucciole);
     this.allarga(5.5);
@@ -464,6 +479,8 @@ export class Scena {
         const jitter = ((i * 13) % 7) / 10 - 0.3;
         const x = Math.cos(a) * (ra + jitter), z = Math.sin(a) * (ra + jitter);
         if (tolto(x, z, 1.1)) continue;
+        // niente alberi sopra le case (e le loro postazioni) che stanno al limite del bosco
+        if (occupati.some(([px, pz, d]) => d >= 3 && Math.hypot(x - px, z - pz) < d + 0.4)) continue;
         albero.position.set(x, 0, z);
         albero.rotation.y = i;
         albero.userData.cosa = 'albero';
@@ -599,7 +616,7 @@ export class Scena {
         ab = {
           m, dati: a, meta: this.puntoCasuale(), pausa: 1 + Math.random() * 2, passo: Math.random() * 6, salto: uovo ? 1 : 0,
           ammicca: Math.random() * 4, z: [], eretto: 0, amico: null, incontro: 0, prossimoBalloon: 0, balloon: null,
-          attivita: null, canna: null, mezzo: null, sveglio: 0,
+          attivita: null, canna: null, mezzo: null, sveglio: 0, fermo: 0, distPrima: 0,
         };
         this.abitanti.set(a.id, ab);
       }
@@ -619,6 +636,8 @@ export class Scena {
         if (!vecchia || vecchia.userData.firma !== firma) {
           const b = creaCasaAnimale(a.specie, emo, a.fase, a.mestiere, livello);
           b.userData.livello = livello;
+          // quanto spazio prende la casa (per non passarci attraverso): la sagoma, più la stanza in più
+          b.userData.ingombroCasa = (SAGOMA_CASA[a.specie]?.mezza ?? 1.1) + 0.15 + (livello >= 3 ? 0.35 : 0);
           b.userData.bersaglio = { tipo: 'bottega', id: a.id };
           b.userData.firma = firma;
           if (vecchia) {
@@ -646,7 +665,7 @@ export class Scena {
     const automatici = posti.map(() => [0, 0] as [number, number]);
     posti.forEach((k, i) => {
       if (this.arredo.posti[k]) return;
-      const libero = candidati.find(([x, z]) => presi.every(([px, pz]) => Math.hypot(x - px, z - pz) > 5.8)) ?? candidati[i];
+      const libero = candidati.find(([x, z]) => presi.every(([px, pz]) => Math.hypot(x - px, z - pz) > 7.8)) ?? candidati[i];
       automatici[i] = libero;
       presi.push(libero);
     });
@@ -688,6 +707,7 @@ export class Scena {
     this.aggiornaOggetti();
     this.aggiornaSentiero(s);
     this.allarga(raggio);
+    this.castoro.aggiorna(s.castoro, s.ultimoAccesso, this.bosco, this.raggio);
   }
 
   /** Mette un oggetto dove l'ha voluto Giada, oppure al suo posto di sempre. */
@@ -817,7 +837,7 @@ export class Scena {
   private occupati(): [number, number, number][] {
     const out: [number, number, number][] = [];
     for (const [k, o] of this.mobili()) {
-      const d = k.startsWith('o:') ? 0.8 : k.startsWith('q:') ? 0.9 : k.startsWith('a:') ? 1.3 : k === 'castagno' ? 2.6 : k.startsWith('b:') || k.startsWith('e:') ? 3 : 2.2;
+      const d = k.startsWith('o:') ? 0.8 : k.startsWith('q:') ? 0.9 : k.startsWith('a:') ? 1.3 : k === 'castagno' ? 2.6 : k.startsWith('b:') ? 3.8 : k.startsWith('e:') ? 3 : 2.2;
       out.push([o.position.x, o.position.z, d]);
     }
     return out;
@@ -935,6 +955,11 @@ export class Scena {
     });
   }
 
+  /** Il castoro sta dormendo? (di notte sì) */
+  get castoroDorme(): boolean {
+    return this.castoro.addormentato;
+  }
+
   /** Che momento della giornata è (ora vera, o quella finta delle prove). */
   momento(): 'mattina' | 'lavoro' | 'pranzo' | 'sera' | 'notte' {
     const ora = new Date();
@@ -950,7 +975,7 @@ export class Scena {
   private casa(ab: Abitante): THREE.Vector3 {
     const b = this.botteghe.get(ab.dati.id);
     // davanti alla porta (le case sono grandi e Giada può averle girate)
-    if (b) return new THREE.Vector3(Math.sin(b.rotation.y), 0, Math.cos(b.rotation.y)).multiplyScalar(2.1).add(b.position).setY(0);
+    if (b) return new THREE.Vector3(Math.sin(b.rotation.y), 0, Math.cos(b.rotation.y)).multiplyScalar(Math.max(2.2, ((b.userData.ingombroCasa as number) ?? 1.5) + 0.55)).add(b.position).setY(0);
     const ang = (hash(ab.dati.id) % 360) * (Math.PI / 180);
     return new THREE.Vector3(this.nido.position.x + Math.cos(ang) * 1.1, 0, this.nido.position.z + Math.sin(ang) * 1.1);
   }
@@ -1097,6 +1122,7 @@ export class Scena {
     for (let k = 0; k < secondi * 30; k++) {
       this.tempoFinto += dt;
       for (const ab of this.abitanti.values()) this.muovi(ab, dt, this.tempoFinto);
+      this.fisica(dt);
       if (finche?.()) return true;
     }
     return false;
@@ -1415,7 +1441,7 @@ export class Scena {
     const candidati: THREE.Object3D[] = [
       this.corvo.gruppo, this.quaderno, this.castagne, this.nido, ...(this.grande ? [this.grande] : []), ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
       ...this.aiuole.values(), ...this.quadri.values(), ...(this.strutture.has('laghetto') ? [this.strutture.get('laghetto')!] : []),
-      ...[...this.abitanti.values()].map((a) => a.m.gruppo),
+      ...[...this.abitanti.values()].map((a) => a.m.gruppo), this.castoro.gruppo,
     ];
     const hit = ray.intersectObjects(candidati, true)[0];
     if (!hit) return;
@@ -1530,6 +1556,7 @@ export class Scena {
     if (Math.floor(t / 5) !== Math.floor((t - dt) / 5)) this.luceDelGiorno();
 
     for (const ab of this.abitanti.values()) this.muovi(ab, dt, t);
+    this.fisica(dt);
 
     for (const u of this.uova.values()) {
       if (u === this.schiusaIn?.uovo) continue;
@@ -1610,6 +1637,7 @@ export class Scena {
       this.anelloSel.scale.setScalar(grande * (1 + Math.sin(t * 5) * 0.06));
     }
     this.aggiornaSchiusa(dt, t);
+    this.castoro.anima(t, dt, this.momento() === 'notte');
     this.stelline = this.stelline.filter((st) => {
       st.vita -= dt;
       st.o.position.y += dt * 0.6;
@@ -1683,16 +1711,17 @@ export class Scena {
     }
     ab.m.corpo.scale.set(1, 1, 1);
 
-    const dir = ab.meta.clone().sub(g.position);
-    const dist = dir.length();
+    if (ab.deviazione && (ab.deviazione.distanceTo(g.position) < 0.3 || ab.dati.addormentato)) ab.deviazione = null;
+    const dir = (ab.deviazione ?? ab.meta).clone().sub(g.position);
+    const dist = ab.deviazione ? Math.max(0.2, dir.length()) : dir.length();
     const fase = ab.dati.fase;
     const cammina = ab.pausa <= 0 && dist >= 0.15;
 
-    // postura: tutti a quattro zampe come gli animali veri; si alzano sulle zampe dietro solo per lavorare
-    // (con l'attrezzo in mano) e per andare in moto o in bici
+    // postura: tutti a quattro zampe come gli animali veri; si alzano sulle zampe dietro solo alla loro
+    // postazione di lavoro (con l'attrezzo in mano) e per andare in moto o in bici
     const alLavoro = ab.attivita?.id === 'lavoro' && fase !== 'cucciolo';
-    const inSella = alLavoro && !!defMestiere(ab.dati.mestiere)?.lavoro.mezzo;
-    const erettoVoluto = inSella || (alLavoro && !cammina) ? 1 : 0;
+    const inSella = alLavoro && !!ab.attivita?.giro && !!defMestiere(ab.dati.mestiere)?.lavoro.mezzo;
+    const erettoVoluto = inSella || (alLavoro && !cammina && this.allaPostazione(ab)) ? 1 : 0;
     ab.eretto += (erettoVoluto - ab.eretto) * Math.min(1, dt * 3);
     posa(ab.m, ab.eretto);
 
@@ -1759,10 +1788,11 @@ export class Scena {
     }
 
     // in moto o in bici (chi lavora in giro): va più veloce, seduto, le mani sul manubrio
-    const mezzo = ab.attivita?.id === 'lavoro' && fase !== 'cucciolo' ? defMestiere(ab.dati.mestiere)?.lavoro.mezzo : undefined;
+    const mezzo = ab.attivita?.id === 'lavoro' && ab.attivita.giro && fase !== 'cucciolo' ? defMestiere(ab.dati.mestiere)?.lavoro.mezzo : undefined;
     if (mezzo) {
       this.inSella(ab, mezzo);
       dir.normalize();
+      this.sterza(ab, dir, dist);
       g.position.addScaledVector(dir, Math.min(dist, (mezzo === 'moto' ? 2.6 : 1.7) * dt));
       const verso = Math.atan2(dir.x, dir.z);
       const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
@@ -1781,6 +1811,7 @@ export class Scena {
     const gioca = ab.amico && fase === 'cucciolo';
     const vel = (fase === 'cucciolo' ? (gioca ? 1.5 : 0.7) : 0.95) * (ab.dati.umore > 50 ? 1 : 0.6);
     dir.normalize();
+    this.sterza(ab, dir, dist);
     g.position.addScaledVector(dir, Math.min(dist, vel * dt));
     const verso = Math.atan2(dir.x, dir.z);
     const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
@@ -1799,6 +1830,169 @@ export class Scena {
       ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(ab.m)));
     }
     if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(ab.passo) * 0.4;
+  }
+
+  // ---------- fisica: nessuno passa attraverso le case, gli attrezzi, il laghetto o gli altri ----------
+
+  private ostacoli: { x: number; z: number; r: number; chi?: string }[] = [];
+  private ostacoliTra = 0;
+
+  /** Raggio d'ingombro di un animale (i piccoli sono più piccoli). */
+  private spazioDi(ab: Abitante): number {
+    return 0.3 * ab.m.gruppo.scale.x;
+  }
+
+  /** Le cose ferme del villaggio, come cerchi per terra: case, attrezzi, pozzo, mulino, falò, castagno, cespugli... */
+  private rifaiOstacoli() {
+    const o: { x: number; z: number; r: number; chi?: string }[] = [];
+    const v = new THREE.Vector3();
+    for (const [id, b] of this.botteghe) {
+      o.push({ x: b.position.x, z: b.position.z, r: (b.userData.ingombroCasa as number) ?? 1.4 });
+      b.updateMatrixWorld(true);
+      b.traverse((ch) => {
+        const r = ch.userData.spazio as number | undefined;
+        if (!r || ch === b) return;
+        ch.getWorldPosition(v);
+        o.push({ x: v.x, z: v.z, r, chi: ch.userData.suaPostazione ? id : undefined });
+      });
+    }
+    for (const e of this.edifici.values()) {
+      o.push({ x: e.position.x, z: e.position.z, r: Math.max(0.6, this.ingombro(e).r * 0.85) });
+    }
+    const raggi: Record<string, number> = { pozzo: 0.75, torretta: 1.0, mulino: 1.35, falo: 0.55, cartello: 0.2, aiuola: 0.55 };
+    for (const [id, g] of this.strutture) if (raggi[id]) o.push({ x: g.position.x, z: g.position.z, r: raggi[id] });
+    o.push({ x: this.castagno.position.x, z: this.castagno.position.z, r: 0.55 });
+    for (const g of this.oggetti.values()) o.push({ x: g.position.x, z: g.position.z, r: 0.2 });
+    for (const c of this.bosco.children) {
+      if (c.userData.cosa !== 'cespuglio' || Math.hypot(c.position.x, c.position.z) > this.raggio + 0.5) continue;
+      o.push({ x: c.position.x, z: c.position.z, r: 0.42 * c.scale.x });
+    }
+    o.push(...this.castoro.ostacoli());
+    this.ostacoli = o;
+  }
+
+  /** Camminando, gira intorno a quello che ha davanti invece di andarci contro. */
+  private sterza(ab: Abitante, dir: THREE.Vector3, dist: number) {
+    const p = ab.m.gruppo.position, ra = this.spazioDi(ab);
+    let sx = 0, sz = 0;
+    for (const o of this.ostacoli) {
+      if (o.chi === ab.dati.id) continue;
+      const dx = o.x - p.x, dz = o.z - p.z, d = Math.hypot(dx, dz);
+      const R = o.r + ra + 0.15;
+      if (d > R + 0.9 || d < 1e-4 || dist < d - o.r) continue; // lontano, o la meta è prima dell'ostacolo
+      const ux = dx / d, uz = dz / d;
+      const avanti = ux * dir.x + uz * dir.z;
+      if (avanti <= 0.05) continue;
+      // di lato: sceglie una parte e la tiene finché non ha girato intorno (se no tentenna a destra e sinistra)
+      const lato = ab.latoSterza ??= Math.sign(dir.x * uz - dir.z * ux) || (hash(ab.dati.id) % 2 ? 1 : -1);
+      const forza = avanti * (1 - Math.max(0, d - R) / 0.9) * 2;
+      sx += -uz * lato * forza - ux * forza * 0.3;
+      sz += ux * lato * forza - uz * forza * 0.3;
+    }
+    // e intorno agli altri animali che stanno fermi (seduti, al lavoro, a dormire)
+    for (const b of this.abitanti.values()) {
+      if (b === ab || this.trattenuti.has(b.dati.id)) continue;
+      const q = b.m.gruppo.position;
+      const dx = q.x - p.x, dz = q.z - p.z;
+      if (Math.abs(dx) > 2 || Math.abs(dz) > 2) continue;
+      const d = Math.hypot(dx, dz), R = this.spazioDi(b) + ra + 0.1;
+      if (d > R + 0.8 || d < 1e-4 || dist < d) continue;
+      const ux = dx / d, uz = dz / d, avanti = ux * dir.x + uz * dir.z;
+      if (avanti <= 0.1) continue;
+      const lato = ab.latoSterza ??= Math.sign(dir.x * uz - dir.z * ux) || (hash(ab.dati.id) % 2 ? 1 : -1);
+      const fermo = b.pausa > 0 || b.dati.addormentato || b.meta.distanceTo(q) < 0.15;
+      const forza = avanti * (1 - Math.max(0, d - R) / 0.8) * (fermo ? 2 : 0.8);
+      sx += -uz * lato * forza;
+      sz += ux * lato * forza;
+    }
+    if (sx || sz) {
+      dir.x += sx;
+      dir.z += sz;
+      dir.normalize();
+    } else ab.latoSterza = undefined;
+  }
+
+  /** Dopo che tutti si sono mossi: nessuno resta dentro le cose o addosso agli altri, e chi si incastra si ferma. */
+  private fisica(dt: number) {
+    this.ostacoliTra -= dt;
+    if (this.ostacoliTra <= 0) {
+      this.ostacoliTra = 1;
+      this.rifaiOstacoli();
+    }
+    const lg = this.strutture.get('laghetto');
+    const tutti = [...this.abitanti.values()].filter((ab) => !this.trattenuti.has(ab.dati.id));
+    // chi sta fermo apposta (dorme, lavora alla postazione, chiacchiera) non si fa spostare dagli altri
+    const fermo = (ab: Abitante) => ab.dati.addormentato || (ab.pausa <= 0 && ab.meta.distanceTo(ab.m.gruppo.position) < 0.15 && !!ab.attivita) || this.allaPostazione(ab) || (!!ab.amico && ab.incontro > 0);
+    for (const ab of tutti) {
+      const p = ab.m.gruppo.position, ra = this.spazioDi(ab);
+      if (ab.dati.addormentato && this.momento() === 'notte') continue;
+      // le cose del villaggio
+      for (const o of this.ostacoli) {
+        const R = o.r + (o.chi === ab.dati.id ? 0.05 : ra);
+        const dx = p.x - o.x, dz = p.z - o.z, d = Math.hypot(dx, dz);
+        if (d >= R) continue;
+        if (d < 1e-4) { p.x += R; continue; }
+        p.x = o.x + (dx / d) * R;
+        p.z = o.z + (dz / d) * R;
+      }
+      // il laghetto (si sta sulla riva, non nell'acqua)
+      if (lg) {
+        const c = Math.cos(lg.rotation.y), s = Math.sin(lg.rotation.y);
+        const X = p.x - lg.position.x, Z = p.z - lg.position.z;
+        const fuori = fuoriDalLago(X * c - Z * s, X * s + Z * c, 1.02 + ra * 0.3);
+        if (fuori) {
+          const [x, z] = fuori;
+          p.x = lg.position.x + x * c + z * s;
+          p.z = lg.position.z - x * s + z * c;
+        }
+      }
+    }
+    // tra animali: ognuno il suo spazio
+    for (let i = 0; i < tutti.length; i++) {
+      const a = tutti[i];
+      for (let j = i + 1; j < tutti.length; j++) {
+        const b = tutti[j];
+        const pa = a.m.gruppo.position, pb = b.m.gruppo.position;
+        const R = this.spazioDi(a) + this.spazioDi(b);
+        const dx = pb.x - pa.x, dz = pb.z - pa.z;
+        if (Math.abs(dx) > R || Math.abs(dz) > R) continue;
+        let d = Math.hypot(dx, dz);
+        if (d >= R) continue;
+        let ux = dx / (d || 1), uz = dz / (d || 1);
+        if (d < 1e-4) { ux = 1; uz = 0; d = 0; }
+        const fa = fermo(a), fb = fermo(b);
+        if (fa && fb) continue;
+        const spinta = R - d;
+        const ka = fa ? 0 : fb ? 1 : 0.5, kb = 1 - ka;
+        pa.x -= ux * spinta * ka; pa.z -= uz * spinta * ka;
+        pb.x += ux * spinta * kb; pb.z += uz * spinta * kb;
+      }
+    }
+    // chi cammina ma non si avvicina più alla meta per un po' (qualcosa in mezzo): si ferma lì e cambia idea
+    for (const ab of tutti) {
+      if (ab.dati.addormentato || ab.pausa > 0 || ab.salto > 0) { ab.fermo = 0; continue; }
+      const dist = ab.meta.distanceTo(ab.m.gruppo.position);
+      if (dist < 0.15) { ab.fermo = 0; ab.distPrima = dist; continue; }
+      if (dist < ab.distPrima - 0.01 || dist > ab.distPrima + 0.6) { ab.distPrima = dist; ab.fermo = 0; continue; }
+      ab.fermo += dt;
+      if (ab.fermo > 2.5) {
+        ab.fermo = 0;
+        ab.distPrima = Infinity;
+        if (ab.deviazione) { ab.deviazione = null; continue; }
+        if (ab.attivita?.id === 'lavoro' && !ab.attivita.giro && dist < 1.5) {
+          // quasi alla sua postazione ma qualcosa lo blocca: ci scivola dentro
+          ab.m.gruppo.position.lerp(ab.meta, 0.6);
+        } else if (ab.attivita?.id === 'lavoro' && !ab.attivita.giro) {
+          // bloccato per strada: fa un passo di lato e poi riprova
+          const g = ab.m.gruppo.position, lato = Math.random() < 0.5 ? 1 : -1;
+          const vx = ab.meta.x - g.x, vz = ab.meta.z - g.z, l = Math.hypot(vx, vz) || 1;
+          ab.deviazione = new THREE.Vector3(g.x - (vz / l) * 1.6 * lato - (vx / l) * 0.6, 0, g.z + (vx / l) * 1.6 * lato - (vz / l) * 0.6);
+        } else {
+          ab.meta.copy(ab.m.gruppo.position);
+          if (ab.attivita && ab.attivita.id !== 'lavoro') this.fineAttivita(ab);
+        }
+      }
+    }
   }
 
   /** Quanti altri sono già lì vicino (in cammino o arrivati). */
@@ -1849,10 +2043,12 @@ export class Scena {
     const def = defMestiere(ab.dati.mestiere);
     const tutti = [...this.abitanti.values()].filter((b) => !b.dati.addormentato);
     const r = Math.random();
-    if (momento === 'lavoro' && def && r < 0.65) {
-      // ognuno lavora a modo suo: chi alla bottega, chi in giro in moto, chi al laghetto, chi nell'orto...
-      ab.attivita = { id: 'lavoro', tempo: 14 + Math.random() * 12, prossimo: 1, tappa: 5 + Math.random() * 3 };
-      ab.meta = this.postoLavoro(ab, def);
+    if (momento === 'lavoro' && def && r < 0.7 && ab.dati.fase !== 'cucciolo') {
+      // ognuno lavora alla sua postazione, fuori dalla porta di casa; chi lavora in giro (postino, dottore,
+      // motociclista...) ogni tanto fa il suo giro di consegne, e il pescatore va a pescare al laghetto
+      const giro = def.lavoro.dove !== 'casa' && def.lavoro.dove !== 'piazza' && def.lavoro.dove !== 'bosco' && this.botteghe.has(ab.dati.id) ? Math.random() < 0.4 : !this.botteghe.has(ab.dati.id);
+      ab.attivita = { id: 'lavoro', tempo: giro ? 14 + Math.random() * 10 : 35 + Math.random() * 35, prossimo: 1, tappa: 5 + Math.random() * 3, giro };
+      ab.meta = giro ? this.postoLavoro(ab, def) : this.postazione(ab)!.punto;
       return;
     }
     // incontri: solo qualcuno, mai tutti insieme (al massimo un terzo del villaggio in chiacchiere)
@@ -1919,22 +2115,42 @@ export class Scena {
     const g = ab.m.gruppo;
     if (!def) return;
     const lav = def.lavoro;
-    if (lav.mezzo) this.inSella(ab, lav.mezzo);
-    // chi lavora in giro, dopo un po' passa alla porta successiva
-    if (lav.dove === 'giro') {
-      att.tappa = (att.tappa ?? 6) - dt;
-      if (att.tappa <= 0) {
-        att.tappa = 5 + Math.random() * 4;
-        ab.meta = this.postoLavoro(ab, def);
+    if (att.giro) {
+      // in giro: niente gesti del mestiere (quelli si fanno solo alla postazione), solo la sua strada
+      if (ab.m.accessorio?.userData.grembiule) ab.m.accessorio.visible = false;
+      if (lav.mezzo) this.inSella(ab, lav.mezzo);
+      if (lav.dove === 'acqua') {
+        // il pescatore pesca seduto sulla riva, con la canna
+        const lg = this.strutture.get('laghetto');
+        if (lg) guardaVerso(lg.position.x, lg.position.z);
+        if (!ab.canna) { ab.canna = creaCanna(); ab.m.zampe[0].add(ab.canna); }
+        this.siede(ab, dt);
+        d0.rotation.x = -0.9 + Math.sin(t * 1.5) * 0.08;
+      } else {
+        // alla porta di qualcuno: si ferma un attimo, si guarda intorno, poi va alla prossima
+        ab.m.testa.rotation.y = Math.sin(t * 0.8) * 0.3;
+        att.tappa = (att.tappa ?? 6) - dt;
+        if (att.tappa <= 0) {
+          att.tappa = 3 + Math.random() * 3;
+          ab.meta = this.postoLavoro(ab, def);
+        }
       }
+      if (att.prossimo <= 0) {
+        att.prossimo = 2.5 + Math.random() * 2;
+        this.fumetto(ab, lav.fumetti[Math.floor(Math.random() * lav.fumetti.length)]);
+      }
+      return;
     }
-    if (lav.dove === 'casa') {
-      const b = this.botteghe.get(ab.dati.id);
-      if (b) guardaVerso(b.position.x, b.position.z);
-    } else if (lav.dove === 'acqua') {
-      const lg = this.strutture.get('laghetto');
-      if (lg) guardaVerso(lg.position.x, lg.position.z);
+    const post = this.postazione(ab);
+    if (!post || !this.allaPostazione(ab)) {
+      // non è (ancora) alla sua postazione: ci va, a quattro zampe e senza gesti
+      if (ab.m.accessorio?.userData.grembiule) ab.m.accessorio.visible = false;
+      if (post && ab.meta.distanceTo(post.punto) > 0.05) ab.meta = post.punto.clone();
+      return;
     }
+    // alla postazione: in piedi dietro al banco, rivolto verso il villaggio
+    const dv = Math.atan2(Math.sin(post.verso - g.rotation.y), Math.cos(post.verso - g.rotation.y));
+    g.rotation.y += dv * Math.min(1, dt * 5);
     const sn = Math.sin;
     ab.m.testa.rotation.x = 0.15;
     switch (lav.gesto) {
@@ -1964,7 +2180,14 @@ export class Scena {
       case 'foto': d0.rotation.x = -1.8; d1.rotation.x = -1.8; ab.m.testa.rotation.x = 0; break;
       case 'racconta': d0.rotation.x = -0.5 - Math.abs(sn(t * 2.5)) * 1.0; d1.rotation.x = -0.5 - Math.abs(sn(t * 2.5 + 1.3)) * 1.0; ab.m.testa.rotation.x = sn(t * 4) * 0.1; break;
       case 'cura': d0.rotation.x = -1.2 + sn(t * 2) * 0.2; d1.rotation.x = -0.8; ab.m.testa.rotation.x = 0.2 + sn(t * 3) * 0.1; break;
+      // la sega avanti e indietro sull'asse, l'altra zampa tiene fermo il legno
+      case 'sega': d0.rotation.x = -1.25 + sn(t * 7) * 0.4; d1.rotation.x = -1.0; ab.m.corpo.rotation.x = 0.12 + sn(t * 7) * 0.04; ab.m.testa.rotation.x = 0.35; break;
+      // la zangola: tutte e due le zampe sul bastone, su e giù
+      case 'zangola': d0.rotation.x = d1.rotation.x = -1.4 + sn(t * 4.5) * 0.35; ab.m.corpo.position.y = Math.abs(sn(t * 4.5)) * 0.03; ab.m.testa.rotation.x = 0.2; break;
+      // timbra e mette in ordine: una zampa batte il timbro, l'altra sposta i fogli
+      case 'timbra': d0.rotation.x = -1.3 + Math.max(0, sn(t * 4)) * 0.6; d1.rotation.x = -0.9 + sn(t * 1.3) * 0.25; d1.rotation.z += sn(t * 1.3) * 0.2; ab.m.testa.rotation.x = 0.35; break;
     }
+    this.trucioli(ab, def, lav.gesto, t);
     ab.m.corpo.position.y = ab.mezzo ? 0.32 : Math.abs(sn(t * 7)) * 0.015;
     if (att.prossimo <= 0) {
       att.prossimo = 1.8 + Math.random() * 1.6;
@@ -1986,37 +2209,85 @@ export class Scena {
     ab.m.zampe[2].rotation.x = ab.m.zampe[3].rotation.x = -1.2;
   }
 
-  /** Dove lavora: davanti a casa, alla porta di un altro (postino, dottore...), all'acqua, nell'orto, nel bosco, in piazza. */
+  /** Dove va chi lavora in giro: alla porta di un altro (postino, dottore...), sulla riva del laghetto, alle aiuole. */
   private postoLavoro(ab: Abitante, def: DefMestiere): THREE.Vector3 {
-    const intorno = (x: number, z: number, r: number) => {
-      const a = Math.random() * Math.PI * 2;
-      return new THREE.Vector3(x + Math.cos(a) * r, 0, z + Math.sin(a) * r);
-    };
-    const bordo = () => {
-      const a = Math.random() * Math.PI * 2, r = Math.max(4, this.raggio - 1.8);
-      return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
-    };
     switch (def.lavoro.dove) {
-      case 'giro': {
-        // va alla porta di qualcun altro (o in un punto qualsiasi del villaggio, se non ci sono altre case)
+      case 'acqua': {
+        // il pescatore ha il suo angolo di riva, sempre lo stesso
+        const lg = this.strutture.get('laghetto');
+        if (!lg) return this.casa(ab);
+        const [x, z] = puntoLago(((hash(ab.dati.id + 'riva') % 360) * Math.PI) / 180, 1.25);
+        const c = Math.cos(lg.rotation.y), sn = Math.sin(lg.rotation.y);
+        return new THREE.Vector3(lg.position.x + x * c + z * sn, 0, lg.position.z - x * sn + z * c);
+      }
+      case 'orto': return this.luogoAttivita('fiori') ?? this.casa(ab);
+      default: {
+        // alla porta di qualcun altro (o in un punto qualsiasi del villaggio, se non ci sono altre case)
         const altre = [...this.botteghe.entries()].filter(([id]) => id !== ab.dati.id).map(([, b]) => b);
-        if (altre.length && Math.random() < 0.75) {
+        if (altre.length) {
           const b = altre[Math.floor(Math.random() * altre.length)];
-          const p = new THREE.Vector3(Math.sin(b.rotation.y), 0, Math.cos(b.rotation.y)).multiplyScalar(2.3).add(b.position).setY(0);
+          const p = new THREE.Vector3(Math.sin(b.rotation.y), 0, Math.cos(b.rotation.y)).multiplyScalar(2.6).add(b.position).setY(0);
           return p.add(new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5));
         }
         return this.postoLibero(ab, () => this.puntoCasuale());
       }
-      case 'acqua': return this.luogoAttivita('pescare') ?? bordo();
-      case 'orto': {
-        if (Math.random() < 0.5) { const k = this.casa(ab); return intorno(k.x, k.z, 1.2); }
-        return this.luogoAttivita('fiori') ?? bordo();
-      }
-      case 'bosco': return this.postoLibero(ab, bordo);
-      case 'piazza': return this.postoLibero(ab, () => intorno(0, 1.5, 2.2 + Math.random()));
-      default: return this.casa(ab);
     }
   }
+
+  /**
+   * La postazione di lavoro di chi ha una casa con un mestiere: dove sta (dietro al banco), verso dove guarda
+   * e dov'è il banco. È nella casa (creaAttrezziMestiere), quindi segue la casa se Giada la sposta o la gira.
+   */
+  private postazione(ab: Abitante): { punto: THREE.Vector3; verso: number; banco: THREE.Vector3 } | null {
+    const b = this.botteghe.get(ab.dati.id);
+    const p = b ? trovaPostazione(b) : null;
+    if (!b || !p) return null;
+    const c = Math.cos(b.rotation.y), s = Math.sin(b.rotation.y);
+    const mondo = (x: number, z: number) => new THREE.Vector3(b.position.x + x * c + z * s, 0, b.position.z - x * s + z * c);
+    return { punto: mondo(p.x, p.z), verso: b.rotation.y + p.verso, banco: mondo(p.banco.x, p.banco.z) };
+  }
+
+  /** È arrivato alla sua postazione? (solo lì si alza e fa i gesti del mestiere) */
+  private allaPostazione(ab: Abitante): boolean {
+    if (ab.attivita?.id !== 'lavoro' || ab.attivita.giro) return false;
+    const p = this.postazione(ab);
+    return !!p && p.punto.distanceTo(ab.m.gruppo.position) < 0.35;
+  }
+
+  /** Si siede sulle zampe dietro (come un cane), restando con le zampe davanti a terra o libere. */
+  private siede(ab: Abitante, dt: number) {
+    ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, -0.04, dt * 4);
+    ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, 0, dt * 4)));
+  }
+
+  /** Scintille, trucioli, farina: quello che vola via dal banco mentre si lavora. */
+  private trucioli(ab: Abitante, def: DefMestiere, gesto: string, t: number) {
+    const colpo: Record<string, [number, string[]]> = {
+      martella: [6, def.id === 'fabbro' ? ['#ffb347', '#ffe08a', '#ff7a2a'] : ['#c8a06a', '#a8a49c']],
+      sega: [7, ['#e8c890', '#f4dcae']], taglia: [3, ['#e8c890', '#a06a40']], impasta: [5, ['#ffffff', '#f4ead8']],
+      pianta: [4, ['#7a5232', '#8a6a42']], timbra: [4, ['#d8443a']],
+    };
+    const c = colpo[gesto];
+    if (!c) return;
+    // un colpo ogni mezzo giro del gesto
+    const fase = Math.floor((t * c[0]) / Math.PI);
+    if (fase === ab.ultimoColpo) return;
+    ab.ultimoColpo = fase;
+    if (fase % 2) return;
+    const p = this.postazione(ab);
+    if (!p) return;
+    const dove = p.banco.clone().setY(def.id === 'fabbro' ? 0.65 : gesto === 'pianta' ? 0.1 : 0.78);
+    for (let i = 0; i < 4; i++) {
+      const col = c[1][i % c[1].length];
+      if (!this.matBriciole.has(col)) this.matBriciole.set(col, new THREE.MeshBasicMaterial({ color: col }));
+      const o = new THREE.Mesh(this.geoBriciola, this.matBriciole.get(col)!);
+      o.position.copy(dove).add(new THREE.Vector3((Math.random() - 0.5) * 0.3, 0, (Math.random() - 0.5) * 0.3));
+      this.scene.add(o);
+      this.effimeri.push({ o, vita: 0.5 + Math.random() * 0.3, vel: new THREE.Vector3((Math.random() - 0.5) * 1.6, 1.4 + Math.random() * 1.2, (Math.random() - 0.5) * 1.6) });
+    }
+  }
+  private geoBriciola = new THREE.BoxGeometry(0.035, 0.035, 0.035);
+  private matBriciole = new Map<string, THREE.MeshBasicMaterial>();
 
   /** Un punto a caso sulla riva del laghetto (il lago è ovale e si può girare con l'arredo). */
   private rivaDelLago(): THREE.Vector3 {
@@ -2070,15 +2341,16 @@ export class Scena {
     };
     ab.m.testa.rotation.x = 0;
     switch (att.id) {
+      // (fuori dalla postazione nessuno alza le zampe davanti: si fa tutto da animali veri, a quattro zampe o seduti)
       case 'cantare':
+        this.siede(ab, dt);
         ab.m.testa.rotation.z = Math.sin(t * 3) * 0.2;
-        ab.m.testa.rotation.x = -0.15;
-        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -1.2 + Math.sin(t * 3) * 0.2));
+        ab.m.testa.rotation.x = -0.35;
         break;
       case 'ballare':
         g.rotation.y += dt * 4;
         ab.m.corpo.position.y = Math.abs(Math.sin(t * 8)) * 0.15;
-        ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(t * 8 + i) * 0.8));
+        ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(t * 8 + i) * 0.4));
         break;
       case 'pescare': {
         const lg = this.strutture.get('laghetto');
@@ -2088,26 +2360,31 @@ export class Scena {
           ab.canna = creaCanna();
           ab.m.zampe[0].add(ab.canna);
         }
+        this.siede(ab, dt);
         ab.m.zampe[0].rotation.x = -0.9 + Math.sin(t * 1.5) * 0.08;
         break;
       }
       case 'raccogliere':
       case 'fiori':
-        ab.m.corpo.rotation.x = 0.35 + Math.sin(t * 2.5) * 0.12;
-        ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -0.8 + Math.sin(t * 5 + i * 2) * 0.4));
+        // muso a terra e una zampa che raspa un po' (come fanno i cani)
+        ab.m.corpo.rotation.x = 0.3 + Math.sin(t * 2.5) * 0.06;
+        ab.m.testa.rotation.x = 0.35;
+        ab.m.zampe[0].rotation.x = -0.25 + Math.sin(t * 7) * 0.25;
+        ab.m.zampe[1].rotation.x = 0;
         if (att.id === 'raccogliere') guardaVerso(this.castagno.position.x, this.castagno.position.z);
         break;
       case 'intagliare':
-        ab.m.corpo.position.y = -0.08;
-        ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -1.0 + Math.sin(t * 9 + i * Math.PI) * 0.25));
-        ab.m.testa.rotation.x = 0.3;
+        // sdraiato, rosicchia e liscia un pezzetto di legno tra le zampe
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, -0.08, dt * 4);
+        ab.m.testa.rotation.x = 0.4 + Math.abs(Math.sin(t * 9)) * 0.06;
         break;
       case 'storie': {
         const fl = this.strutture.get('falo');
         const p = fl ? [fl.position.x, fl.position.z] : POSTI_COSTRUZIONI.falo;
         guardaVerso(p[0], p[1]);
-        ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -0.5 - Math.abs(Math.sin(t * 2.5 + i * 1.3)) * 0.8));
-        ab.m.testa.rotation.x = Math.sin(t * 4) * 0.1;
+        this.siede(ab, dt);
+        ab.m.testa.rotation.x = Math.sin(t * 4) * 0.12;
+        ab.m.testa.rotation.z = Math.sin(t * 1.7) * 0.12;
         break;
       }
       case 'stelle':
@@ -2143,8 +2420,8 @@ export class Scena {
         // sgranocchia qualcosa: zampine alla bocca
         ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
         ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
-        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -1.4 + Math.sin(t * 10) * 0.08));
-        ab.m.testa.rotation.x = 0.1 + Math.abs(Math.sin(t * 8)) * 0.06;
+        // sgranocchia qualcosa che tiene tra le zampe, col muso giù
+        ab.m.testa.rotation.x = 0.45 + Math.abs(Math.sin(t * 8)) * 0.06;
         if (att.prossimo <= 0) { att.prossimo = 3 + Math.random() * 3; this.fumetto(ab, ['🌰', '🍓', '☺'][Math.floor(Math.random() * 3)]); }
         break;
       }
@@ -2162,10 +2439,12 @@ export class Scena {
         if (att.prossimo <= 0) { att.prossimo = 3 + Math.random() * 3; this.fumetto(ab, '✿'); }
         break;
       case 'stiracchia': {
-        const s = Math.min(1, Math.sin(Math.min(Math.PI, (att.tempo % 4) * 0.8)) * 1.3);
-        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -2.6 * s));
-        ab.m.testa.rotation.x = -0.3 * s;
-        ab.m.corpo.scale.set(1, 1 + 0.05 * s, 1);
+        // si stiracchia come un gatto: zampe davanti allungate in avanti, sedere all'insù
+        const s = Math.max(0, Math.min(1, Math.sin(Math.min(Math.PI, (att.tempo % 4) * 0.8)) * 1.3));
+        ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = -0.7 * s));
+        ab.m.corpo.rotation.x = 0.22 * s;
+        ab.m.testa.rotation.x = -0.25 * s;
+        ab.m.corpo.scale.set(1, 1, 1 + 0.05 * s);
         break;
       }
       case 'saltella':

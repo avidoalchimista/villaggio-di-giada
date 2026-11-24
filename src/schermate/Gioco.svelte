@@ -17,7 +17,8 @@
     auguriDi, CASTAGNE_IN_REGALO, chiHaFattoLaTorta, chiSuona, eVigilia, festaDaFare, festaInRitardo, fraseDiFesta, FRASI_VIGILIA, invitati, ordinale, quantaFesta, villaggioInFesta,
   } from '../lib/festa';
   import { giorniTra } from '../lib/date';
-  import { arredoDi, sposta } from '../lib/arredo';
+  import { allargaCase, arredoDi, sposta } from '../lib/arredo';
+  import { giorniAllAlbero } from '../lib/castoro';
   import { nomeMestiere } from '../lib/mestieri';
   import * as THREE from 'three';
   import {
@@ -76,7 +77,8 @@
   const C = frasi.corvo as Record<string, string>;
   const corvo = (id: string, testo?: string): RigaDialogo => ({ chi: 'Corvo', testo: testo ?? C[id], voce: 'corvo', audioId: testo ? undefined : id });
   const scegli = <T,>(l: T[], k: number) => l[Math.abs(k) % l.length];
-  const dalCorvo = (eventi: Evento[]) => eventi.map((e) => ({ chi: 'Corvo', voce: 'corvo' as const, testo: e.testo }));
+  // (il castoro racconta lui quello che fa)
+  const dalCorvo = (eventi: Evento[]): RigaDialogo[] => eventi.map((e) => (e.tipo === 'castoro' ? { chi: 'Castoro', voce: 'animale' as const, testo: e.testo } : { chi: 'Corvo', voce: 'corvo' as const, testo: e.testo }));
   const chiDice = (a: Animale) => `${a.nome || nomeAnimale(a)} ${simbolo(a)}`;
 
   // ---------- primo piano: schiusa e sorprese "mentre eri via" ----------
@@ -320,6 +322,8 @@
         arredoDi(st).caseFissate = true;
       });
     }
+    // le postazioni di lavoro davanti alle case hanno bisogno di spazio: le case troppo vicine si allargano (una volta)
+    if (!s.arredo?.caseLarghe) cambiaArredo((st) => { allargaCase(arredoDi(st)); arredoDi(st).caseLarghe = true; });
     const fareFesta = app.provaCompleanno === 1 || festaDaFare(s, dataDiOggi());
     if (inFesta) scena.impostaFesta(true, !fareFesta);
     aggiornaMeteo();
@@ -449,6 +453,14 @@
       } else {
         dialogo = { righe: [{ chi: 'Castagno', voce: 'narratore', testo: 'Per ora non ci sono castagne mature. Ne cadono un po\' ogni giorno, finché scrivi nel diario.' }] };
       }
+      return;
+    }
+    if (b.tipo === 'castoro') {
+      if (!s.castoro) return;
+      const giorni = giorniAllAlbero(s.castoro, dataDiOggi());
+      dialogo = { righe: [{ chi: 'Castoro', voce: 'animale', testo: scena?.castoroDorme
+        ? 'Zzz… crunch… zzz… (il castoro dorme accanto al suo albero)'
+        : `Crunch crunch! Sto rosicchiando questo albero, piano piano. ${giorni === 1 ? 'Domani cade!' : `Ancora ${giorni} giorni e cade.`}${s.castoro.totale ? ` Finora ne ho fatti cadere ${s.castoro.totale}.` : ''}` }] };
       return;
     }
     if (b.tipo === 'corvo') {

@@ -1852,6 +1852,16 @@ function formaLago(scala: number) {
   }
   return new THREE.ShapeGeometry(f);
 }
+/** Se il punto (in coordinate del lago) è nell'acqua, il punto più vicino sulla riva (a k volte il bordo); se no null. */
+export function fuoriDalLago(x: number, z: number, k = 1.05): [number, number] | null {
+  const nx = x / RX_LAGO, nz = z / RZ_LAGO;
+  const n = Math.hypot(nx, nz), th = Math.atan2(nz, nx);
+  const bordo = rivaLago(th) * k;
+  if (n >= bordo) return null;
+  if (n < 1e-4) return puntoLago(th, k);
+  return [x * (bordo / n), z * (bordo / n)];
+}
+
 /** Un punto sulla riva (o dentro il lago, con k < 1). */
 export function puntoLago(th: number, k = 1): [number, number] {
   const r = rivaLago(th) * k;
@@ -2584,7 +2594,7 @@ function tettoA(l: number, h: number, p: number, m: THREE.Material): THREE.Mesh 
 }
 
 /** Mezza larghezza e cima del tetto di ogni casa, per appoggiare le migliorie. */
-const SAGOMA_CASA: Record<Specie, { mezza: number; cima: number }> = {
+export const SAGOMA_CASA: Record<Specie, { mezza: number; cima: number }> = {
   volpe: { mezza: 1.0, cima: 2.5 }, daino: { mezza: 1.0, cima: 3.3 }, lepre: { mezza: 1.2, cima: 2.8 },
   riccio: { mezza: 1.25, cima: 2.55 }, scoiattolo: { mezza: 0.8, cima: 3.65 }, tasso: { mezza: 1.6, cima: 1.35 },
   cavallo: { mezza: 1.25, cima: 2.3 }, mucca: { mezza: 1.05, cima: 2.9 }, asino: { mezza: 1.1, cima: 2.1 },

@@ -10,7 +10,8 @@ export type Dove = 'casa' | 'giro' | 'acqua' | 'orto' | 'bosco' | 'piazza';
 /** Il gesto che fa mentre lavora. */
 export type Gesto =
   | 'martella' | 'mescola' | 'impasta' | 'cuce' | 'pesca' | 'dipinge' | 'suona' | 'legge' | 'scrive' | 'pianta'
-  | 'vende' | 'avvita' | 'taglia' | 'annaffia' | 'guarda' | 'consegna' | 'foto' | 'racconta' | 'saluta' | 'cura';
+  | 'vende' | 'avvita' | 'taglia' | 'annaffia' | 'guarda' | 'consegna' | 'foto' | 'racconta' | 'saluta' | 'cura'
+  | 'sega' | 'zangola' | 'timbra';
 
 export interface DefMestiere {
   id: string;
@@ -27,9 +28,24 @@ export interface DefMestiere {
   occhiali?: boolean;
   inMano: string | null; // attrezzo in mano mentre lavora
   lavoro: { dove: Dove; gesto: Gesto; fumetti: string[]; mezzo?: 'moto' | 'bici' };
+  /**
+   * La postazione di lavoro, allestita fuori dalla porta (vedi scena/botteghe.ts): il banco, l'incudine,
+   * la madia, la macchina da cucire... I gesti del mestiere si fanno solo lì, in piedi dietro al banco.
+   */
+  postazione: string;
 }
 
-const d = (x: DefMestiere) => x;
+// la postazione di ognuno (l'attrezzo grande dove lavora: vedi creaPostazione in scena/botteghe.ts)
+const POSTAZIONE: Record<string, string> = {
+  fabbro: 'incudine', motociclista: 'moto-cavalletto', pompiere: 'idrante', taglialegna: 'ceppo', guardaboschi: 'piantine',
+  esploratore: 'tavolo-mappe', cuoco: 'pentolone', fornaio: 'madia', pasticcere: 'banco-dolci', gelataio: 'carretto-gelati',
+  guaritore: 'banco-erbe', postino: 'banco-posta', locandiere: 'bancone', artigiano: 'banco-falegname', bibliotecario: 'banco-libri',
+  orologiaio: 'banco-orologi', astronomo: 'telescopio', inventore: 'banco-invenzioni', maestro: 'lavagna', costruttore: 'muretto',
+  mercante: 'bancone', mesticheria: 'bancone', fruttivendolo: 'bancone', calzolaio: 'banco-calzolaio', capovillaggio: 'scrivania',
+  giardiniere: 'banco-vasi', pescatore: 'rete-stesa', apicoltore: 'alveare', contadino: 'orto', mugnaio: 'macina', lattaio: 'zangola',
+  musicista: 'leggio', pittore: 'cavalletto', cantastorie: 'teatrino', sarto: 'macchina-cucire', vasaio: 'tornio', fotografo: 'treppiede',
+};
+const d = (x: Omit<DefMestiere, 'postazione'>): DefMestiere => ({ ...x, postazione: POSTAZIONE[x.id] ?? 'banco' });
 
 export const MESTIERI: DefMestiere[] = [
   // ---------- coraggio ----------
@@ -47,10 +63,10 @@ export const MESTIERI: DefMestiere[] = [
     inMano: 'ascia', lavoro: { dove: 'bosco', gesto: 'taglia', fumetti: ['🪓', '🌲', '!'] } }),
   d({ id: 'guardaboschi', m: 'guardaboschi', f: 'guardaboschi', virtu: 'coraggio', insegna: 'GUARDIA FORESTALE', simbolo: '🌲', cosa: 'veglia sul bosco e sugli alberi', colore: '#3f7a4a', tenda: null,
     attrezzi: ['cartello-bosco', 'lanterna', 'pino'], divisa: { testa: 'tesa:verde:tinta', corpo: 'giacca:verde:tinta', collo: 'fischietto:giallo:tinta' },
-    inMano: 'binocolo', lavoro: { dove: 'bosco', gesto: 'guarda', fumetti: ['🌲', '👀', '✿'] } }),
+    inMano: 'binocolo', lavoro: { dove: 'bosco', gesto: 'pianta', fumetti: ['🌲', '👀', '✿'] } }),
   d({ id: 'esploratore', m: 'esploratore', f: 'esploratrice', virtu: 'coraggio', insegna: 'ESPLORATORI', simbolo: '🧭', cosa: 'va a scoprire i sentieri del bosco', colore: '#c8a030', tenda: null,
     attrezzi: ['tenda-campo', 'mappa', 'zaino'], divisa: { testa: 'coloniale:panna:tinta', corpo: 'gilet:senape:tinta', schiena: 'zainetto:verde:tinta' },
-    inMano: 'cannocchiale', lavoro: { dove: 'bosco', gesto: 'guarda', fumetti: ['🧭', '?', '!'] } }),
+    inMano: 'cannocchiale', lavoro: { dove: 'bosco', gesto: 'scrive', fumetti: ['🧭', '?', '!'] } }),
 
   // ---------- umanità ----------
   d({ id: 'cuoco', m: 'cuoco', f: 'cuoca', virtu: 'umanita', insegna: 'TRATTORIA', simbolo: '🍲', cosa: 'cucina la zuppa per tutti', colore: '#d8443a', tenda: ['#d8443a', '#fff4e0'],
@@ -70,7 +86,7 @@ export const MESTIERI: DefMestiere[] = [
     inMano: 'valigetta', lavoro: { dove: 'giro', gesto: 'cura', fumetti: ['✚', '♥', '☺'] } }),
   d({ id: 'postino', m: 'postino', f: 'postina', virtu: 'umanita', insegna: 'POSTA', simbolo: '✉', cosa: 'porta le lettere a tutti', colore: '#3a5aa8', tenda: null,
     attrezzi: ['buca-lettere', 'pacchi', 'bici'], divisa: { testa: 'visiera:blu:tinta', corpo: 'giacca:blu:tinta', schiena: 'sacca:marrone:tinta' },
-    inMano: 'lettera', lavoro: { dove: 'giro', gesto: 'consegna', fumetti: ['✉', '♥', '!'], mezzo: 'bici' } }),
+    inMano: 'lettera', lavoro: { dove: 'giro', gesto: 'timbra', fumetti: ['✉', '♥', '!'], mezzo: 'bici' } }),
   d({ id: 'locandiere', m: 'locandiere', f: 'locandiera', virtu: 'umanita', insegna: 'LOCANDA', simbolo: '🍵', cosa: 'serve tè caldo e frittelle', colore: '#8a2a3a', tenda: ['#8a2a3a', '#f4ecd8'],
     attrezzi: ['tavolino', 'botte', 'lanterna'], divisa: { corpo: 'gilet:bordeaux:tinta', collo: 'papillon:nero:tinta' },
     inMano: 'vassoio', lavoro: { dove: 'casa', gesto: 'vende', fumetti: ['🍵', '☺', '♪'] } }),
@@ -78,7 +94,7 @@ export const MESTIERI: DefMestiere[] = [
   // ---------- saggezza ----------
   d({ id: 'artigiano', m: 'falegname', f: 'falegname', virtu: 'saggezza', insegna: 'FALEGNAMERIA', simbolo: '🪚', cosa: 'costruisce sedie e tavoli di legno', colore: '#a06a40', tenda: null,
     attrezzi: ['assi', 'sedia', 'cavalletto-sega'], divisa: { testa: 'coppola:marrone:tinta', corpo: 'salopette:blu:tinta' },
-    inMano: 'sega', lavoro: { dove: 'casa', gesto: 'taglia', fumetti: ['🪚', '✦', '☺'] } }),
+    inMano: 'sega', lavoro: { dove: 'casa', gesto: 'sega', fumetti: ['🪚', '✦', '☺'] } }),
   d({ id: 'bibliotecario', m: 'bibliotecario', f: 'bibliotecaria', virtu: 'saggezza', insegna: 'BIBLIOTECA', simbolo: '📚', cosa: 'mette in ordine i libri e li presta', colore: '#5a3f8a', tenda: null,
     attrezzi: ['libri', 'panca', 'lanterna'], divisa: { corpo: 'giacca:verde:tinta', collo: 'cravatta:bordeaux:righe:panna' }, occhiali: true,
     inMano: 'libro', lavoro: { dove: 'casa', gesto: 'legge', fumetti: ['📚', '…', '!'] } }),
@@ -113,7 +129,7 @@ export const MESTIERI: DefMestiere[] = [
     inMano: 'martello', lavoro: { dove: 'casa', gesto: 'martella', fumetti: ['👢', '✦', '☺'] } }),
   d({ id: 'capovillaggio', m: 'sindaco', f: 'sindaca', virtu: 'giustizia', insegna: 'MUNICIPIO', simbolo: '★', cosa: 'si assicura che tutti stiano bene', colore: '#2a6ac8', tenda: null,
     attrezzi: ['bandiera', 'campanella', 'panca'], divisa: { testa: 'bombetta:nero:tinta', corpo: 'giacca:blu:tinta', collo: 'fascia:verde:tinta' },
-    inMano: null, lavoro: { dove: 'giro', gesto: 'saluta', fumetti: ['★', '☺', '♥'] } }),
+    inMano: null, lavoro: { dove: 'giro', gesto: 'timbra', fumetti: ['★', '☺', '♥'] } }),
 
   // ---------- temperanza ----------
   d({ id: 'giardiniere', m: 'giardiniere', f: 'giardiniera', virtu: 'temperanza', insegna: 'VIVAIO', simbolo: '🌱', cosa: 'cura i fiori e le piantine', colore: '#4f9a3c', tenda: ['#4f9a3c', '#ffffff'],
@@ -130,10 +146,10 @@ export const MESTIERI: DefMestiere[] = [
     inMano: 'zappa', lavoro: { dove: 'orto', gesto: 'pianta', fumetti: ['🥕', '🌱', '☀'] } }),
   d({ id: 'mugnaio', m: 'mugnaio', f: 'mugnaia', virtu: 'temperanza', insegna: 'FARINA', simbolo: '🌾', cosa: 'macina il grano per il pane', colore: '#c8a050', tenda: null,
     attrezzi: ['macina', 'sacchi', 'covone'], divisa: { testa: 'coppola:panna:tinta', corpo: 'gilet:marrone:tinta' },
-    inMano: 'sacco', lavoro: { dove: 'casa', gesto: 'impasta', fumetti: ['🌾', '☁', '☺'] } }),
+    inMano: 'sacco', lavoro: { dove: 'casa', gesto: 'mescola', fumetti: ['🌾', '☁', '☺'] } }),
   d({ id: 'lattaio', m: 'lattaio', f: 'lattaia', virtu: 'temperanza', insegna: 'LATTE E FORMAGGI', simbolo: '🧀', cosa: 'fa il formaggio e lo fa assaggiare', colore: '#5aa0d8', tenda: ['#7fb8e8', '#ffffff'],
     attrezzi: ['bidoni', 'formaggi', 'panca'], divisa: { testa: 'fazzoletto:azzurro:quadri:bianco', corpo: 'grembiule:azzurro:tinta' },
-    inMano: 'secchio', lavoro: { dove: 'casa', gesto: 'mescola', fumetti: ['🧀', '🥛', '☺'] } }),
+    inMano: 'secchio', lavoro: { dove: 'casa', gesto: 'zangola', fumetti: ['🧀', '🥛', '☺'] } }),
 
   // ---------- trascendenza ----------
   d({ id: 'musicista', m: 'musicista', f: 'musicista', virtu: 'trascendenza', insegna: 'MUSICA', simbolo: '♪', cosa: 'suona il violino in piazza', colore: '#8a5ac8', tenda: null,

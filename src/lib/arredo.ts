@@ -22,6 +22,8 @@ export interface Arredo {
   oggetti: Oggetto[];
   /** le case che c'erano prima di "dove la metto?" hanno avuto il loro posto fissato (non si chiede per quelle) */
   caseFissate?: boolean;
+  /** le case fissate prima delle postazioni di lavoro sono state allargate (almeno 8 metri l'una dall'altra) */
+  caseLarghe?: boolean;
   /** celle da mezzo metro "i,j" → materiale (1 terra, 2 sassi, 3 mattoni, 4 ghiaia); null = sentiero di base */
   sentiero: Record<string, number> | null;
 }
@@ -169,6 +171,44 @@ export function sposta(s: StatoGioco, chiave: string, p: Posto) {
   const ai = a.aiuole.find((x) => 'a:' + x.id === chiave) ?? a.quadretti.find((x) => 'q:' + x.id === chiave) ?? a.oggetti.find((x) => 'o:' + x.id === chiave);
   if (ai) Object.assign(ai, q);
   else a.posti[chiave] = q;
+}
+
+/**
+ * Allarga il villaggio: le case (e gli edifici) messe a meno di `minimo` metri l'una dall'altra si spostano
+ * un poco, il minimo indispensabile, finché ognuna ha spazio per la sua postazione di lavoro davanti.
+ * Le case girate da Giada restano girate. Restituisce quante ne ha spostate.
+ */
+export function allargaCase(a: Arredo, minimo = 8): number {
+  const chiavi = Object.keys(a.posti).filter((k) => k.startsWith('b:') || k.startsWith('e:'));
+  const prima = new Map(chiavi.map((k) => [k, { ...a.posti[k] }]));
+  for (let giro = 0; giro < 60; giro++) {
+    let tutto = true;
+    for (let i = 0; i < chiavi.length; i++)
+      for (let j = i + 1; j < chiavi.length; j++) {
+        const p = a.posti[chiavi[i]], q = a.posti[chiavi[j]];
+        let dx = q.x - p.x, dz = q.z - p.z;
+        let d = Math.hypot(dx, dz);
+        if (d >= minimo - 0.01) continue;
+        tutto = false;
+        if (d < 1e-3) { dx = 1; dz = 0; d = 1; }
+        const spinta = (minimo - d) / 2 + 0.02;
+        p.x -= (dx / d) * spinta; p.z -= (dz / d) * spinta;
+        q.x += (dx / d) * spinta; q.z += (dz / d) * spinta;
+      }
+    if (tutto) break;
+  }
+  let n = 0;
+  for (const k of chiavi) {
+    const p = a.posti[k], q = prima.get(k)!;
+    p.x = Math.round(p.x * 100) / 100;
+    p.z = Math.round(p.z * 100) / 100;
+    if (Math.hypot(p.x - q.x, p.z - q.z) > 0.01) {
+      n++;
+      // la casa guarda ancora verso il centro (se Giada non l'aveva girata a modo suo)
+      if (Math.abs(Math.atan2(Math.sin(q.r - Math.atan2(-q.x, -q.z)), Math.cos(q.r - Math.atan2(-q.x, -q.z)))) < 0.05) p.r = Math.atan2(-p.x, -p.z);
+    }
+  }
+  return n;
 }
 
 /** Abbatte un albero o toglie un cespuglio, un sasso, dei fiori. Costa qualche castagna. */

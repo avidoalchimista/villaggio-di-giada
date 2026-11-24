@@ -60,13 +60,14 @@ function creaBancone(d: DefMestiere): THREE.Group {
   const l = legno();
   add(g, mesh(geo.scatola(1.2, 0.7, 0.5), l), 0, 0.35, 0);
   add(g, mesh(geo.scatola(1.3, 0.06, 0.6), mat(varia(d.colore, 0, 0.25))), 0, 0.73, 0);
-  for (const x of [-0.6, 0.6]) add(g, mesh(geo.cil(0.035, 0.035, 1.5, 6), scuro()), x, 0.75, -0.25);
+  // il tendone sta alto, così si vede bene chi c'è dietro al bancone
+  for (const x of [-0.6, 0.6]) add(g, mesh(geo.cil(0.035, 0.035, 2.1, 6), scuro()), x, 1.05, -0.25);
   const [a, b] = d.tenda!;
-  const tenda = add(g, mesh(geo.scatola(1.45, 0.05, 0.85), mat('#ffffff', { map: texture(64, strisce(a, b, 8)) })), 0, 1.5, 0.05);
+  const tenda = add(g, mesh(geo.scatola(1.45, 0.05, 0.85), mat('#ffffff', { map: texture(64, strisce(a, b, 8)) })), 0, 2.1, 0.05);
   tenda.rotation.x = 0.3;
   // la frangia a punte
   for (let i = 0; i < 8; i++) {
-    const p = add(g, mesh(geo.cono(0.09, 0.14, 3), mat(i % 2 ? b : a)), -0.63 + i * 0.18, 1.32, 0.45);
+    const p = add(g, mesh(geo.cono(0.09, 0.14, 3), mat(i % 2 ? b : a)), -0.63 + i * 0.18, 1.92, 0.45);
     p.rotation.x = Math.PI;
   }
   // la merce sul bancone, nei colori del mestiere
@@ -508,35 +509,399 @@ function macchieMondo(c: CanvasRenderingContext2D, l: number) {
 }
 
 /**
- * Tutto quello che il mestiere aggiunge davanti alla casa: il bancone col tendone (se vende) a sinistra
- * e gli attrezzi a destra. Le coordinate sono quelle della casa: porta verso +z, facciata a z = fronte.
+ * Tutto quello che il mestiere aggiunge davanti alla casa. A destra della porta c'è la postazione di lavoro
+ * (il banco, l'incudine, la madia, la macchina da cucire...) su una pedana di assi: lì l'animale si mette in piedi
+ * e fa i gesti del suo mestiere. A sinistra e dietro, gli altri attrezzi.
+ * Le coordinate sono quelle della casa: porta verso +z, facciata a z = fronte.
+ * In `userData.postazione` restano il punto dove sta l'animale e verso dove guarda (coordinate della casa).
  */
 export function creaAttrezziMestiere(mestiere: string, fronte: number): THREE.Group {
   const d = defMestiere(mestiere);
   const g = new THREE.Group();
   if (!d) return g;
   const z = Math.max(fronte, 1.1) + 0.45;
-  const posti: [number, number, number][] = [[1.75, z - 0.15, -0.4], [2.25, z - 1.1, -0.9], [1.6, z + 0.75, -0.2]];
-  const cose = [...d.attrezzi];
-  if (d.tenda) {
-    const b = creaBancone(d);
-    b.position.set(-1.85, 0, z - 0.25);
-    b.rotation.y = 0.35;
-    g.add(b);
-  } else {
-    // senza bancone, il primo attrezzo va a sinistra (il più grande: forgia, moto, telescopio...)
-    const primo = creaAttrezzo(cose.shift()!, d);
-    primo.position.set(-1.85, 0, z - 0.25);
-    primo.rotation.y += 0.35;
-    g.add(primo);
-  }
-  cose.forEach((id, i) => {
+  // la postazione: a destra della porta, un po' in avanti, girata appena verso chi arriva dal viale
+  const [px, pz, pr] = POSTO_POSTAZIONE(z);
+  const pedana = creaPedana();
+  pedana.position.set(px, 0, pz - 0.25);
+  pedana.rotation.y = pr;
+  g.add(pedana);
+  const post = creaPostazione(d.postazione, d);
+  post.position.set(px, 0, pz);
+  post.rotation.y = pr;
+  post.userData.spazio = 0.55;
+  post.userData.suaPostazione = true; // chi ci lavora ci può stare attaccato
+  g.add(post);
+  const [sx, sz, verso] = (post.userData.sta as [number, number, number] | undefined) ?? [0, -0.62, 0];
+  const c = Math.cos(pr), sn = Math.sin(pr);
+  g.userData.postazione = { x: px + sx * c + sz * sn, z: pz - sx * sn + sz * c, verso: pr + verso, banco: { x: px, z: pz } };
+  // gli altri attrezzi: il più grande a sinistra della porta, gli altri dietro, ai lati della casa
+  const cose = d.attrezzi.filter((id) => id !== d.postazione && !(d.postazione === 'moto-cavalletto' && id === 'moto'));
+  const posti: [number, number, number][] = [[-1.85, z - 0.25, 0.35], [-2.35, z - 1.3, 0.9], [2.75, z - 1.35, -0.9]];
+  cose.slice(0, 3).forEach((id, i) => {
     const o = creaAttrezzo(id, d);
     const [x, zz, r] = posti[i];
     o.position.set(x, 0, zz);
     o.rotation.y += r;
+    o.userData.spazio = 0.4;
     g.add(o);
   });
   g.userData.mestiere = mestiere;
   return g; // il contorno lo mette la casa
+}
+
+/** Dove sta la postazione rispetto alla casa: [x, z, rotazione]. */
+export const POSTO_POSTAZIONE = (z: number): [number, number, number] => [2.3, z + 0.55, -0.3];
+
+/** La pedana di assi sotto la postazione: così si vede che lì si lavora. */
+function creaPedana(): THREE.Group {
+  const g = new THREE.Group();
+  const assi = mat('#ffffff', { map: texture(64, (c, l) => { c.fillStyle = '#b8895a'; c.fillRect(0, 0, l, l); c.fillStyle = '#9a6e44'; for (let x = 0; x < l; x += 13) c.fillRect(x, 0, 2, l); c.fillStyle = '#c99a68'; c.fillRect(20, 10, 6, 3); c.fillRect(44, 40, 5, 3); }) });
+  const p = add(g, mesh(geo.scatola(1.9, 0.05, 1.55), assi), 0, 0.025, 0);
+  p.userData.senzaContorno = true;
+  return g;
+}
+
+/** Un tavolo da lavoro di legno: piano a altezza `h`, quattro gambe. Le cose sopra si appoggiano a y = h. */
+function tavolo(g: THREE.Group, w = 1.15, h = 0.7, p = 0.55, piano?: THREE.Material) {
+  add(g, mesh(geo.scatola(w, 0.07, p), piano ?? legno()), 0, h - 0.035, 0);
+  for (const x of [-w / 2 + 0.07, w / 2 - 0.07]) for (const z of [-p / 2 + 0.07, p / 2 - 0.07]) add(g, mesh(geo.scatola(0.07, h - 0.07, 0.07), scuro()), x, (h - 0.07) / 2, z);
+  // la traversa in basso, con qualche attrezzo appoggiato
+  add(g, mesh(geo.scatola(w - 0.1, 0.04, 0.05), scuro()), 0, 0.18, -p / 2 + 0.07);
+}
+
+/**
+ * La postazione di lavoro di ogni mestiere, rivolta verso +z: l'animale sta dietro (in `userData.sta`:
+ * [x, z, verso] rispetto alla postazione), così da lontano si vede in faccia mentre lavora.
+ */
+export function creaPostazione(id: string, d: DefMestiere): THREE.Group {
+  const g = new THREE.Group();
+  g.add(ombra(0.7));
+  const h = 0.7;
+  const sopra = (o: THREE.Object3D, x = 0, z = 0, y = h) => add(g, o, x, y, z);
+  switch (id) {
+    case 'incudine': {
+      // l'incudine sul ceppo, il ferro rovente sopra, il secchio d'acqua per raffreddarlo
+      add(g, mesh(geo.cil(0.24, 0.28, 0.45, 10), mat('#8a5a36')), 0, 0.22, 0);
+      add(g, mesh(geo.scatola(0.62, 0.16, 0.26), ferro()), 0, 0.53, 0);
+      add(g, mesh(geo.scatola(0.3, 0.1, 0.2), ferro()), 0, 0.42, 0);
+      add(g, mesh(geo.cono(0.11, 0.26, 6), ferro()), 0.43, 0.53, 0).rotation.z = -Math.PI / 2;
+      add(g, mesh(geo.scatola(0.32, 0.04, 0.05), mat('#ff8a3a', { emissive: '#ff5a10', emissiveIntensity: 1.1, rim: 0 })), 0.05, 0.63, 0.02);
+      const s = creaAttrezzo('secchio', d);
+      s.position.set(0.6, 0, 0.15);
+      g.add(s);
+      g.userData.sta = [0, -0.6, 0];
+      break;
+    }
+    case 'moto-cavalletto': {
+      const m = creaMoto(d.colore, false);
+      m.rotation.y = Math.PI / 2;
+      m.position.set(0, 0.06, 0);
+      g.add(m);
+      add(g, mesh(geo.scatola(0.5, 0.06, 0.25), ferro()), 0, 0.03, 0);
+      // la cassetta degli attrezzi aperta
+      add(g, mesh(geo.scatola(0.45, 0.22, 0.25), mat('#d8443a', { rim: 0.4 })), 0.25, 0.11, 0.55);
+      for (let i = 0; i < 3; i++) add(g, mesh(geo.scatola(0.03, 0.15, 0.03), ferro()), 0.12 + i * 0.1, 0.27, 0.55);
+      g.userData.sta = [0.15, -0.6, 0];
+      break;
+    }
+    case 'idrante': {
+      const i = creaAttrezzo('idrante', d);
+      i.scale.setScalar(1.2);
+      g.add(i);
+      // la manichetta arrotolata e la lancia
+      const r = add(g, mesh(new THREE.TorusGeometry(0.22, 0.07, 6, 14), mat('#e8d4ac')), 0.55, 0.07, 0.1);
+      r.rotation.x = Math.PI / 2;
+      add(g, mesh(new THREE.TorusGeometry(0.13, 0.07, 6, 12), mat('#e8d4ac')), 0.55, 0.16, 0.1).rotation.x = Math.PI / 2;
+      g.userData.sta = [-0.15, -0.55, 0];
+      break;
+    }
+    case 'ceppo': {
+      // il ceppo con il pezzo da spaccare sopra, e la legna già spaccata intorno
+      add(g, mesh(geo.cil(0.3, 0.33, 0.42, 10), mat('#8a5a36')), 0, 0.21, 0);
+      add(g, mesh(geo.cil(0.27, 0.27, 0.02, 10), mat('#e8c890')), 0, 0.43, 0);
+      add(g, mesh(geo.cil(0.12, 0.12, 0.32, 8), mat('#a06a40')), 0, 0.6, 0);
+      for (let i = 0; i < 5; i++) {
+        const p = add(g, mesh(geo.scatola(0.08, 0.3, 0.12), mat('#e8c890')), Math.cos(i * 1.3) * 0.55, 0.06, 0.15 + Math.sin(i * 1.3) * 0.3);
+        p.rotation.set(Math.PI / 2, i, 0);
+      }
+      g.userData.sta = [0, -0.6, 0];
+      break;
+    }
+    case 'piantine': {
+      // un bancale basso con le piantine di alberi nei vasetti, da mettere nel bosco
+      tavolo(g, 1.1, 0.5, 0.5);
+      for (let i = 0; i < 4; i++) {
+        const x = -0.38 + i * 0.25;
+        add(g, mesh(geo.cil(0.08, 0.06, 0.12, 8), mat('#c8603a')), x, 0.56, 0);
+        const p = creaPino(0.18 + (i % 2) * 0.05, false);
+        p.position.set(x, 0.6, 0);
+        g.add(p);
+      }
+      const z = creaAttrezzo('annaffiatoio', d);
+      z.position.set(0.7, 0, 0.2);
+      g.add(z);
+      g.userData.sta = [0, -0.58, 0];
+      break;
+    }
+    case 'tavolo-mappe': {
+      tavolo(g);
+      const m = sopra(mesh(geo.scatola(0.8, 0.01, 0.45), mat('#ffffff', { map: texture(64, (c, l) => { c.fillStyle = '#f4e4c0'; c.fillRect(0, 0, l, l); c.strokeStyle = '#8a5a36'; c.lineWidth = 2; c.setLineDash([4, 4]); c.beginPath(); c.moveTo(6, 52); c.bezierCurveTo(20, 10, 40, 60, 58, 12); c.stroke(); c.fillStyle = '#4f9a5a'; for (const [x, y] of [[14, 18], [22, 26], [48, 44]]) { c.beginPath(); c.arc(x, y, 5, 0, 7); c.fill(); } c.fillStyle = '#5aa0d8'; c.beginPath(); c.arc(36, 30, 7, 0, 7); c.fill(); c.fillStyle = '#d8443a'; c.font = '14px sans-serif'; c.fillText('✕', 50, 18); }), rim: 0 })), 0, 0, h + 0.01);
+      m.userData.senzaContorno = true;
+      const b = sopra(mesh(geo.cil(0.05, 0.05, 0.12, 8), mat('#c8a030', { rim: 0.6 })), 0.45, 0.15, h + 0.06);
+      b.rotation.z = Math.PI / 2;
+      sopra(creaAttrezzo('lanterna', d), -0.45, -0.12);
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'pentolone': {
+      const p = creaAttrezzo('pentolone', d);
+      p.scale.setScalar(1.25);
+      g.add(p);
+      // il tagliere con le verdure accanto
+      const t = new THREE.Group();
+      tavolo(t, 0.6, 0.6, 0.4);
+      add(t, mesh(geo.palla(0.06, 8), mat('#f08a30')), -0.1, 0.65, 0);
+      add(t, mesh(geo.palla(0.07, 8), mat('#9ac83a')), 0.1, 0.66, 0.05);
+      t.position.set(0.8, 0, -0.1);
+      g.add(t);
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'madia': {
+      // la madia con la pasta (una palla morbida), la farina sparsa e le pagnotte già pronte
+      tavolo(g, 1.15, h, 0.6, mat('#e8d8b8'));
+      add(g, mesh(geo.scatola(1.0, 0.12, 0.5), legno()), 0, 0.55, 0);
+      const pasta = sopra(mesh(geo.palla(0.2, 12), mat('#f4e0b8', { rim: 0.3 })), -0.1, 0, h + 0.08);
+      pasta.scale.set(1.3, 0.6, 1);
+      pasta.userData.pasta = true;
+      const farina = sopra(mesh(geo.cil(0.18, 0.22, 0.01, 12), mat('#fbfbf6')), 0.3, 0.05, h + 0.01);
+      farina.userData.senzaContorno = true;
+      for (let i = 0; i < 2; i++) { const p = sopra(mesh(geo.capsula(0.06, 0.16), mat('#d89a50', { rim: 0.4 })), 0.42, -0.15 + i * 0.16, h + 0.06); p.rotation.z = Math.PI / 2; }
+      sopra(mesh(geo.cil(0.03, 0.03, 0.4, 6), legno()), -0.42, 0.12, h + 0.03).rotation.z = Math.PI / 2;
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'banco-dolci': {
+      tavolo(g, 1.15, h, 0.55, mat('#f6d8e0'));
+      sopra(mesh(geo.cil(0.2, 0.13, 0.16, 12), mat('#fbfbf6', { rim: 0.4 })), -0.15, 0, h + 0.08);
+      sopra(mesh(geo.cil(0.17, 0.17, 0.02, 12), mat('#fff4d0')), -0.15, 0, h + 0.15);
+      const t = creaAttrezzo('torta', d);
+      t.scale.setScalar(0.7);
+      sopra(t, 0.32, 0);
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'banco-erbe': {
+      // il banco del dottore: mortaio, boccette colorate, mazzetti d'erbe appesi
+      tavolo(g, 1.15, h, 0.55, mat('#e8f4ec'));
+      sopra(mesh(geo.cil(0.14, 0.1, 0.16, 10), mat('#c8c4bc', { rim: 0.3 })), -0.15, 0, h + 0.08);
+      const pest = sopra(mesh(geo.cil(0.025, 0.035, 0.26, 6), mat('#a8a49c')), -0.1, 0, h + 0.22);
+      pest.rotation.z = 0.4;
+      ['#d8443a', '#3f9a6a', '#5aa0d8', '#f2c230'].forEach((c, i) => { sopra(mesh(geo.cil(0.04, 0.05, 0.14, 8), mat(c, { rim: 0.6 })), 0.2 + i * 0.1, -0.08 + (i % 2) * 0.12, h + 0.07); });
+      for (const x of [-0.5, 0.5]) add(g, mesh(geo.cil(0.025, 0.025, 1.2, 5), legno()), x, 0.95, -0.25);
+      add(g, mesh(geo.cil(0.02, 0.02, 1.05, 5), legno()), 0, 1.5, -0.25).rotation.z = Math.PI / 2;
+      for (let i = 0; i < 4; i++) add(g, mesh(geo.cono(0.06, 0.24, 5), mat(['#6aa84a', '#8ac06a', '#b39ddb'][i % 3])), -0.35 + i * 0.23, 1.36, -0.25).rotation.x = Math.PI;
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'banco-posta': {
+      // il tavolo dove si smistano le lettere, con le caselline e il timbro
+      tavolo(g);
+      const casel = new THREE.Group();
+      for (let r = 0; r < 2; r++) for (let k = 0; k < 4; k++) {
+        add(casel, mesh(geo.scatola(0.22, 0.18, 0.2), mat('#c8a06a')), -0.36 + k * 0.24, 0.1 + r * 0.2, 0);
+        if ((r + k) % 2 === 0) add(casel, mesh(geo.scatola(0.15, 0.1, 0.02), mat('#fbfbf6')), -0.36 + k * 0.24, 0.12 + r * 0.2, 0.1);
+      }
+      casel.position.set(0, h, -0.15);
+      g.add(casel);
+      for (let i = 0; i < 3; i++) { const l = sopra(mesh(geo.scatola(0.2, 0.01, 0.14), mat(['#fbfbf6', '#f6d8e0', '#bfe4ff'][i])), -0.2 + i * 0.22, 0.15, h + 0.01 + i * 0.005); l.rotation.y = i * 0.3; }
+      sopra(mesh(geo.cil(0.05, 0.06, 0.1, 8), mat('#d8443a')), 0.4, 0.12, h + 0.05);
+      g.userData.sta = [0, -0.68, 0];
+      break;
+    }
+    case 'banco-falegname': {
+      // il banco da falegname: la morsa, l'asse da segare che sporge, la pialla, i trucioli per terra
+      tavolo(g, 1.3, h, 0.6);
+      sopra(mesh(geo.scatola(0.18, 0.14, 0.12), scuro()), -0.5, 0.2, h + 0.07);
+      const asse = sopra(mesh(geo.scatola(1.1, 0.05, 0.22), legno()), 0.35, 0.05, h + 0.03);
+      asse.userData.asse = true;
+      sopra(mesh(geo.scatola(0.22, 0.08, 0.08), mat('#a06a40')), -0.2, -0.15, h + 0.04);
+      sopra(mesh(geo.cil(0.02, 0.02, 0.18, 5), ferro()), 0.05, -0.18, h + 0.02).rotation.z = Math.PI / 2;
+      for (let i = 0; i < 6; i++) { const t = add(g, mesh(new THREE.TorusGeometry(0.04, 0.012, 4, 8, Math.PI * 1.5), mat('#e8c890')), -0.6 + i * 0.25, 0.02, 0.35 + (i % 2) * 0.15); t.rotation.x = Math.PI / 2; t.userData.senzaContorno = true; }
+      g.userData.sta = [0, -0.65, 0];
+      break;
+    }
+    case 'banco-libri': {
+      tavolo(g, 1.15, h, 0.55, mat('#5a3f8a'));
+      const l = creaAttrezzo('libri', d);
+      l.scale.setScalar(0.6);
+      sopra(l, 0.3, -0.05);
+      const aperto = sopra(mesh(geo.scatola(0.4, 0.03, 0.28), mat('#fbf4e0')), -0.15, 0.05, h + 0.02);
+      aperto.rotation.y = 0.15;
+      sopra(creaAttrezzo('lanterna', d), -0.48, -0.15);
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'banco-orologi': {
+      // la lampada, la lente, gli ingranaggi sparsi e un orologio aperto
+      tavolo(g, 1.1, h, 0.55, mat('#3a5aa8'));
+      const o = sopra(mesh(geo.cil(0.16, 0.16, 0.05, 16), mat('#f2c230', { rim: 0.6 })), -0.1, 0.02, h + 0.03);
+      o.userData.senzaContorno = false;
+      for (const [x, z, r] of [[0.2, 0.1, 0.07], [0.3, -0.08, 0.05], [0.1, -0.15, 0.04]] as const) { const gg = sopra(mesh(new THREE.TorusGeometry(r, 0.015, 4, 10), mat('#c8a030', { rim: 0.6 })), x, z, h + 0.01); gg.rotation.x = Math.PI / 2; }
+      add(g, mesh(geo.cil(0.02, 0.02, 0.6, 5), ferro()), -0.45, h + 0.3, -0.15);
+      add(g, mesh(geo.cono(0.1, 0.12, 10, ), mat('#4f9a5a', { emissive: '#ffd27a', emissiveIntensity: 0.4 })), -0.35, h + 0.58, -0.15).rotation.z = -0.8;
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'banco-invenzioni': {
+      tavolo(g, 1.2, h, 0.55, mat('#f08a30'));
+      const m = new THREE.Group();
+      add(m, mesh(geo.scatola(0.3, 0.25, 0.25), mat('#8a8a96', { rim: 0.6 })), 0, 0.12, 0);
+      const r = add(m, mesh(new THREE.TorusGeometry(0.12, 0.03, 5, 10), mat('#c8a030', { rim: 0.6 })), 0.2, 0.25, 0);
+      r.userData.gira = true;
+      add(m, mesh(geo.cil(0.02, 0.02, 0.3, 5), ferro()), -0.05, 0.38, 0);
+      add(m, mesh(geo.palla(0.05, 8), mat('#f2c230', { emissive: '#f2c230', emissiveIntensity: 0.8 })), -0.05, 0.55, 0);
+      sopra(m, -0.1, -0.05);
+      sopra(mesh(geo.scatola(0.2, 0.04, 0.05), ferro()), 0.35, 0.12, h + 0.02);
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'muretto': {
+      // un muretto a metà, la cazzuola e il secchio di malta
+      for (let r = 0; r < 4; r++) for (let i = 0; i < (r < 3 ? 4 : 2); i++) add(g, mesh(geo.scatola(0.27, 0.13, 0.2), mat(['#c8603a', '#b85a42', '#d4765a'][(r + i) % 3])), -0.42 + i * 0.28 + (r % 2) * 0.14, 0.07 + r * 0.14, 0);
+      const s = creaAttrezzo('secchio', d);
+      s.position.set(0.65, 0, 0.25);
+      g.add(s);
+      add(g, mesh(geo.cil(0.13, 0.13, 0.02, 10), mat('#c8c4bc')), 0.65, 0.28, 0.25);
+      g.userData.sta = [0.1, -0.55, 0];
+      break;
+    }
+    case 'banco-calzolaio': {
+      // il deschetto: un banco basso con la forma di ferro e lo stivale sopra
+      tavolo(g, 1.0, 0.6, 0.5);
+      add(g, mesh(geo.cil(0.03, 0.04, 0.25, 6), ferro()), -0.1, 0.72, 0);
+      const st = creaAttrezzo('stivalone', d);
+      st.scale.setScalar(0.55);
+      st.position.set(-0.1, 0.82, 0);
+      g.add(st);
+      for (let i = 0; i < 2; i++) sopra(mesh(geo.palla(0.08, 8), mat(['#d8443a', '#7a4a2a'][i], { rim: 0.4 })), 0.3 + i * 0.15, 0.05, 0.64).scale.set(0.7, 0.6, 1.4);
+      g.userData.sta = [0, -0.6, 0];
+      break;
+    }
+    case 'scrivania': {
+      // la scrivania del sindaco: i fogli, il timbro, la campanella e la bandierina
+      tavolo(g, 1.2, h, 0.6, mat('#2a6ac8'));
+      for (let i = 0; i < 3; i++) sopra(mesh(geo.scatola(0.25, 0.01, 0.32), mat('#fbfbf6')), -0.2 + i * 0.02, 0.05, h + 0.01 + i * 0.01).rotation.y = i * 0.1;
+      sopra(mesh(geo.cil(0.05, 0.06, 0.1, 8), mat('#d8443a')), 0.2, 0.1, h + 0.05);
+      sopra(mesh(geo.cono(0.08, 0.12, 10), mat('#f2c230', { rim: 0.7 })), 0.45, -0.1, h + 0.06);
+      const b = new THREE.Group();
+      add(b, mesh(geo.cil(0.01, 0.01, 0.35, 4), mat('#c8c8d0')), 0, 0.17, 0);
+      add(b, mesh(geo.scatola(0.18, 0.12, 0.01), mat('#ffffff', { map: texture(32, (c, l) => { c.fillStyle = '#3f9a4a'; c.fillRect(0, 0, l / 3, l); c.fillStyle = '#ffffff'; c.fillRect(l / 3, 0, l / 3, l); c.fillStyle = '#d8443a'; c.fillRect((2 * l) / 3, 0, l / 3, l); }), rim: 0 })), 0.09, 0.3, 0);
+      sopra(b, -0.48, -0.18);
+      g.userData.sta = [0, -0.65, 0];
+      break;
+    }
+    case 'banco-vasi': {
+      // il banco del giardiniere: vasetti, terra, piantine da rinvasare
+      tavolo(g, 1.15, h, 0.55);
+      sopra(mesh(geo.palla(0.2, 10), mat('#7a5232')), 0.3, 0, h).scale.y = 0.4;
+      for (let i = 0; i < 3; i++) {
+        sopra(mesh(geo.cil(0.08, 0.06, 0.13, 8), mat('#c8603a')), -0.4 + i * 0.2, (i % 2) * 0.1, h + 0.065);
+        const f = creaFiore(['#ff6f91', '#ffd166', '#b39ddb'][i]);
+        f.scale.setScalar(1.8);
+        sopra(f, -0.4 + i * 0.2, (i % 2) * 0.1, h + 0.13);
+      }
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'rete-stesa': {
+      // la rete da pescatore stesa su due pali, da rammendare, e la cassetta del pesce
+      for (const x of [-0.55, 0.55]) add(g, mesh(geo.cil(0.04, 0.04, 1.3, 6), legno()), x, 0.65, 0);
+      add(g, mesh(geo.cil(0.03, 0.03, 1.2, 5), legno()), 0, 1.25, 0).rotation.z = Math.PI / 2;
+      const rete = add(g, mesh(geo.scatola(1.05, 0.75, 0.01), mat('#ffffff', { map: texture(64, (c, l) => { c.clearRect(0, 0, l, l); c.strokeStyle = '#7a8a8a'; c.lineWidth = 2; for (let i = 0; i <= l; i += 8) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, l); c.stroke(); c.beginPath(); c.moveTo(0, i); c.lineTo(l, i); c.stroke(); } }), transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, rim: 0 })), 0, 0.85, 0);
+      rete.userData.senzaContorno = true;
+      for (const x of [-0.3, 0.2]) add(g, mesh(geo.palla(0.05, 6), mat('#f08a30')), x, 0.55, 0.01);
+      const c = add(g, mesh(geo.scatola(0.45, 0.18, 0.3), legno()), 0.75, 0.09, 0.3);
+      for (let i = 0; i < 3; i++) add(c, mesh(geo.palla(0.06, 8), mat('#8ab8d8', { rim: 0.6 })), -0.12 + i * 0.12, 0.1, 0).scale.set(2, 0.6, 0.8);
+      g.userData.sta = [0, -0.45, 0];
+      break;
+    }
+    case 'orto': {
+      // tre file di ortaggi nella terra smossa, la zappa piantata in terra
+      const t = add(g, mesh(geo.scatola(1.3, 0.06, 1.0), mat('#7a5232')), 0, 0.03, 0.05);
+      t.userData.senzaContorno = true;
+      for (let r = 0; r < 3; r++) for (let i = 0; i < 4; i++) {
+        const x = -0.45 + i * 0.3, z = -0.3 + r * 0.33;
+        if (r === 1) { add(g, mesh(geo.palla(0.09, 8), mat('#f08a30', { rim: 0.4 })), x, 0.1, z).scale.y = 0.8; add(g, mesh(geo.cono(0.06, 0.16, 5), mat('#6aa84a')), x, 0.22, z); }
+        else add(g, mesh(geo.palla(0.1, 8), mat(r ? '#9ac83a' : '#6aa84a', { rim: 0.3 })), x, 0.1, z).scale.y = 0.7;
+      }
+      g.userData.sta = [0, -0.7, 0];
+      break;
+    }
+    case 'zangola': {
+      // la zangola per il burro, il bidone del latte e le forme di formaggio
+      add(g, mesh(geo.cil(0.2, 0.25, 0.75, 12), legno()), 0, 0.38, 0);
+      for (const y of [0.15, 0.6]) add(g, mesh(new THREE.TorusGeometry(0.23, 0.02, 4, 14), ferro()), 0, y, 0).rotation.x = Math.PI / 2;
+      add(g, mesh(geo.cil(0.025, 0.025, 0.6, 5), legno()), 0, 0.95, 0).userData.stantuffo = true;
+      const f = creaAttrezzo('formaggi', d);
+      f.scale.setScalar(0.7);
+      f.position.set(0.55, 0, 0.15);
+      g.add(f);
+      g.userData.sta = [0, -0.5, 0];
+      break;
+    }
+    case 'macchina-cucire': {
+      // il tavolo della sarta con la macchina da cucire, la stoffa sotto l'ago, il puntaspilli
+      tavolo(g, 1.15, h, 0.55, mat('#c05a90'));
+      const m = new THREE.Group();
+      add(m, mesh(geo.scatola(0.4, 0.07, 0.18), mat('#2e2a2e', { rim: 0.6 })), 0, 0.035, 0);
+      add(m, mesh(geo.scatola(0.09, 0.25, 0.15), mat('#2e2a2e', { rim: 0.6 })), 0.15, 0.17, 0);
+      add(m, mesh(geo.scatola(0.4, 0.08, 0.14), mat('#2e2a2e', { rim: 0.6 })), -0.02, 0.31, 0);
+      add(m, mesh(geo.cil(0.012, 0.012, 0.12, 4), ferro()), -0.17, 0.2, 0);
+      add(m, mesh(geo.cil(0.06, 0.06, 0.03, 10), mat('#c8a030', { rim: 0.6 })), 0.22, 0.2, 0).rotation.z = Math.PI / 2;
+      sopra(m, -0.05, 0);
+      const stoffa = sopra(mesh(geo.scatola(0.5, 0.01, 0.35), mat(varia(d.colore, 0.3, 0.15))), -0.2, 0.08, h + 0.005);
+      stoffa.userData.senzaContorno = true;
+      sopra(mesh(geo.palla(0.06, 8), mat('#d8443a')), 0.42, 0.12, h + 0.04);
+      g.userData.sta = [0, -0.62, 0];
+      break;
+    }
+    case 'bancone': {
+      g.remove(g.children[0]); // il bancone ha la sua ombra
+      g.add(creaBancone(d));
+      g.userData.sta = [0, -0.6, 0];
+      break;
+    }
+    case 'carretto-gelati': case 'telescopio': case 'alveare': case 'macina': case 'leggio': case 'cavalletto': case 'teatrino': case 'tornio': case 'treppiede': case 'lavagna': {
+      const o = creaAttrezzo(id, d);
+      o.scale.setScalar(id === 'teatrino' ? 1.05 : 1.2);
+      g.add(o);
+      // dove si mette l'animale rispetto all'attrezzo: dietro, o di fianco per chi deve guardarlo
+      const sta: Record<string, [number, number, number]> = {
+        'carretto-gelati': [0, -0.6, 0], telescopio: [0, -0.5, 0], alveare: [0.6, -0.1, -Math.PI / 2], macina: [0.8, 0, -Math.PI / 2],
+        leggio: [0, -0.5, 0], cavalletto: [0.6, 0.15, -Math.PI / 2], teatrino: [0.85, 0.1, 0], tornio: [0, -0.55, 0], treppiede: [0, -0.5, 0], lavagna: [0.75, 0.25, -Math.PI / 2],
+      };
+      g.userData.sta = sta[id];
+      if (id === 'tornio') add(g, creaAttrezzo('vasi', d), 0.75, 0, 0.1).scale.setScalar(0.6);
+      if (id === 'telescopio') add(g, creaAttrezzo('mappamondo', d), 0.7, 0, 0.1);
+      break;
+    }
+    default: {
+      tavolo(g);
+      g.userData.sta = [0, -0.62, 0];
+    }
+  }
+  return g;
+}
+
+export interface Postazione { x: number; z: number; verso: number; banco: { x: number; z: number } }
+
+/** La postazione dentro una casa (in coordinate della casa), se ce l'ha. */
+export function trovaPostazione(casa: THREE.Object3D): Postazione | null {
+  if (casa.userData.postazione !== undefined) return casa.userData.postazione as Postazione | null;
+  let p: Postazione | null = null;
+  casa.traverse((o) => { if (!p && o !== casa && o.userData.postazione) p = o.userData.postazione as Postazione; });
+  casa.userData.postazione = p;
+  return p;
 }
