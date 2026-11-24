@@ -29,6 +29,13 @@ const ALTO = 3.3;
 
 type Tipo = 'casa' | 'tana';
 
+/** Tiene un punto dentro la stanza, lontano dai due muri quanto basta perché un animale non ci entri. */
+function dentroStanza(p: THREE.Vector3): THREE.Vector3 {
+  p.x = THREE.MathUtils.clamp(p.x, -LX + 0.6, LX - 0.45);
+  p.z = THREE.MathUtils.clamp(p.z, -LZ + 0.55, LZ - 0.35);
+  return p;
+}
+
 interface Ospite {
   dati: Animale;
   m: ModelloAnimale;
@@ -289,7 +296,8 @@ export class Interno {
     g.add(cuscino);
     g.position.set(x, 0, z);
     this.scene.add(contorno(g));
-    this.ancore.set(chiave, [x - 0.1, z, 0]);
+    // ci si sdraia verso il cuscino (a sinistra): il punto d'appoggio sta dalla parte dei piedi, così la testa non entra nel muro
+    this.ancore.set(chiave, [x + 0.55, z, 0]);
   }
 
   private lettino(x: number, z: number, rot: number, coperta: string, chiave: string, nome: string) {
@@ -696,7 +704,7 @@ export class Interno {
       dx = ((qui % 2) ? 1 : -1) * Math.ceil(qui / 2) * 1.0;
       dz = Math.ceil(qui / 2) * 0.45;
     }
-    o.meta.set(x + dx, 0, z + dz);
+    o.meta.copy(dentroStanza(new THREE.Vector3(x + dx, 0, z + dz)));
     o.guarda = vv;
     if (subito) {
       o.m.gruppo.position.copy(o.meta);
@@ -857,8 +865,13 @@ export class Interno {
 
   private nuovaAttivita(o: Ospite) {
     const prima = o.att.testo;
-    o.att = cosaFaInCasa(o.dati, this.momentoAttuale, o.turno);
+    o.att = cosaFaInCasa(o.dati, this.momentoAttuale, Math.floor(o.turno));
     this.destinazione(o);
+    // se continua a fare la stessa cosa, prima fa due passi per la stanza (alla finestra, a sgranchirsi)
+    if (prima === o.att.testo && o.att.gesto !== 'dorme') {
+      const giro = Math.random() * Math.PI * 2;
+      o.tappa = dentroStanza(new THREE.Vector3(0.4 + Math.cos(giro) * 1.4, 0, 0.5 + Math.sin(giro) * 0.9));
+    }
     if (prima !== o.att.testo) this.onCambio();
   }
 
@@ -895,8 +908,8 @@ export class Interno {
     if (m.accessorio?.userData.grembiule) m.accessorio.visible = o.att.gesto === 'lavora';
 
     // ogni tanto cambia attività (ma resta dentro il suo carattere)
-    o.turno += dt / 22;
-    if (Math.floor(o.turno) !== Math.floor(o.turno - dt / 22) && !dorme) this.nuovaAttivita(o);
+    o.turno += dt / 14;
+    if (Math.floor(o.turno) !== Math.floor(o.turno - dt / 14) && !dorme) this.nuovaAttivita(o);
 
     const meta = o.tappa ?? o.meta;
     const dir = meta.clone().sub(g.position).setY(0);
@@ -918,6 +931,7 @@ export class Interno {
       m.corpo.rotation.x = 0;
       dir.normalize();
       g.position.addScaledVector(dir, Math.min(dist, 1.0 * dt));
+      dentroStanza(g.position);
       const verso = Math.atan2(dir.x, dir.z);
       g.rotation.y += Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y)) * Math.min(1, dt * 7);
       m.testa.rotation.set(0, 0, 0);
@@ -950,7 +964,8 @@ export class Interno {
     const m = o.m;
     const braccia = m.zampe.slice(0, 2);
     const lerp = (a: number, b: number) => THREE.MathUtils.lerp(a, b, Math.min(1, dt * 5));
-    m.corpo.rotation.x = lerp(m.corpo.rotation.x, 0);
+    const acciambellato = o.att.gesto === 'dorme' && o.att.posto === 'letto' && this.ancore.has('letto:' + o.dati.id);
+    if (!acciambellato) m.corpo.rotation.x = lerp(m.corpo.rotation.x, 0);
     if (o.att.gesto !== 'dorme') {
       if (o.z.length) this.zeta(o, false);
       m.corpo.rotation.z = lerp(m.corpo.rotation.z, 0);
@@ -963,7 +978,11 @@ export class Interno {
         if (!o.z.length) this.zeta(o, true);
         // sdraiato sul letto (o sul lettino, o sul cuscinone)
         const suLetto = o.att.posto === 'letto' && !this.ancore.has('letto:' + o.dati.id);
-        m.corpo.rotation.z = lerp(m.corpo.rotation.z, 1.35);
+        if (acciambellato) {
+          // nel lettino a nido ci si acciambella a pancia in giù, verso la stanza: niente muri né vicini addosso
+          m.corpo.rotation.z = lerp(m.corpo.rotation.z, 0.15);
+          m.corpo.rotation.x = THREE.MathUtils.lerp(m.corpo.rotation.x, 0.95, Math.min(1, dt * 5));
+        } else m.corpo.rotation.z = lerp(m.corpo.rotation.z, 1.35);
         m.corpo.position.y = lerp(m.corpo.position.y, suLetto ? 0.5 : o.att.posto === 'hobby' ? 0.2 : 0.06);
         m.corpo.scale.y = 1 + Math.sin(t * 1.5) * 0.03;
         o.z.forEach((z, i) => {

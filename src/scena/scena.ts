@@ -146,15 +146,16 @@ const POSTI_COSTRUZIONI: Record<string, [number, number, number]> = {
 
 /**
  * Posti automatici per edifici e botteghe: un arco dietro la radura e poi i lati,
- * almeno 5 metri l'uno dall'altro; quando non c'è più posto, un secondo giro più largo.
+ * almeno 6 metri l'uno dall'altro; quando non c'è più posto, un secondo giro più largo.
  * Il viale d'ingresso (davanti, verso la telecamera) resta sempre libero.
  */
 export function postiCase(n: number, raggio: number): [number, number][] {
   const out: [number, number][] = [];
-  const giri = [Math.min(10, raggio - 2.5), Math.min(15.5, raggio - 0.5)];
+  // verso il bordo della radura, non in mezzo: più il villaggio è grande, più le case stanno larghe
+  const giri = [Math.max(7, raggio - 4), Math.max(9, raggio - 1.2)];
   for (const [g, d] of giri.entries()) {
     if (d < 6) continue;
-    const passo = 5.4 / d; // angolo per stare a ~5,4 m di distanza
+    const passo = 6.6 / d; // angolo per stare a ~6,6 m di distanza
     const offset = g * passo * 0.5;
     for (let k = 0; out.length < n; k++) {
       const lato = k === 0 ? 0 : Math.ceil(k / 2) * (k % 2 ? 1 : -1);
@@ -164,7 +165,7 @@ export function postiCase(n: number, raggio: number): [number, number][] {
       if (Math.abs(lato * passo) > Math.PI) break;
       if (dalViale < 0.9) continue;
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
-      if (out.some(([px, pz]) => Math.hypot(x - px, z - pz) < 5)) continue;
+      if (out.some(([px, pz]) => Math.hypot(x - px, z - pz) < 6)) continue;
       out.push([x, z]);
     }
     if (out.length >= n) break;
@@ -225,7 +226,8 @@ export class Scena {
   private resizeObs: ResizeObserver;
   onTocco: (b: Bersaglio) => void = () => {};
   // primo piano: la telecamera si avvicina a qualcosa (schiusa, riepilogo "mentre eri via")
-  private cine: { segui: () => THREE.Vector3; dist: number; alt: number; guardaY: number; angolo: number; animale?: string } | null = null;
+  private cine: { segui: () => THREE.Vector3; dist: number; alt: number; guardaY: number; angolo: number; animale?: string; oggetto?: THREE.Object3D } | null = null;
+  private nascostiCine = new Map<THREE.Object3D, boolean>(); // alberi e case tolti di mezzo durante il primo piano
   private morbido = 0; // secondi di passaggio dolce dopo il primo piano
   private posCam = new THREE.Vector3(0, 8, 14);
   private guardaCam = new THREE.Vector3(0, 0.6, 0);
@@ -635,7 +637,18 @@ export class Scena {
     // posti degli edifici e delle botteghe: ben distanziati, dietro e ai lati della radura (mai sul viale d'ingresso)
     const raggio = raggioVillaggio(s);
     const posti = [...s.edifici.map((e) => 'e:' + e.tipo), ...[...this.botteghe.keys()].map((id) => 'b:' + id)];
-    const automatici = postiCase(posti.length, raggio);
+    // chi ha già un posto (scelto da Giada o fissato) resta lì; le case nuove cercano un posto libero,
+    // lontano dalle altre, senza far spostare quelle che ci sono già
+    const presi: [number, number][] = posti.filter((k) => this.arredo.posti[k]).map((k) => [this.arredo.posti[k].x, this.arredo.posti[k].z]);
+    for (const [id, d] of Object.entries(POSTI_COSTRUZIONI)) if (this.strutture.has(id)) presi.push([this.arredo.posti['c:' + id]?.x ?? d[0], this.arredo.posti['c:' + id]?.z ?? d[1]]);
+    const candidati = postiCase(posti.length + 30, raggio);
+    const automatici = posti.map(() => [0, 0] as [number, number]);
+    posti.forEach((k, i) => {
+      if (this.arredo.posti[k]) return;
+      const libero = candidati.find(([x, z]) => presi.every(([px, pz]) => Math.hypot(x - px, z - pz) > 5.8)) ?? candidati[i];
+      automatici[i] = libero;
+      presi.push(libero);
+    });
     posti.forEach((k, i) => {
       let g: THREE.Group;
       if (k.startsWith('e:')) {
@@ -813,6 +826,11 @@ export class Scena {
   postoDi(chiave: string): Posto | null {
     const o = this.mobili().get(chiave);
     return o ? { x: o.position.x, z: o.position.z, r: o.rotation.y } : null;
+  }
+
+  /** Case e edifici che non hanno ancora un posto deciso (sono nel posto automatico). */
+  caseSenzaPosto(): string[] {
+    return [...[...this.edifici.keys()].map((t) => 'e:' + t), ...[...this.botteghe.keys()].map((id) => 'b:' + id)].filter((k) => !this.arredo.posti[k]);
   }
 
   /** Sceglie (o toglie la scelta) di una cosa da spostare. */
@@ -1292,6 +1310,39 @@ export class Scena {
     return meglio;
   }
 
+  /** Dove si vede un punto sullo schermo (in pixel della pagina), tenendo conto della curva del mondo. */
+  private aSchermo(p: THREE.Vector3): { x: number; y: number; davanti: boolean } {
+    const r = this.canvas.getBoundingClientRect();
+    const v = p.clone().applyMatrix4(this.camera.matrixWorldInverse);
+    const davanti = v.z < 0;
+    v.y -= v.z * v.z * CURVA.valore;
+    v.applyMatrix4(this.camera.projectionMatrix);
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, davanti };
+  }
+
+  /** L'albero, il cespuglio o il sasso che il dito sta toccando: il più vicino al dito tra quelli visibili. */
+  private naturaSottoIlDito(x: number, y: number, cose: THREE.Object3D[]): THREE.Object3D | null {
+    const destra = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    let meglio: THREE.Object3D | null = null, punteggio = 1;
+    for (const o of cose) {
+      if (!o.visible) continue;
+      const { r, h } = this.ingombro(o);
+      const base = this.aSchermo(o.position.clone().setY(0));
+      const cima = this.aSchermo(o.position.clone().setY(Math.max(0.3, h * 0.8)));
+      if (!base.davanti) continue;
+      const lato = this.aSchermo(o.position.clone().setY(Math.max(0.3, h * 0.6)).addScaledVector(destra, Math.max(0.4, r)));
+      const mezzo = this.aSchermo(o.position.clone().setY(Math.max(0.3, h * 0.6)));
+      const larghezza = Math.hypot(lato.x - mezzo.x, lato.y - mezzo.y);
+      // distanza dal dito al segmento tronco–chioma
+      const sx = cima.x - base.x, sy = cima.y - base.y;
+      const t = THREE.MathUtils.clamp(((x - base.x) * sx + (y - base.y) * sy) / (sx * sx + sy * sy || 1), 0, 1);
+      const d = Math.hypot(x - (base.x + sx * t), y - (base.y + sy * t));
+      const quanto = d / (larghezza + 18); // < 1: il dito è sopra
+      if (quanto < punteggio) { punteggio = quanto; meglio = o; }
+    }
+    return meglio;
+  }
+
   /** Tocco mentre si arreda. */
   private toccaArredo(x: number, y: number) {
     const p = this.puntoSuolo(x, y);
@@ -1300,8 +1351,9 @@ export class Scena {
         ...this.bosco.children.map((o, i) => ['b' + i, o] as [string, THREE.Object3D]),
         ...this.selvatici.children.filter((o) => o.visible).map((o, i) => ['s' + i, o] as [string, THREE.Object3D]),
       ];
-      const k = this.cosaSotto(x, y, natura, 1.0);
-      const o = natura.find(([kk]) => kk === k)?.[1];
+      // gli alberi si vedono "curvati" (lo shader abbassa le cose lontane): il tocco si confronta
+      // con quello che si vede sullo schermo, tronco e chioma, non con la geometria vera
+      const o = this.naturaSottoIlDito(x, y, natura.map(([, n]) => n));
       if (!o) return;
       const cosa = (o.userData.cosa as string) ?? (o instanceof THREE.Mesh ? 'sasso' : 'albero');
       const costo = cosa === 'albero' ? PREZZI.albero : cosa === 'piccolo' ? PREZZI.piccolo : PREZZI.cespuglio;
@@ -1472,6 +1524,8 @@ export class Scena {
     this.guardaCam.lerp(guarda, k);
     this.camera.position.copy(this.posCam);
     this.camera.lookAt(this.guardaCam);
+    if (cin) this.liberaVista(cin.oggetto);
+    else if (this.nascostiCine.size) this.rimettiNascosti();
 
     if (Math.floor(t / 5) !== Math.floor((t - dt) / 5)) this.luceDelGiorno();
 
@@ -2129,6 +2183,12 @@ export class Scena {
     for (const id of ids) this.trattenuti.add(id);
   }
 
+  /** Si salta il riepilogo: chi era nato esce subito dall'uovo, senza spettacolo. */
+  lasciaTutti() {
+    this.trattenuti.clear();
+    if (this.ultimoStato) this.aggiorna(this.ultimoStato);
+  }
+
   private vibra(p: number | number[]) {
     try {
       navigator.vibrate?.(p);
@@ -2158,7 +2218,7 @@ export class Scena {
       for (let i = 0; i < 6; i++) this.stellina(o.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.4, 0.4 + Math.random() * 1.2 * sc, (Math.random() - 0.5) * 1.4)));
     } else if (cosa.tipo === 'uovo') {
       o = this.uova.get(cosa.id);
-      dist = 2.9; alt = 1.25; guardaY = 0.45;
+      dist = 2.5; alt = 1.85; guardaY = 0.35; // un po' dall'alto: il bordo del nido non copre l'uovo
       if (o) o.userData.scossa = 1;
     } else if (cosa.tipo === 'edificio') {
       o = this.edifici.get(cosa.id);
@@ -2173,9 +2233,66 @@ export class Scena {
     const pos = new THREE.Vector3();
     // angolo: dalla parte della telecamera di adesso, così il volo è breve
     const ang = Math.atan2(this.posCam.x - o.position.x, this.posCam.z - o.position.z);
-    this.cine = { segui: () => bersaglio.getWorldPosition(pos).setY(0), dist, alt, guardaY, angolo: ang, animale: cosa.tipo === 'animale' ? cosa.id : undefined };
+    this.cine = { segui: () => bersaglio.getWorldPosition(pos).setY(0), dist, alt, guardaY, angolo: ang, animale: cosa.tipo === 'animale' ? cosa.id : undefined, oggetto: bersaglio };
     if (cosa.tipo === 'animale') (bersaglio as THREE.Group).rotation.y = ang;
     return true;
+  }
+
+  /** Ingombro di un oggetto visto dall'alto (raggio) e quanto è alto: calcolato una volta sola. */
+  private ingombro(o: THREE.Object3D): { r: number; h: number } {
+    let m = o.userData.ingombro as { r: number; h: number } | undefined;
+    if (!m) {
+      const box = new THREE.Box3().setFromObject(o);
+      const dim = box.getSize(new THREE.Vector3());
+      m = box.isEmpty() ? { r: 0, h: 0 } : { r: Math.min(2.5, Math.max(dim.x, dim.z) / 2), h: box.max.y };
+      o.userData.ingombro = m;
+    }
+    return m;
+  }
+
+  /**
+   * Durante il primo piano (schiusa, "mentre eri via") niente deve stare tra la telecamera
+   * e quello che si guarda: alberi, case e animali di passaggio si tolgono di mezzo finché dura.
+   */
+  private liberaVista(bersaglio?: THREE.Object3D) {
+    if (!bersaglio) return;
+    const cam = this.posCam;
+    const meta = this.guardaCam;
+    const dx = meta.x - cam.x, dz = meta.z - cam.z;
+    const lung2 = dx * dx + dz * dz || 1;
+    const ora = new Set<THREE.Object3D>();
+    const prova = (o: THREE.Object3D) => {
+      if (o === bersaglio || o === this.bosco || o === this.selvatici || o === this.prato) return;
+      if (o instanceof THREE.Light || o instanceof THREE.Points || o instanceof THREE.Sprite) return;
+      if (!o.visible && !this.nascostiCine.has(o)) return;
+      const p = o.position;
+      const t = ((p.x - cam.x) * dx + (p.z - cam.z) * dz) / lung2;
+      if (t <= 0 || t >= 1) return;
+      const { r, h } = this.ingombro(o);
+      if (r <= 0) return;
+      const vicino = Math.hypot(p.x - meta.x, p.z - meta.z);
+      if (vicino < 0.7) return; // il nido sotto l'uovo, la panchina dove sta seduto: restano
+      const lontano = Math.hypot(p.x - (cam.x + dx * t), p.z - (cam.z + dz * t));
+      const quotaRaggio = cam.y + (meta.y - cam.y) * t;
+      if (lontano < r + 0.35 && h > quotaRaggio - 0.2) ora.add(o);
+    };
+    for (const o of this.scene.children) prova(o);
+    for (const o of this.bosco.children) prova(o);
+    for (const o of this.selvatici.children) prova(o);
+    for (const o of ora) {
+      if (!this.nascostiCine.has(o)) this.nascostiCine.set(o, o.visible);
+      o.visible = false;
+    }
+    for (const [o, prima] of this.nascostiCine) {
+      if (ora.has(o)) continue;
+      o.visible = prima;
+      this.nascostiCine.delete(o);
+    }
+  }
+
+  private rimettiNascosti() {
+    for (const [o, prima] of this.nascostiCine) o.visible = prima;
+    this.nascostiCine.clear();
   }
 
   /** Finito il primo piano: si torna alla vista di sempre, centrata su quello che si è visto. */

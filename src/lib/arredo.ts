@@ -20,6 +20,8 @@ export interface Arredo {
   quadretti: Quadretto[];
   /** cartelli e pezzi di recinto messi da Giada */
   oggetti: Oggetto[];
+  /** le case che c'erano prima di "dove la metto?" hanno avuto il loro posto fissato (non si chiede per quelle) */
+  caseFissate?: boolean;
   /** celle da mezzo metro "i,j" → materiale (1 terra, 2 sassi, 3 mattoni, 4 ghiaia); null = sentiero di base */
   sentiero: Record<string, number> | null;
 }
