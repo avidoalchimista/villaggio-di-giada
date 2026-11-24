@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   compraSemi, dipingiSentiero, fasePianta, giorniAllaFioritura, metteVia, nuovaAiuola, nuovoOggetto, pianta, PREZZI, sposta, togliNatura,
-  altezzaTerreno, arredoVuoto, GIORNI_RICRESCITA, LIVELLO_ACQUA, palata, toltoAncora,
+  altezzaTerreno, arredoDi, arredoVuoto, conAcqua, FILA, GIORNI_RICRESCITA, LIVELLO_ACQUA, nuovaFila, palata, pezziFila, togliAcqua, toltoAncora, versaAcqua,
 } from './arredo';
 import { aggiungiGiorni } from './date';
 import { emozioneDellaPagina, normalizzaStato, nuovoStato } from './gioco';
@@ -97,7 +97,7 @@ describe('arredo', () => {
 describe('la pala e gli alberi abbattuti', () => {
   const stato = () => ({ ghiande: 10, arredo: arredoVuoto() }) as unknown as Parameters<typeof palata>[0];
 
-  it('scavare fa una buca (con acqua) e costa una castagna a palata', () => {
+  it('scavare fa una buca (asciutta: l\'acqua si versa a parte) e costa una castagna a palata', () => {
     const s = stato();
     for (let k = 0; k < 3; k++) palata(s, 4, 4, 'scava');
     expect(s.ghiande).toBe(7);
@@ -126,5 +126,55 @@ describe('la pala e gli alberi abbattuti', () => {
     expect(toltoAncora([1, 2, '2026-01-01'], '2026-03-01')).toBe(true);
     expect(toltoAncora([1, 2, '2026-01-01'], aggiungiGiorni('2026-01-01', GIORNI_RICRESCITA + 1))).toBe(false);
     expect(toltoAncora([1, 2], '2030-01-01')).toBe(true); // quelli di prima restano liberi per sempre
+  });
+});
+
+describe("l'acqua nelle buche e le cose in fila", () => {
+  const stato = () => ({ ghiande: 50, contatore: 0, arredo: arredoVuoto(), costruzioni: [] }) as unknown as Parameters<typeof palata>[0];
+
+  it('la pala fa solo una buca asciutta; versando l\'acqua si riempie tutta la buca, e si può togliere', () => {
+    const s = stato();
+    for (let k = 0; k < 3; k++) palata(s, 4, 4, 'scava');
+    expect(conAcqua(s.arredo, 4, 4)).toBe(false);
+    expect(versaAcqua(s, 10, 10)).toBe(0); // lì non c'è una buca
+    const n = versaAcqua(s, 4.3, 4);
+    expect(n).toBeGreaterThan(4);
+    expect(conAcqua(s.arredo, 4, 4)).toBe(true);
+    expect(conAcqua(s.arredo, 7, 4)).toBe(false);
+    expect(versaAcqua(s, 4, 4)).toBe(0); // già piena
+    expect(togliAcqua(s, 4, 4)).toBe(n);
+    expect(conAcqua(s.arredo, 4, 4)).toBe(false);
+  });
+
+  it('alzando il terreno dove c\'è acqua, l\'acqua lì se ne va', () => {
+    const s = stato();
+    for (let k = 0; k < 3; k++) palata(s, 0, 0, 'scava');
+    versaAcqua(s, 0, 0);
+    for (let k = 0; k < 6; k++) palata(s, 0, 0, 'alza');
+    expect(conAcqua(s.arredo, 0, 0)).toBe(false);
+  });
+
+  it('i salvataggi con i laghetti scavati prima tengono la loro acqua', () => {
+    const s = stato();
+    for (let k = 0; k < 3; k++) palata(s, 2, 2, 'scava');
+    delete s.arredo!.acqua;
+    expect(conAcqua(arredoDi(s), 2, 2)).toBe(true);
+  });
+
+  it('trascinando si mettono tanti pezzi in fila, girati lungo la fila, finché bastano le castagne', () => {
+    const pezzi = pezziFila('recinto', 0, 0, 8, 0);
+    expect(pezzi).toHaveLength(4);
+    expect(pezzi[0]).toMatchObject({ x: 1, z: 0, r: 0 });
+    expect(pezzi[3].x).toBe(7);
+    const verticale = pezziFila('recinto', 0, 0, 0, 4);
+    expect(Math.abs(Math.cos(verticale[0].r))).toBeLessThan(1e-9); // girati di 90°
+    expect(pezziFila('siepe', 1, 1, 1.2, 1, 0.5)).toEqual([{ x: 1, z: 1, r: 0.5 }]); // un tocco: un pezzo solo
+    const s = stato();
+    s.ghiande = 5;
+    const messi = nuovaFila(s, 'recinto', pezzi);
+    expect(messi).toHaveLength(2);
+    expect(s.ghiande).toBe(1);
+    expect(s.arredo!.oggetti.map((o) => o.tipo)).toEqual(['recinto', 'recinto']);
+    expect(FILA.lampione.costo).toBeGreaterThan(FILA.paletti.costo);
   });
 });

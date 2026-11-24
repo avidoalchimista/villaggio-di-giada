@@ -11,6 +11,7 @@ import { aggiornaGuardaroba } from './vestiti';
 import { defMestiere, nomeMestiere, scegliTra, virtuMestiere } from './mestieri';
 import { scegliCarattere } from './carattere';
 import { incassiDelGiorno } from './migliorie';
+import { ampliamentiDelGiorno } from './ampliamenti';
 import { aggiungiGiorni, giorniTra } from './date';
 import { NOME_SPECIE, NOME_VIRTU, RIASSUNTO_EMOZIONE, RIASSUNTO_FORZA } from './etichette';
 import {
@@ -109,7 +110,7 @@ export function conArticolo(a: Pick<Animale, 'specie' | 'sesso'>): string {
 }
 
 /** Gli eventi importanti che il villaggio mostra in primo piano appena Giada guarda la radura. */
-const SORPRESE: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita'];
+const SORPRESE: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita', 'casa'];
 
 function evento(s: StatoGioco, data: string, tipo: Evento['tipo'], testo: string, out: Evento[], animale?: string) {
   const e: Evento = animale ? { data, tipo, testo, animale } : { data, tipo, testo };
@@ -473,6 +474,7 @@ export function simula(s: StatoGioco, fino: string): Evento[] {
     vitaDelGiorno(s, giorno, out);
     castoroDelGiorno(s, giorno, out);
     incassiDelGiorno(s, giorno);
+    ampliamentiDelGiorno(s, giorno, out, evento, (a) => cap(nomeAnimale(a)));
   }
   s.ultimoAccesso = fino;
   return out;
@@ -598,7 +600,7 @@ export function testoRichiesta(s: StatoGioco, r: Richiesta): string {
 }
 
 /** Eventi che contano davvero per vedere come si sviluppa il villaggio (niente castagne giornaliere). */
-const EVENTI_IMPORTANTI: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita', 'castoro', 'sentiero'];
+const EVENTI_IMPORTANTI: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita', 'castoro', 'sentiero', 'casa'];
 
 /**
  * Solo per la modalità prova: fa passare `giorni` giorni dopo `da` come se Giada scrivesse

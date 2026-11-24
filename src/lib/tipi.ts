@@ -86,6 +86,8 @@ export interface Animale {
   carattere?: string; // sognatore, allegro, ordinato... (vedi carattere.ts): diverso per ognuno
   livelloCasa?: number; // 1..4: quanto Giada ha migliorato la sua casa-bottega (vedi migliorie.ts)
   cassa?: number; // castagne che la sua bottega ha messo da parte per Giada
+  ampliamenti?: string[]; // pezzi che si è costruito da solo, col tempo (patio, stendino... vedi ampliamenti.ts)
+  giorniCantiere?: number; // giorni di villaggio sveglio dall'ultimo pezzo costruito
 }
 
 export interface Aspetto {
@@ -119,7 +121,7 @@ export interface Edificio {
 
 export interface Evento {
   data: string;
-  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne' | 'compleanno' | 'castoro' | 'sentiero';
+  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne' | 'compleanno' | 'castoro' | 'sentiero' | 'casa';
   testo: string;
   luogo?: string; // per 'sentiero': il posto lontano scoperto (vedi biomi.ts)
   animale?: string; // di chi parla (per inquadrarlo)

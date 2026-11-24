@@ -7,7 +7,8 @@ import { emozioneDellaPagina, REGOLE } from '../lib/gioco';
 import { defMestiere, virtuMestiere, type DefMestiere } from '../lib/mestieri';
 import { creaBici, creaMoto, trovaPostazione } from './botteghe';
 import { CastoroInScena } from './castoro';
-import { altezzaTerreno, arredoVuoto, fasePianta, LATO_TERRENO, LIVELLO_ACQUA, N_TERRENO, PASSO_TERRENO, toltoAncora, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arredo, type Posto } from '../lib/arredo';
+import { animaCostruzioneNuova, COSTRUZIONI_NUOVE, creaCostruzioneNuova, creaPezzoFila, fantasma, USO_COSTRUZIONE } from './esterni';
+import { altezzaTerreno, arredoVuoto, conAcqua, FILA, pezziFila, type TipoFila, fasePianta, LATO_TERRENO, LIVELLO_ACQUA, N_TERRENO, PASSO_TERRENO, toltoAncora, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arredo, type Posto } from '../lib/arredo';
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
   aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo, SIMBOLI_MESTIERE,
@@ -49,7 +50,7 @@ export type Bersaglio =
   | { tipo: 'sentiero'; id: string };
 
 /** Cosa sta facendo Giada quando arreda il villaggio. */
-export type ModoArredo = 'sposta' | 'togli' | 'sentiero' | 'terreno' | 'orto' | 'quadri';
+export type ModoArredo = 'sposta' | 'togli' | 'sentiero' | 'terreno' | 'acqua' | 'fila' | 'orto' | 'quadri';
 
 /** Quello che succede arredando: la schermata lo salva nello stato. */
 export type EventoArredo =
@@ -58,6 +59,10 @@ export type EventoArredo =
   | { tipo: 'togli'; x: number; z: number; costo: number; cosa: string }
   | { tipo: 'poche'; costo: number; cosa: string }
   | { tipo: 'dipingi'; x: number; z: number }
+  /** comincia un tratto di sentiero o di pala (per "Annulla": un tratto intero si annulla in un colpo) */
+  | { tipo: 'tratto' }
+  | { tipo: 'acqua'; x: number; z: number }
+  | { tipo: 'fila'; pezzi: Posto[] }
   | { tipo: 'apri'; chiave: string };
 
 /** Cose che non si possono spostare (sono sparse, o seguono altro). */
@@ -145,6 +150,8 @@ interface Abitante {
   deviazione?: THREE.Vector3 | null; // un passo di lato per girare intorno a quello che lo blocca
   fermo: number; // secondi in cui cammina senza riuscire ad avvicinarsi (bloccato da qualcosa)
   distPrima: number;
+  vel: number; // velocità di adesso (parte piano, accelera, rallenta arrivando)
+  usa?: THREE.Object3D | null; // la costruzione che sta usando (altalena, giostra...): quando arriva la fa muovere
 }
 
 /** Grandezza della radura: cresce con gli abitanti, i mestieri e le costruzioni. */
@@ -174,6 +181,11 @@ const POSTI_COSTRUZIONI: Record<string, [number, number, number]> = {
 
 /** Le costruzioni grandi come una casa: stanno in disparte al bordo finché Giada non sceglie il posto. */
 const GRANDI = new Set(['acquario', 'museo']);
+
+/** Le costruzioni nuove (fontana, gazebo...): Giada sceglie dove metterle (vedi esterni.ts). */
+const NUOVE = new Set<string>(COSTRUZIONI_NUOVE);
+/** Quelle più grandi: lasciano più spazio intorno (niente fiori e cespugli addosso). */
+const NUOVE_GRANDI = new Set(['gazebo', 'palco', 'serra', 'giostra', 'casaAlbero', 'faro', 'fontana']);
 
 /**
  * Posti automatici per edifici e botteghe: un arco dietro la radura e poi i lati,
@@ -262,7 +274,7 @@ export class Scena {
   private zoom = 1;
   private centro = new THREE.Vector3(); // punto guardato dalla telecamera
   private centroVoluto = new THREE.Vector3();
-  private trascina: { x: number; y: number; mosso: number; dipinge?: boolean; ultimo?: THREE.Vector3 } | null = null;
+  private trascina: { x: number; y: number; mosso: number; dipinge?: boolean; ultimo?: THREE.Vector3; fila?: THREE.Vector3; ruota?: boolean; t?: number } | null = null;
   private mezzoDita: { x: number; y: number } | null = null;
   private dita = new Map<number, { x: number; y: number }>();
   private distanzaPizzico = 0;
@@ -312,6 +324,16 @@ export class Scena {
   modo: ModoArredo | null = null;
   /** materiale del sentiero (0 = gomma) */
   pennello = 1;
+  /** cosa si mette in fila con lo strumento "In fila" (staccionata, siepe...) */
+  tipoFila: TipoFila = 'recinto';
+  /** il pezzo "fantasma" già pronto in fondo all'ultimo messo: si tocca e si mette */
+  prossimaFila: Posto | null = null;
+  private fantasmi = new THREE.Group();
+  private tipoFantasmi = '';
+  private sopraFila: Posto | null = null; // col mouse: dove andrebbe il pezzo sotto la freccia
+  private zoomVoluto = 1;
+  private velCentro = new THREE.Vector3(); // dopo aver trascinato la vista, continua a scivolare un poco
+  private tasti = new Set<string>();
   onArredo: (e: EventoArredo) => void = () => {};
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -333,6 +355,7 @@ export class Scena {
     this.scene.add(this.lucciole);
     this.allarga(5.5);
     this.scene.add(this.selvatici);
+    this.scene.add(this.fantasmi);
 
     this.resizeObs = new ResizeObserver(() => this.ridimensiona());
     this.resizeObs.observe(canvas);
@@ -645,6 +668,7 @@ export class Scena {
       case 'mulino': { const m = creaMulino(); g = m.gruppo; this.pale = m.pale; break; }
       case 'acquario': { this.acquario = new AcquarioInScena(); g = this.acquario.gruppo; g.userData.bersaglio = { tipo: 'acquario' }; break; }
       case 'museo': { this.museo = new MuseoInScena(); g = this.museo.gruppo; g.userData.bersaglio = { tipo: 'museo' }; break; }
+      default: if (NUOVE.has(id)) g = creaCostruzioneNuova(id);
     }
     if (!g) return;
     if (pos) {
@@ -701,7 +725,7 @@ export class Scena {
         ab = {
           m, dati: a, meta: this.puntoCasuale(), pausa: 1 + Math.random() * 2, passo: Math.random() * 6, salto: uovo ? 1 : 0,
           ammicca: Math.random() * 4, z: [], eretto: 0, amico: null, incontro: 0, prossimoBalloon: 0, balloon: null,
-          attivita: null, canna: null, mezzo: null, sveglio: 0, fermo: 0, distPrima: 0,
+          attivita: null, canna: null, mezzo: null, sveglio: 0, fermo: 0, distPrima: 0, vel: 0,
         };
         this.abitanti.set(a.id, ab);
       }
@@ -716,10 +740,10 @@ export class Scena {
       if (a.mestiere) {
         const emo = a.emozione ?? emozioneDellaPagina(null, a);
         const livello = a.livelloCasa ?? 1;
-        const firma = `${a.specie}|${emo}|${a.fase}|${a.mestiere}|${livello}`;
+        const firma = `${a.specie}|${emo}|${a.fase}|${a.mestiere}|${livello}|${(a.ampliamenti ?? []).join(',')}`;
         const vecchia = this.botteghe.get(a.id);
         if (!vecchia || vecchia.userData.firma !== firma) {
-          const b = creaCasaAnimale(a.specie, emo, a.fase, a.mestiere, livello);
+          const b = creaCasaAnimale(a.specie, emo, a.fase, a.mestiere, livello, a.ampliamenti ?? []);
           b.userData.livello = livello;
           // quanto spazio prende la casa (per non passarci attraverso): la sagoma, più la stanza in più
           b.userData.ingombroCasa = (SAGOMA_CASA[a.specie]?.mezza ?? 1.1) + 0.15 + (livello >= 3 ? 0.35 : 0);
@@ -794,7 +818,7 @@ export class Scena {
     this.castagne.position.copy(this.castagno.position);
     for (const [id, g] of this.strutture) {
       if (FISSE.has(id)) continue;
-      const d = POSTI_COSTRUZIONI[id] ?? [0, 0, 0];
+      const d = POSTI_COSTRUZIONI[id] ?? this.postoAutomatico(id, raggio);
       // il ponticello segue il laghetto, se non l'ha spostato a parte
       const base = postiGrandi.get(id) ?? (id === 'ponticello' && this.arredo.posti['c:laghetto'] && !this.arredo.posti['c:ponticello']
         ? { ...this.arredo.posti['c:laghetto'], r: this.arredo.posti['c:laghetto'].r + Math.PI / 2 + 0.15 } : { x: d[0], z: d[1], r: d[2] });
@@ -823,6 +847,17 @@ export class Scena {
     this.castoro.aggiorna(s.castoro, s.ultimoAccesso, this.bosco, this.raggio);
   }
 
+  /**
+   * Il primo posto di una costruzione nuova, finché Giada non sceglie: a metà tra il centro e le case,
+   * in una direzione sua (sempre la stessa); se lì c'è già qualcosa, risolviPosti() la fa scivolare di lato.
+   */
+  private postoAutomatico(id: string, raggio: number): [number, number, number] {
+    const a = ((hash(id) % 360) / 180) * Math.PI;
+    const d = THREE.MathUtils.clamp(raggio * 0.55, 4.5, raggio - 3);
+    const x = Math.round(Math.cos(a) * d * 2) / 2, z = Math.round(Math.sin(a) * d * 2) / 2;
+    return [x, z, Math.atan2(-x, -z)];
+  }
+
   /** Altezza del prato in (x, z): sopra zero le montagnole, sotto i laghetti scavati. */
   altezza(x: number, z: number): number {
     if (Math.abs(x) >= LATO_TERRENO / 2 || Math.abs(z) >= LATO_TERRENO / 2) return 0;
@@ -831,7 +866,7 @@ export class Scena {
 
   /** C'è acqua (un laghetto scavato da Giada) in (x, z)? */
   inAcqua(x: number, z: number): boolean {
-    return this.altezza(x, z) < LIVELLO_ACQUA;
+    return conAcqua(this.arredo, x, z);
   }
 
   /** Dove si può usare la pala: dentro la radura, non sotto case, costruzioni, nido, castagno... */
@@ -846,24 +881,43 @@ export class Scena {
   /** Rifà le altezze del terreno vicino (e l'acqua dei laghetti scavati) quando Giada usa la pala. */
   private aggiornaTerreno() {
     const t = this.arredo.terreno ?? {};
-    const chiave = Object.keys(t).length + ':' + JSON.stringify(t);
+    const acqua = this.arredo.acqua ?? {};
+    const chiave = Object.keys(t).length + ':' + JSON.stringify(t) + '|' + Object.keys(acqua).length + ':' + Object.keys(acqua).join(';');
     if (chiave === this.chiaveTerreno) return;
     this.chiaveTerreno = chiave;
     this.chiaveImpronte = '';
     const geo = this.terreno.geometry as THREE.PlaneGeometry;
     const pos = geo.attributes.position;
-    let acqua = false;
     for (let v = 0; v < pos.count; v++) {
       // il piano è girato: la sua y è la -z del mondo, la sua z è l'altezza
       const i = Math.round(pos.getX(v) / PASSO_TERRENO), j = Math.round(-pos.getY(v) / PASSO_TERRENO);
-      const h = (t[`${i},${j}`] ?? 0) / 100;
-      pos.setZ(v, h);
-      if (h < LIVELLO_ACQUA) acqua = true;
+      pos.setZ(v, (t[`${i},${j}`] ?? 0) / 100);
     }
     pos.needsUpdate = true;
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
-    this.acquaScavata.visible = acqua;
+    // l'acqua: un quadretto per ogni quadretto di terreno che tocca un vertice dove Giada l'ha versata
+    // (sotto il prato non si vede: compare solo nelle buche)
+    const celle = new Set<string>();
+    for (const k of Object.keys(acqua)) {
+      const [i, j] = k.split(',').map(Number);
+      for (const [di, dj] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) celle.add(`${i + di},${j + dj}`);
+    }
+    const vert: number[] = [];
+    const y = LIVELLO_ACQUA + 0.02, P = PASSO_TERRENO;
+    for (const c of celle) {
+      const [i, j] = c.split(',').map(Number);
+      const x0 = i * P, z0 = j * P, x1 = x0 + P, z1 = z0 + P;
+      vert.push(x0, y, z0, x0, y, z1, x1, y, z0, x1, y, z0, x0, y, z1, x1, y, z1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(vert, 3));
+    g.computeVertexNormals();
+    this.acquaScavata.geometry.dispose();
+    this.acquaScavata.geometry = g;
+    this.acquaScavata.rotation.x = 0;
+    this.acquaScavata.position.y = 0;
+    this.acquaScavata.visible = vert.length > 0;
     this.chiaveBosco = ''; // i fiori e i sassi seguono il terreno (e nell'acqua non ci sono)
     this.ostacoliTra = 0;
   }
@@ -1019,7 +1073,7 @@ export class Scena {
   private occupati(): [number, number, number][] {
     const out: [number, number, number][] = [];
     for (const [k, o] of this.mobili()) {
-      const d = k.startsWith('o:') ? 0.8 : k.startsWith('q:') ? 0.9 : k.startsWith('a:') ? 1.3 : k === 'castagno' ? 2.6 : k.startsWith('b:') || k === 'c:acquario' || k === 'c:museo' ? 3.8 : k.startsWith('e:') ? 3 : 2.2;
+      const d = k.startsWith('o:') ? 0.8 : k.startsWith('q:') ? 0.9 : k.startsWith('a:') ? 1.3 : k === 'castagno' ? 2.6 : k.startsWith('b:') || k === 'c:acquario' || k === 'c:museo' ? 3.8 : k.startsWith('e:') || NUOVE_GRANDI.has(k.slice(2)) ? 3 : 2.2;
       out.push([o.position.x, o.position.z, d]);
     }
     return out;
@@ -1033,7 +1087,7 @@ export class Scena {
 
   /** Case e edifici che non hanno ancora un posto deciso (sono nel posto automatico). */
   caseSenzaPosto(): string[] {
-    return [...[...this.edifici.keys()].map((t) => 'e:' + t), ...[...this.botteghe.keys()].map((id) => 'b:' + id), ...(this.acquario ? ['c:acquario'] : []), ...(this.museo ? ['c:museo'] : [])].filter((k) => !this.arredo.posti[k]);
+    return [...[...this.edifici.keys()].map((t) => 'e:' + t), ...[...this.botteghe.keys()].map((id) => 'b:' + id), ...(this.acquario ? ['c:acquario'] : []), ...(this.museo ? ['c:museo'] : []), ...[...this.strutture.keys()].filter((id) => NUOVE.has(id)).map((id) => 'c:' + id)].filter((k) => !this.arredo.posti[k]);
   }
 
   /** Sceglie (o toglie la scelta) di una cosa da spostare. */
@@ -1329,7 +1383,7 @@ export class Scena {
     }
     this.angolo = 0;
     this.velAngolo = 0;
-    this.zoom = 0.55;
+    this.zoom = this.zoomVoluto = 0.55;
   }
 
   faiParlareCorvo(secondi = 2) {
@@ -1349,27 +1403,37 @@ export class Scena {
 
   private collegaInput() {
     const c = this.canvas;
+    // col mouse: il tasto destro (o quello in mezzo) gira la vista; niente menu del tasto destro sul villaggio
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerdown', (e) => {
       if (this.cine) return;
+      this.velCentro.set(0, 0, 0);
       this.dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.dita.size === 1) {
-        this.trascina = { x: e.clientX, y: e.clientY, mosso: 0 };
-        this.iniziaArredo(e.clientX, e.clientY);
+        this.trascina = { x: e.clientX, y: e.clientY, mosso: 0, t: performance.now() };
+        if (e.pointerType === 'mouse' && (e.button === 2 || e.button === 1)) this.trascina.ruota = true;
+        else this.iniziaArredo(e.clientX, e.clientY);
       } else {
         this.distanzaPizzico = this.distanzaDita();
         this.angoloDita = this.angoloTraDita();
         this.mezzoDita = this.mezzo();
-        if (this.trascina) this.trascina.dipinge = false;
+        if (this.trascina) { this.trascina.dipinge = false; this.trascina.fila = undefined; }
+        this.mostraFantasmi([]);
         this.finisciSpostamento();
       }
       c.setPointerCapture(e.pointerId);
     });
     c.addEventListener('pointermove', (e) => {
-      if (!this.dita.has(e.pointerId)) return;
+      if (!this.dita.has(e.pointerId)) {
+        // col mouse, senza premere: il pezzo fantasma segue la freccia (strumento "In fila")
+        if (e.pointerType === 'mouse' && this.modo === 'fila') this.fantasmaSotto(e.clientX, e.clientY);
+        return;
+      }
+      const prima = this.dita.get(e.pointerId)!;
       this.dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.dita.size >= 2) {
         const d = this.distanzaDita();
-        if (this.distanzaPizzico) this.zoom = THREE.MathUtils.clamp(this.zoom * (this.distanzaPizzico / d), 0.5, 2.4);
+        if (this.distanzaPizzico) this.zoomVoluto = this.zoom = THREE.MathUtils.clamp(this.zoom * (this.distanzaPizzico / d), 0.5, 2.4);
         this.distanzaPizzico = d;
         const a = this.angoloTraDita();
         let da = a - this.angoloDita;
@@ -1379,7 +1443,7 @@ export class Scena {
         if (this.trascina) this.trascina.mosso = 99;
         // con due dita si sposta anche la vista (serve quando un dito disegna il sentiero)
         const m = this.mezzo();
-        if (this.mezzoDita) this.panoramica(m.x - this.mezzoDita.x, m.y - this.mezzoDita.y);
+        if (this.mezzoDita) this.trascinaVista(this.mezzoDita.x, this.mezzoDita.y, m.x, m.y);
         this.mezzoDita = m;
         return;
       }
@@ -1388,6 +1452,17 @@ export class Scena {
       this.trascina.mosso += Math.abs(dx) + Math.abs(dy);
       this.trascina.x = e.clientX;
       this.trascina.y = e.clientY;
+      if (this.trascina.ruota) {
+        // tasto destro: girare intorno al punto guardato (e un po' di zoom tirando su e giù)
+        this.angolo -= dx * 0.008;
+        this.zoomVoluto = THREE.MathUtils.clamp(this.zoomVoluto * (1 + dy * 0.003), 0.5, 2.4);
+        return;
+      }
+      if (this.trascina.fila) {
+        const p = this.puntoSuolo(e.clientX, e.clientY);
+        if (p && this.trascina.mosso >= 8) this.mostraFantasmi(this.pezziDa(this.trascina.fila, p));
+        return;
+      }
       if (this.trascina.dipinge) {
         const p = this.puntoSuolo(e.clientX, e.clientY);
         if (p && (!this.trascina.ultimo || p.distanceTo(this.trascina.ultimo) > (this.modo === 'terreno' ? 0.45 : 0.2))) {
@@ -1397,15 +1472,18 @@ export class Scena {
         return;
       }
       if (this.spostando) {
+        // la cosa trascinata segue il dito senza scatti; si aggancia alla griglia quando si lascia
         const p = this.puntoSuolo(e.clientX, e.clientY);
         const o = this.mobili().get(this.spostando);
         if (p && o) {
           this.limita(p);
-          o.position.set(Math.round(p.x * 2) / 2, 0, Math.round(p.z * 2) / 2);
+          o.position.x += (p.x - o.position.x) * 0.6;
+          o.position.z += (p.z - o.position.z) * 0.6;
+          o.position.y = Math.max(0, this.altezza(o.position.x, o.position.z));
         }
         return;
       }
-      this.panoramica(dx, dy);
+      this.trascinaVista(prima.x, prima.y, e.clientX, e.clientY);
     });
     const fine = (e: PointerEvent) => {
       this.dita.delete(e.pointerId);
@@ -1414,7 +1492,11 @@ export class Scena {
       if (this.dita.size === 0) {
         this.trascina = null;
         this.finisciSpostamento();
-        if (t && t.mosso < 8 && e.type === 'pointerup' && !t.dipinge) {
+        // lasciata andare dopo un trascinamento veloce: la vista scivola ancora un poco
+        if (performance.now() - this.ultimoTrascina > 90 || t?.dipinge || t?.fila || t?.ruota) this.velCentro.set(0, 0, 0); // fermo prima di lasciare: non scivola
+        if (t?.fila && e.type === 'pointerup') { this.finisciFila(t, e.clientX, e.clientY); return; }
+        if (t?.fila) this.mostraFantasmi([]);
+        if (t && t.mosso < 8 && e.type === 'pointerup' && !t.dipinge && !t.ruota) {
           if (this.modo) this.toccaArredo(e.clientX, e.clientY);
           else this.tocca(e.clientX, e.clientY);
         }
@@ -1422,20 +1504,140 @@ export class Scena {
     };
     c.addEventListener('pointerup', fine);
     c.addEventListener('pointercancel', fine);
+    c.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !this.dita.size) { this.sopraFila = null; this.aggiornaFantasmiFila(); } });
     c.addEventListener('wheel', (e) => {
       if (this.cine) return;
-      this.zoom = THREE.MathUtils.clamp(this.zoom * (1 + Math.sign(e.deltaY) * 0.08), 0.5, 2.4);
-    }, { passive: true });
+      e.preventDefault();
+      // la rotella (o due dita sul trackpad) avvicina e allontana con dolcezza, in proporzione a quanto si gira
+      const passo = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      this.zoomVoluto = THREE.MathUtils.clamp(this.zoomVoluto * Math.exp(passo * 0.0012), 0.5, 2.4);
+    }, { passive: false });
+    // dalla tastiera (al computer): frecce o WASD per muoversi, Q/E per girare, + e - per lo zoom
+    this.suTasto = (e: KeyboardEvent) => {
+      const dove = e.target as HTMLElement | null;
+      if (dove && (dove.tagName === 'INPUT' || dove.tagName === 'TEXTAREA' || dove.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (!['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'q', 'e', '+', '-', '='].includes(k)) return;
+      if (e.type === 'keydown') this.tasti.add(k); else this.tasti.delete(k);
+      if (k.startsWith('arrow')) e.preventDefault();
+    };
+    window.addEventListener('keydown', this.suTasto);
+    window.addEventListener('keyup', this.suTasto);
+    window.addEventListener('blur', this.lasciaTasti);
+  }
+  private suTasto: (e: KeyboardEvent) => void = () => {};
+  private lasciaTasti = () => this.tasti.clear();
+
+  /**
+   * Trascinare la vista: il punto del prato sotto il dito resta sotto il dito (come spostare un foglio sul tavolo),
+   * subito, senza ritardo. Lasciando andare, la vista scivola ancora un poco e si ferma piano.
+   */
+  private trascinaVista(x0: number, y0: number, x1: number, y1: number) {
+    const a = this.puntoSuolo(x0, y0), b = this.puntoSuolo(x1, y1);
+    if (!a || !b) return;
+    const d = a.sub(b).setY(0);
+    // vicino all'orizzonte un pixel vale tanti metri: non si vola via
+    if (d.length() > 3) d.setLength(3);
+    this.spostaCentro(d);
+    const ora = performance.now();
+    const dt = Math.max(8, ora - (this.ultimoTrascina || ora - 16)) / 1000;
+    this.ultimoTrascina = ora;
+    this.velCentro.lerp(d.clone().divideScalar(dt), 0.5);
+  }
+  private ultimoTrascina = 0;
+
+  /** Sposta subito il punto guardato (e la telecamera con lui), restando dentro la radura. */
+  private spostaCentro(d: THREE.Vector3) {
+    const lim = Math.max(3, this.raggio - 1);
+    const prima = this.centro.clone();
+    this.centro.add(d);
+    if (this.centro.length() > lim) this.centro.setLength(lim);
+    this.centroVoluto.copy(this.centro);
+    const mosso = this.centro.clone().sub(prima);
+    this.posCam.add(mosso);
+    this.guardaCam.add(mosso);
   }
 
-  /** Sposta il punto guardato sul terreno, nella direzione del dito. */
-  private panoramica(dx: number, dy: number) {
-    const k = 0.022 * this.zoom * (12 / Math.max(300, this.canvas.clientWidth)) * 30;
-    const destra = new THREE.Vector3(Math.cos(this.angolo), 0, -Math.sin(this.angolo));
-    const avanti = new THREE.Vector3(-Math.sin(this.angolo), 0, -Math.cos(this.angolo));
-    this.centroVoluto.addScaledVector(destra, -dx * k).addScaledVector(avanti, dy * k);
-    const lim = this.raggio - 1;
-    if (this.centroVoluto.length() > lim) this.centroVoluto.setLength(lim);
+  // ---------- lo strumento "In fila": staccionate, siepi, muretti, lampioni ----------
+
+  /** Le estremità dei pezzi già messi dello stesso tipo: una fila nuova ci si attacca. */
+  private estremiFila(): Posto[] {
+    const out: Posto[] = [];
+    const passo = FILA[this.tipoFila].passo;
+    for (const o of this.arredo.oggetti ?? []) {
+      if (o.tipo !== this.tipoFila) continue;
+      const ux = Math.cos(o.r), uz = -Math.sin(o.r);
+      out.push({ x: o.x + ux * passo / 2, z: o.z + uz * passo / 2, r: o.r }, { x: o.x - ux * passo / 2, z: o.z - uz * passo / 2, r: o.r + Math.PI });
+    }
+    return out;
+  }
+
+  /** Il punto di partenza di una fila: attaccato a un'estremità vicina, se c'è; altrimenti sulla griglia. */
+  private attacca(p: THREE.Vector3): THREE.Vector3 {
+    let meglio: Posto | null = null, dm = 0.7;
+    for (const e of this.estremiFila()) { const d = Math.hypot(e.x - p.x, e.z - p.z); if (d < dm) { dm = d; meglio = e; } }
+    return meglio ? new THREE.Vector3(meglio.x, 0, meglio.z) : new THREE.Vector3(Math.round(p.x * 2) / 2, 0, Math.round(p.z * 2) / 2);
+  }
+
+  /** I pezzi da `da` fino al punto `a` del dito. */
+  private pezziDa(da: THREE.Vector3, a: THREE.Vector3): Posto[] {
+    this.limita(a);
+    return pezziFila(this.tipoFila, da.x, da.z, a.x, a.z, this.prossimaFila?.r ?? this.angolo);
+  }
+
+  /** Il pezzo singolo che andrebbe sotto il dito (o il fantasma già pronto, se il dito è lì vicino). */
+  private pezzoSotto(p: THREE.Vector3): Posto {
+    const q = this.prossimaFila;
+    if (q && Math.hypot(q.x - p.x, q.z - p.z) < 1.3) return q;
+    // vicino alla fine di una fila: il pezzo nuovo continua quella fila
+    const passo = FILA[this.tipoFila].passo;
+    for (const e of this.estremiFila()) {
+      if (Math.hypot(e.x - p.x, e.z - p.z) > 0.9) continue;
+      const r = e.r;
+      return { x: e.x + Math.cos(r) * passo / 2, z: e.z - Math.sin(r) * passo / 2, r };
+    }
+    this.limita(p);
+    return { x: Math.round(p.x * 2) / 2, z: Math.round(p.z * 2) / 2, r: q?.r ?? this.angolo };
+  }
+
+  private finisciFila(t: NonNullable<Scena['trascina']>, x: number, y: number) {
+    const p = this.puntoSuolo(x, y);
+    if (!p || !t.fila) { this.mostraFantasmi([]); return; }
+    const pezzi = t.mosso >= 8 ? this.pezziDa(t.fila, p) : [this.pezzoSotto(p)];
+    this.onArredo({ tipo: 'fila', pezzi });
+    // in fondo all'ultimo pezzo resta subito pronto il prossimo, fantasma, nella stessa direzione
+    const u = pezzi[pezzi.length - 1], passo = FILA[this.tipoFila].passo;
+    this.prossimaFila = { x: u.x + Math.cos(u.r) * passo, z: u.z - Math.sin(u.r) * passo, r: u.r };
+    this.sopraFila = null;
+    this.aggiornaFantasmiFila();
+  }
+
+  /** Col mouse: il pezzo fantasma sotto la freccia. */
+  private fantasmaSotto(x: number, y: number) {
+    const p = this.puntoSuolo(x, y);
+    this.sopraFila = p ? this.pezzoSotto(p) : null;
+    this.aggiornaFantasmiFila();
+  }
+
+  /** Mostra il fantasma pronto in fondo alla fila (e quello sotto la freccia del mouse). */
+  aggiornaFantasmiFila() {
+    if (this.modo !== 'fila') { this.mostraFantasmi([]); return; }
+    const l: Posto[] = [];
+    if (this.prossimaFila) l.push(this.prossimaFila);
+    if (this.sopraFila && this.sopraFila !== this.prossimaFila) l.push(this.sopraFila);
+    this.mostraFantasmi(l);
+  }
+
+  private mostraFantasmi(pezzi: Posto[]) {
+    if (this.tipoFantasmi !== this.tipoFila) { this.fantasmi.clear(); this.tipoFantasmi = this.tipoFila; }
+    while (this.fantasmi.children.length < pezzi.length) this.fantasmi.add(fantasma(creaPezzoFila(this.tipoFila), '#bfe6ff'));
+    this.fantasmi.children.forEach((g, i) => {
+      const p = pezzi[i];
+      g.visible = !!p;
+      if (!p) return;
+      g.position.set(p.x, Math.max(0, this.altezza(p.x, p.z)), p.z);
+      g.rotation.y = p.r;
+    });
   }
 
   private mezzo() {
@@ -1479,7 +1681,16 @@ export class Scena {
     if (this.modo === 'sentiero' || this.modo === 'terreno') {
       this.trascina.dipinge = true;
       this.trascina.ultimo = p;
+      this.onArredo({ tipo: 'tratto' });
       this.onArredo({ tipo: 'dipingi', x: p.x, z: p.z });
+      return;
+    }
+    if (this.modo === 'fila') {
+      // si parte dal fantasma pronto (se il dito è lì), dalla fine di una fila vicina, o dal punto toccato
+      const q = this.prossimaFila, passo = FILA[this.tipoFila].passo;
+      this.trascina.fila = q && Math.hypot(q.x - p.x, q.z - p.z) < 1.3
+        ? new THREE.Vector3(q.x - Math.cos(q.r) * passo / 2, 0, q.z + Math.sin(q.r) * passo / 2)
+        : this.attacca(p);
       return;
     }
     if (this.modo === 'sposta' && this.selezionato) {
@@ -1567,6 +1778,10 @@ export class Scena {
   /** Tocco mentre si arreda. */
   private toccaArredo(x: number, y: number) {
     const p = this.puntoSuolo(x, y);
+    if (this.modo === 'acqua') {
+      if (p) this.onArredo({ tipo: 'acqua', x: p.x, z: p.z });
+      return;
+    }
     if (this.modo === 'togli') {
       const natura: [string, THREE.Object3D][] = [
         ...this.bosco.children.map((o, i) => ['b' + i, o] as [string, THREE.Object3D]),
@@ -1763,9 +1978,28 @@ export class Scena {
     CURVA.valore = 0.0022 / Math.max(0.6, this.zoom);
 
     if (!this.trascina) {
-      this.velAngolo *= 0.92;
-      this.angolo += this.velAngolo;
+      this.velAngolo *= Math.pow(0.92, dt * 60);
+      this.angolo += this.velAngolo * dt * 60;
     }
+    // la tastiera: frecce/WASD spostano, Q/E girano, +/- avvicinano (morbido, come col dito)
+    if (this.tasti.size && !this.cine) {
+      const avanti = (this.tasti.has('w') || this.tasti.has('arrowup') ? 1 : 0) - (this.tasti.has('s') || this.tasti.has('arrowdown') ? 1 : 0);
+      const lato = (this.tasti.has('d') || this.tasti.has('arrowright') ? 1 : 0) - (this.tasti.has('a') || this.tasti.has('arrowleft') ? 1 : 0);
+      if (avanti || lato) {
+        const v = 7 * this.zoom * dt;
+        this.spostaCentro(new THREE.Vector3(Math.cos(this.angolo) * lato - Math.sin(this.angolo) * avanti, 0, -Math.sin(this.angolo) * lato - Math.cos(this.angolo) * avanti).multiplyScalar(v));
+      }
+      if (this.tasti.has('q')) this.angolo += dt * 1.6;
+      if (this.tasti.has('e')) this.angolo -= dt * 1.6;
+      if (this.tasti.has('+') || this.tasti.has('=')) this.zoomVoluto = Math.max(0.5, this.zoomVoluto * (1 - dt * 1.2));
+      if (this.tasti.has('-')) this.zoomVoluto = Math.min(2.4, this.zoomVoluto * (1 + dt * 1.2));
+    }
+    // dopo aver trascinato: la vista scivola ancora un poco e si ferma piano
+    if (!this.trascina && this.velCentro.lengthSq() > 0.0004) {
+      this.spostaCentro(this.velCentro.clone().multiplyScalar(dt));
+      this.velCentro.multiplyScalar(Math.exp(-dt * 5));
+    } else if (!this.trascina) this.velCentro.set(0, 0, 0);
+    this.zoom += (this.zoomVoluto - this.zoom) * Math.min(1, dt * 8);
     this.centro.lerp(this.centroVoluto, Math.min(1, dt * 3));
     const oscilla = Math.sin(t * 0.15) * 0.04;
     const cin = this.cine;
@@ -1839,6 +2073,24 @@ export class Scena {
     }
     const lago = this.strutture.get('laghetto');
     if (lago) animaLaghetto(lago, t);
+    // le costruzioni nuove: zampilli, lancette dell'orologio, api, giostra, faro...
+    const oraVera = this.oraFinta ?? new Date().getHours() + new Date().getMinutes() / 60;
+    for (const [id, g] of this.strutture) if (NUOVE.has(id)) animaCostruzioneNuova(id, g, t, this.buio, oraVera);
+    // i lampioni messi in fila da Giada si accendono la sera; le girandole e le banderuole girano col vento
+    for (const o of this.oggetti.values()) {
+      const l = o.getObjectByName('luce') as THREE.Mesh | undefined;
+      if (l) (l.material as THREE.MeshToonMaterial).emissiveIntensity = 0.2 + this.buio * 2.2;
+    }
+    const ventoGira = this.meteo === 'vento' || this.meteo === 'temporale' ? 5 : 1.4;
+    for (const b of this.botteghe.values()) {
+      // (cercati una volta sola per casa: girarli tutti a ogni fotogramma costerebbe troppo)
+      const mobili = (b.userData.mobili ??= (() => { const l: THREE.Object3D[] = []; b.traverse((p) => { if (p.name === 'girandola' || p.name === 'banderuola' || p.name === 'panno') l.push(p); }); return l; })()) as THREE.Object3D[];
+      for (const p of mobili) {
+        if (p.name === 'girandola') p.rotation.z = t * ventoGira * 2;
+        else if (p.name === 'banderuola') p.rotation.y = Math.sin(t * 0.3 + b.position.x) * 0.8 + (this.meteo === 'vento' ? Math.sin(t * 3) * 0.3 : 0);
+        else p.rotation.x = Math.sin(t * ventoGira * 1.3 + p.position.x * 4) * 0.25;
+      }
+    }
     this.pescata?.aggiorna(dt, t);
     if (this.pale) this.pale.rotation.z += dt * (this.meteo === 'vento' || this.meteo === 'temporale' ? 2.2 : 0.6);
     // le case migliorate: il fumo del camino sale piano, la bandiera sventola
@@ -1877,6 +2129,7 @@ export class Scena {
       this.esclamativo.position.y = 2.1 * conR.m.gruppo.scale.x + Math.abs(Math.sin(t * 3)) * 0.2;
     }
 
+    if (this.modo !== 'fila' && this.fantasmi.children.some((f) => f.visible)) { this.prossimaFila = null; this.sopraFila = null; this.mostraFantasmi([]); }
     const scelto = this.modo && this.selezionato ? this.mobili().get(this.selezionato) : undefined;
     this.anelloSel.visible = !!scelto;
     if (scelto) {
@@ -2030,6 +2283,7 @@ export class Scena {
     }
 
     if (ab.pausa > 0) {
+      ab.vel = 0;
       ab.pausa -= dt;
       // respiro e testolina che si inclina
       ab.m.corpo.position.y = Math.sin(t * 2.2 + g.position.x) * 0.012;
@@ -2042,6 +2296,7 @@ export class Scena {
       return;
     }
     if (dist < 0.15) {
+      ab.vel = 0;
       if (!ab.attivita) ab.pausa = 1.5 + Math.random() * 4;
       return;
     }
@@ -2066,25 +2321,33 @@ export class Scena {
       return;
     }
 
-    // camminata: a quattro zampe (su due solo se si stava ancora rimettendo giù)
+    // camminata: a quattro zampe (su due solo se si stava ancora rimettendo giù).
+    // Come un animale vero: parte piano e accelera, curva girando il corpo (non scivola di lato),
+    // rallenta nelle curve strette e quando arriva
     const gioca = ab.amico && fase === 'cucciolo';
     const vel = (fase === 'cucciolo' ? (gioca ? 1.5 : 0.7) : 0.95) * (ab.dati.umore > 50 ? 1 : 0.6);
     dir.normalize();
     this.sterza(ab, dir, dist);
-    g.position.addScaledVector(dir, Math.min(dist, vel * dt));
     const verso = Math.atan2(dir.x, dir.z);
     const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
-    g.rotation.y += diff * Math.min(1, dt * 6);
+    g.rotation.y += diff * Math.min(1, dt * 5);
+    const allineato = Math.max(0, Math.cos(diff));
+    const voluta = vel * (0.2 + 0.8 * allineato) * Math.min(1, 0.35 + dist / 0.8);
+    ab.vel += (voluta - ab.vel) * Math.min(1, dt * (voluta > ab.vel ? 3 : 6));
+    // si va dove guarda il muso, con un po' della direzione voluta (così non gira in tondo intorno alla meta)
+    const muso = new THREE.Vector3(Math.sin(g.rotation.y), 0, Math.cos(g.rotation.y)).multiplyScalar(0.75).addScaledVector(dir, 0.25).normalize();
+    g.position.addScaledVector(muso, Math.min(dist, ab.vel * dt));
+    const ritmo = Math.min(1.2, ab.vel / Math.max(0.1, vel)); // le zampe vanno a tempo con la velocità: niente passi sul posto
     ab.m.testa.rotation.x = 0;
-    ab.m.testa.rotation.y = 0;
+    ab.m.testa.rotation.y = THREE.MathUtils.lerp(ab.m.testa.rotation.y, THREE.MathUtils.clamp(diff, -0.5, 0.5), Math.min(1, dt * 6)); // guarda dove sta per girare
     if (ab.eretto > 0.6) {
-      ab.passo += dt * 8;
+      ab.passo += dt * 8 * ritmo;
       ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.05;
       ab.m.corpo.rotation.z = Math.sin(ab.passo) * 0.06; // ondeggia da un piede all'altro
       ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i % 2 === 0 ? 0 : Math.PI) + (i < 2 ? Math.PI : 0)) * (i < 2 ? 0.5 : 0.65)));
     } else {
-      ab.passo += dt * (gioca ? 16 : 11) * (0.6 + 0.4 * ampiezzaPasso(ab.m)); // le zampe lunghe fanno passi più lenti
-      ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.1;
+      ab.passo += dt * (gioca ? 16 : 11) * (0.6 + 0.4 * ampiezzaPasso(ab.m)) * ritmo; // le zampe lunghe fanno passi più lenti
+      ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.1 * ritmo;
       ab.m.testa.rotation.z = Math.sin(ab.passo) * 0.06;
       ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(ab.m)));
     }
@@ -2549,6 +2812,24 @@ export class Scena {
         return;
       }
     }
+    // le costruzioni che Giada ha comprato si usano: si va a guardare la fontana, a mangiare al tavolo da picnic,
+    // i cuccioli vanno sull'altalena e sulla giostra (ognuno solo dove c'è posto)
+    const usabili = [...this.strutture.entries()].filter(([id, g]) => NUOVE.has(id) && g.scale.x >= 0.5 && !!USO_COSTRUZIONE[id]
+      && (!USO_COSTRUZIONE[id].chi || (USO_COSTRUZIONE[id].chi === 'cuccioli') === (ab.dati.fase === 'cucciolo')));
+    if (usabili.length && Math.random() < 0.3) {
+      const [id, g] = usabili[Math.floor(Math.random() * usabili.length)];
+      const uso = USO_COSTRUZIONE[id];
+      const [lx, lz] = uso.posti[Math.floor(Math.random() * uso.posti.length)];
+      const c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
+      const p = new THREE.Vector3(g.position.x + lx * c + lz * sn, 0, g.position.z - lx * sn + lz * c);
+      if (this.affollato(p, ab, 0.6) < 1) {
+        const cosa = uso.cosa === 'dondola' || uso.cosa === 'balla' ? 'saltella' : uso.cosa;
+        ab.attivita = { id: cosa, tempo: 10 + Math.random() * 10, prossimo: 1 + Math.random() * 2 };
+        ab.meta = p;
+        ab.usa = g;
+        return;
+      }
+    }
     // a pranzo e la sera ci si riposa, ma ognuno nel suo posticino; la panchina tiene due amici
     const riposo = momento === 'pranzo' ? 0.55 : momento === 'sera' ? 0.5 : momento === 'mattina' ? 0.15 : 0.2;
     if (Math.random() < riposo) {
@@ -2791,6 +3072,14 @@ export class Scena {
 
   /** L'animale fa una cosa che ha imparato. */
   private faiAttivita(ab: Abitante, dt: number, t: number) {
+    // arrivato alla costruzione che voleva usare: si gira verso di lei, e l'altalena o la giostra partono
+    if (ab.usa) {
+      const u = ab.usa;
+      ab.usa = null;
+      ab.m.gruppo.rotation.y = Math.atan2(u.position.x - ab.m.gruppo.position.x, u.position.z - ab.m.gruppo.position.z);
+      const d = u.getObjectByName('dondolo') ?? u.getObjectByName('giostra');
+      if (d) d.userData.spinta = d.name === 'dondolo' ? 0.55 : 1;
+    }
     const att = ab.attivita!;
     const g = ab.m.gruppo;
     const def = REGOLE.abilita.find((d) => d.id === att.id);
@@ -3169,7 +3458,7 @@ export class Scena {
   }
 
   /** Telecamera ravvicinata su un animale, un uovo, il corvo o un edificio. */
-  inquadra(cosa: { tipo: 'animale' | 'uovo' | 'edificio'; id: string } | { tipo: 'corvo' }): boolean {
+  inquadra(cosa: { tipo: 'animale' | 'uovo' | 'edificio' | 'casa'; id: string } | { tipo: 'corvo' }): boolean {
     let o: THREE.Object3D | undefined;
     let dist = 2.6, alt = 0.9, guardaY = 0.55;
     if (cosa.tipo === 'animale') {
@@ -3194,6 +3483,14 @@ export class Scena {
     } else if (cosa.tipo === 'edificio') {
       o = this.edifici.get(cosa.id);
       dist = 6; alt = 2.4; guardaY = 1.4;
+    } else if (cosa.tipo === 'casa') {
+      // la casa vista da davanti e un po' di lato, così si vede anche quello che ha costruito intorno
+      o = this.botteghe.get(cosa.id);
+      if (!o) return false;
+      const c = o;
+      const pos = new THREE.Vector3();
+      this.cine = { segui: () => c.getWorldPosition(pos).setY(0), dist: 7, alt: 3.2, guardaY: 1.1, angolo: c.rotation.y + 0.45, oggetto: c };
+      return true;
     } else {
       o = this.corvo.gruppo;
       dist = 3; alt = 1.2; guardaY = 1.6;
@@ -3557,6 +3854,9 @@ export class Scena {
 
   distruggi() {
     cancelAnimationFrame(this.raf);
+    window.removeEventListener('keydown', this.suTasto);
+    window.removeEventListener('keyup', this.suTasto);
+    window.removeEventListener('blur', this.lasciaTasti);
     for (const t of this.tagli) t.smonta();
     this.festa?.distruggi();
     this.resizeObs.disconnect();

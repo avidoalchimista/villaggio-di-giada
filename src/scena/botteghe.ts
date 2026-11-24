@@ -450,7 +450,26 @@ export function creaAttrezzo(id: string, d?: DefMestiere): THREE.Group {
     case 'formaggi': for (let i = 0; i < 3; i++) add(g, mesh(geo.cil(0.25 - i * 0.03, 0.25 - i * 0.03, 0.16, 16), mat('#f2d46a', { rim: 0.4 })), 0, 0.08 + i * 0.17, 0); break;
     case 'tamburo': add(g, mesh(geo.cil(0.3, 0.3, 0.35, 16), mat('#d8443a', { rim: 0.4 })), 0, 0.18, 0); add(g, mesh(geo.cil(0.31, 0.31, 0.03, 16), mat('#fbfbf6')), 0, 0.36, 0); for (let i = 0; i < 2; i++) add(g, mesh(geo.cil(0.015, 0.015, 0.35, 5), legno()), -0.1 + i * 0.2, 0.42, 0.1).rotation.x = 1.2; break;
     case 'leggio': add(g, mesh(geo.cil(0.025, 0.025, 1.0, 5), mat('#2e2a2e')), 0, 0.5, 0); { const p = add(g, mesh(geo.scatola(0.45, 0.32, 0.02), mat('#ffffff', { map: texture(64, (c, l) => { c.fillStyle = '#fbf4e0'; c.fillRect(0, 0, l, l); c.strokeStyle = '#3b2616'; for (let y = 12; y < l; y += 14) for (let k = 0; k < 5; k++) { c.beginPath(); c.moveTo(4, y + k * 2); c.lineTo(l - 4, y + k * 2); c.stroke(); } c.fillStyle = '#3b2616'; c.font = '14px serif'; c.fillText('♪ ♫ ♪', 10, 26); }), rim: 0 })), 0, 1.05, 0.03); p.rotation.x = -0.5; } break;
-    case 'note': for (let i = 0; i < 3; i++) { const n = add(g, mesh(geo.palla(0.07, 8), mat(['#8a5ac8', '#e0607a', '#3a5aa8'][i], { emissive: '#402060', emissiveIntensity: 0.3 })), -0.3 + i * 0.3, 1.0 + (i % 2) * 0.25, 0); n.scale.set(1.2, 0.85, 0.6); add(n, mesh(geo.cil(0.012, 0.012, 0.28, 4), mat('#2e2a2e')), 0.06, 0.14, 0); } add(g, mesh(geo.cil(0.025, 0.025, 0.9, 5), legno()), 0, 0.45, 0); break;
+    case 'arpa': {
+      // l'arpa: la cornice di legno dorato a triangolo con le corde (al posto delle note finte che galleggiavano)
+      const oro = mat('#c8a050', { rim: 0.5 });
+      add(g, mesh(geo.scatola(0.5, 0.08, 0.3), legno()), 0, 0.04, 0);
+      add(g, mesh(geo.cil(0.05, 0.07, 1.35, 6), oro), -0.2, 0.72, 0).rotation.z = 0.08;
+      const collo = add(g, mesh(geo.cil(0.04, 0.04, 0.62, 6), oro), 0.06, 1.33, 0);
+      collo.rotation.z = -1.2;
+      add(g, mesh(geo.cil(0.04, 0.06, 1.2, 6), legno()), 0.2, 0.68, 0).rotation.z = 0.32;
+      for (let i = 0; i < 7; i++) { const x = -0.14 + i * 0.055; const h = 1.05 - i * 0.1; add(g, mesh(geo.cil(0.004, 0.004, h, 3), mat('#fbf4e0', { rim: 0 })), x, 0.18 + h / 2, 0); }
+      break;
+    }
+    case 'contrabbasso': {
+      // appoggiato in piedi, col manico lungo
+      const corpo = add(g, mesh(geo.palla(0.3, 12), mat('#9a4a22', { rim: 0.5 })), 0, 0.45, 0);
+      corpo.scale.set(0.95, 1.35, 0.4);
+      add(g, mesh(geo.cil(0.035, 0.035, 0.8, 6), mat('#2e2a2e')), 0, 1.15, 0.02);
+      add(g, mesh(geo.palla(0.06, 6), mat('#2e2a2e')), 0, 1.58, 0.02);
+      add(g, mesh(geo.cil(0.012, 0.012, 0.12, 4), mat('#2e2a2e')), 0, 0.05, 0);
+      break;
+    }
     case 'cavalletto': {
       for (const s of [-1, 1]) { const l = add(g, mesh(geo.cil(0.025, 0.03, 1.3, 5), legno()), s * 0.25, 0.62, 0); l.rotation.z = -s * 0.12; }
       add(g, mesh(geo.cil(0.025, 0.03, 1.2, 5), legno()), 0, 0.55, -0.22).rotation.x = -0.35;
