@@ -4,6 +4,10 @@
   import Casa from '../componenti/Casa.svelte';
   import Pesca from '../componenti/Pesca.svelte';
   import Acquario from '../componenti/Acquario.svelte';
+  import Museo from '../componenti/Museo.svelte';
+  import Funghi from '../componenti/Funghi.svelte';
+  import { FUNGO } from '../lib/funghi';
+  import { RITROVAMENTO, haMuseo } from '../lib/museo';
   import Luogo from '../componenti/Luogo.svelte';
   import Escursione from '../componenti/Escursione.svelte';
   import { escursionePossibile, type Giornata } from '../lib/escursioni';
@@ -15,7 +19,7 @@
   import { leggiMeta, scriviMeta } from '../lib/db';
   import frasi from '../dati/frasi.json';
   import {
-    app, cambiaArredo, chiudiMentreEriVia, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, soffiaCandeline, vai,
+    app, cambiaArredo, chiudiMentreEriVia, prendiRitrovamentoQui, rientriQui, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, soffiaCandeline, vai,
     type RigaDialogo,
   } from '../lib/app.svelte';
   import {
@@ -81,6 +85,41 @@
   function chiudiAcquario() {
     acquario = false;
     scena?.fineCinema();
+  }
+  // il museo, e i funghi (chi mandare nel bosco, il cestino)
+  let museo = $state(false);
+  function apriMuseo() {
+    dialogo = null;
+    if (scena?.inquadraMuseo()) museo = true;
+  }
+  function chiudiMuseo() {
+    museo = false;
+    scena?.fineCinema();
+  }
+  let funghi = $state(false);
+  let haFunghi = $derived(Object.values(s.funghi?.cestino ?? {}).some((n) => n > 0));
+  let nelBosco = $derived(s.funghi?.fuori.length ?? 0);
+  // chi torna dal bosco lo racconta appena si può (se sta succedendo altro, aspetta)
+  let rientriDaDire: RigaDialogo[][] = [];
+  async function controllaRientri() {
+    const r = await rientriQui();
+    for (const x of r) {
+      const a = s.animali.find((y) => y.id === x.animale);
+      if (!a) continue;
+      const lista = Object.entries(x.funghi).map(([id, n]) => `${n > 1 ? n + ' × ' : ''}${FUNGO[id]?.nome.toLowerCase()}`).join(', ');
+      const righe: RigaDialogo[] = [{ chi: chiDice(a), voce: 'animale', testo: lista ? `Sono tornat${a.sesso === 'f' ? 'a' : 'o'} dal bosco! Nel cestino ho messo: ${lista}. 🍄` : `Sono tornat${a.sesso === 'f' ? 'a' : 'o'} dal bosco… oggi niente funghi, ma che bella passeggiata!` }];
+      if (x.preso) {
+        const d = RITROVAMENTO[x.preso.id];
+        righe.push({ chi: chiDice(a), voce: 'animale', testo: `E guarda cosa ho trovato per terra: ${d.icona} ${d.nome.toLowerCase()}! ${x.preso.nuovo ? (haMuseo(s) ? `Va nel museo (+${x.preso.castagne} 🌰).` : 'Lo teniamo per il museo.') : 'Ce l\'avevamo già: lo regalo al corvo (+1 🌰).'}` });
+      }
+      if (Object.keys(x.funghi).some((id) => FUNGO[id]?.mangia === 'veleno')) righe.push(corvo('', 'Cra! Attenzione: uno di quei funghi è velenoso. Quello non si cucina: si guarda soltanto, magari al museo.'));
+      rientriDaDire.push(righe);
+    }
+    if (rientriDaDire.length && !dialogo && !sp && !fs && !casa && !pesca && !gita && !arreda && !menu) {
+      dialogo = { righe: rientriDaDire.flat() };
+      rientriDaDire = [];
+      scena?.festeggia();
+    }
   }
   let luogo = $state<DefBioma | null>(null);
   // l'escursione nei posti lontani: si apre dopo una giornata particolare scritta nel diario
@@ -222,6 +261,7 @@
     scena?.impostaMeteo(tempo);
   }
   let timerMeteo: ReturnType<typeof setInterval> | undefined;
+  let timerFunghi: ReturnType<typeof setInterval> | undefined;
 
   // conforto: se l'ultima pagina era di una giornata triste, qualcuno viene a consolarla
   const giaConfortati = new Set<string>();
@@ -353,6 +393,8 @@
     if (inFesta) scena.impostaFesta(true, !fareFesta);
     aggiornaMeteo();
     timerMeteo = setInterval(aggiornaMeteo, 60_000);
+    timerFunghi = setInterval(controllaRientri, 10_000);
+    setTimeout(controllaRientri, 2500);
 
     // il giorno del compleanno, prima di tutto la festa; poi il resto
     if (fareFesta) festaDiCompleanno().then(() => accogli(sorprese));
@@ -420,6 +462,7 @@
   }
   onDestroy(() => {
     clearInterval(timerMeteo);
+    clearInterval(timerFunghi);
     scena?.distruggi();
   });
 
@@ -434,7 +477,7 @@
     void JSON.stringify(app.stato?.arredo?.posti);
     void app.stato?.animali.map((a) => a.mestiere).join();
     void app.stato?.edifici.length;
-    if (!scena || sp || dialogo || arreda || casa || menu || chiediNome || insegnaA || acquario || luogo || pesca || gita) return;
+    if (!scena || sp || dialogo || arreda || casa || menu || chiediNome || insegnaA || acquario || museo || funghi || luogo || pesca || gita) return;
     const k = scena.caseSenzaPosto().find((x) => !giaChiesto.has(x));
     if (!k) return;
     giaChiesto.add(k);
@@ -445,6 +488,8 @@
       ? { tipo: 'casa', chiave: k, righe: [{ chi: chiDice(a), voce: 'animale', testo: `Giada! Mi costruisco la mia casa da ${a.mestiere ? nomeMestiere(a) : 'grande'}! Dove la metto? Scegli tu il posto più bello.` }] }
       : k === 'c:acquario'
         ? { tipo: 'casa', chiave: k, righe: [corvo('', 'Cra! Che meraviglia, l\'acquario è pronto! È grande grande: l\'abbiamo messo un po\' in disparte, ma puoi spostarlo dove vuoi. Scegli tu il posto, poi toccalo per guardare i pesci.')] }
+        : k === 'c:museo'
+        ? { tipo: 'casa', chiave: k, righe: [corvo('', 'Cra! Il museo è pronto, con le colonne e la cupola! L\'abbiamo messo un po\' in disparte: scegli tu il posto. Dentro ci vanno le cose che trovi in giro e i funghi del bosco.')] }
         : { tipo: 'casa', chiave: k, righe: [corvo('', `Cra! Si costruisce ${(ed?.nome ?? 'un edificio nuovo').toLowerCase()}! Dove lo mettiamo? Scegli tu il posto.`)] };
   });
 
@@ -467,11 +512,23 @@
   }
 
   async function tocco(b: Bersaglio) {
-    if (chiediNome || insegnaA || sp || fs || pesca || acquario || luogo || gita) return;
+    if (chiediNome || insegnaA || sp || fs || pesca || acquario || museo || funghi || luogo || gita) return;
     const n = s.numeroVoci + Math.floor(Date.now() / 1000);
     if (b.tipo === 'quaderno') return vai('diario');
     if (b.tipo === 'laghetto') return vaiAPescare();
     if (b.tipo === 'acquario') return apriAcquario();
+    if (b.tipo === 'museo') return apriMuseo();
+    if (b.tipo === 'ritrovamento') {
+      const p = await prendiRitrovamentoQui();
+      if (!p) return;
+      const d = RITROVAMENTO[p.id];
+      scena?.festeggia();
+      const dove = !p.nuovo
+        ? 'Ce l\'hai già nella collezione: la regali al corvo, che ti dà una castagna.'
+        : haMuseo(s) ? `La porti subito al museo! I visitatori pagano il biglietto: +${p.castagne} 🌰.` : 'La tieni da parte: quando costruirai il museo, la potrai mettere in vetrina.';
+      dialogo = { righe: [{ chi: 'Hai trovato…', voce: 'narratore', testo: `${d.icona} ${d.nome}! ${d.frase}` }, { chi: 'Corvo', voce: 'corvo', testo: dove }] };
+      return;
+    }
     if (b.tipo === 'sentiero') {
       dialogo = null;
       luogo = BIOMA[b.id] ?? null;
@@ -603,6 +660,12 @@
   {#if acquario}
     <div class="sotto-acquario"><Acquario onchiudi={chiudiAcquario} /></div>
   {/if}
+  {#if museo}
+    <div class="sotto-acquario"><Museo onchiudi={chiudiMuseo} /></div>
+  {/if}
+  {#if funghi}
+    <div class="sotto-acquario"><Funghi onchiudi={() => (funghi = false)} oncucinato={() => scena?.festeggia()} /></div>
+  {/if}
   {#if gita}
     <Escursione {scena} voce={gita.voce} giornata={gita.giornata} onchiudi={() => (gita = null)} />
   {/if}
@@ -733,8 +796,8 @@
           dialogo = { righe: [{ chi: 'Corvo', voce: 'corvo', testo: ev.testo }] };
         }}
       />
-    {:else if !acquario && !luogo && !gita}
-      <div class="azioni-basso">
+    {:else if !acquario && !museo && !funghi && !luogo && !gita}
+      <div class={['azioni-basso', gitaPossibile && 'affollate']}>
         <button class="bottone-diario" onclick={() => vai('diario')}>
           <span class="icona">📖</span> Scrivi nel diario
         </button>
@@ -742,6 +805,7 @@
           🔨<span class="punto" class:visibile={puoCostruire}></span>
         </button>
         <button class="bottone-costruisci arreda" onclick={() => (arreda = true)} aria-label="Arreda">🪴</button>
+        <button class="bottone-costruisci funghi" onclick={() => { dialogo = null; funghi = true; }} aria-label="Funghi">🍄{#if nelBosco}<span class="fuori">{nelBosco}</span>{/if}<span class="punto" class:visibile={haFunghi && !nelBosco}></span></button>
         {#if gitaPossibile}
           <button class="bottone-costruisci gita" onclick={apriGita} aria-label="Escursione">🎒<span class="punto visibile"></span></button>
         {/if}
@@ -772,7 +836,9 @@
   .destra { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .castagne { color: #7a4a1a; }
   .sesso { display: block; font-size: 0.85rem; color: var(--testo-tenue); }
-  .azioni-basso { display: flex; gap: 10px; align-items: center; }
+  .azioni-basso { display: flex; gap: 8px; align-items: center; }
+  .azioni-basso.affollate .bottone-costruisci { width: 52px; height: 52px; font-size: 1.35rem; }
+  .azioni-basso.affollate .bottone-diario { font-size: 1.02rem; padding: 12px 8px; }
   .bottone-costruisci {
     position: relative; width: 62px; height: 62px; flex: none; border-radius: 50%; padding: 0; font-size: 1.6rem;
     background: var(--notte-blu); border: 4px solid var(--legno); box-shadow: 0 6px 0 var(--legno-scuro);
@@ -811,6 +877,8 @@
   .chiudi { align-self: center; }
   .arreda { background: #3f7a4a; }
   .gita { background: #c8842a; }
+  .funghi { background: #a8483a; }
+  .fuori { position: absolute; bottom: -4px; right: -4px; min-width: 20px; height: 20px; border-radius: 999px; background: #3f7a4a; color: #fff; font-size: 0.72rem; font-weight: 900; display: flex; align-items: center; justify-content: center; border: 2px solid var(--legno); }
   .quadro-grande { position: absolute; inset: 0; z-index: 10; background: rgba(10, 14, 40, 0.7); display: flex; align-items: center; justify-content: center; border: none; border-radius: 0; box-shadow: none; padding: 24px; }
   .quadro-grande img { width: 100%; max-width: 420px; image-rendering: pixelated; border: 14px solid #9a6a40; border-radius: 6px; box-shadow: 0 10px 30px #0008; }
   /* primo piano: bande da film, titolo e didascalia */

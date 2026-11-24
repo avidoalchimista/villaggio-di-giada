@@ -15,6 +15,8 @@ import { compraPesce, mettiInVasca, riempiAllInizio } from './acquario';
 import { trovaSentiero } from './biomi';
 import { fai as faiEscursione, type Giornata } from './escursioni';
 import { migliora, ritiraCassa } from './migliorie';
+import { cucina, funghiDi, lasciaNelBosco, mandaAFunghi, richiamaTutti, rientri, type Piatto, type Rientro } from './funghi';
+import { aggiungiRitrovamento, esponiFungo, museoDi, prendiRitrovamento, scegliRitrovamento, type Preso } from './museo';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
 export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni' | 'icona' | 'guida';
@@ -195,6 +197,81 @@ export async function compraPesceQui(id: string) {
   const r = compraPesce(app.stato, id, dataDiOggi());
   if (r === 'ok') await salvaStato();
   return r;
+}
+
+// ---------- funghi e museo ----------
+
+/** Manda un animale a cercare funghi nel bosco. */
+export async function mandaAFunghiQui(id: string): Promise<boolean> {
+  if (!app.stato) return false;
+  const c = mandaAFunghi(app.stato, id, Date.now(), dataDiOggi());
+  if (c) await salvaStato();
+  return !!c;
+}
+
+/** Chi è tornato dal bosco: i funghi vanno nel cestino, le cose trovate nella collezione del museo. */
+export async function rientriQui(): Promise<(Rientro & { preso: Preso | null })[]> {
+  if (!app.stato?.funghi?.fuori.length) return [];
+  const st = app.stato;
+  const oggi = dataDiOggi();
+  const r = rientri(st, Date.now(), oggi, (rr) => scegliRitrovamento(st, Number(oggi.slice(5, 7)), rr));
+  if (!r.length) return [];
+  const out = r.map((x) => ({ ...x, preso: x.ritrovamento ? aggiungiRitrovamento(st, x.ritrovamento, oggi) : null }));
+  await salvaStato();
+  return out;
+}
+
+/** Solo per le prove: chi è nel bosco torna subito. */
+export async function richiamaDaiFunghi() {
+  if (!app.stato) return;
+  richiamaTutti(app.stato);
+  await salvaStato();
+}
+
+/** Cucina i funghi di un tipo (cuoco = null: cucina Giada). */
+export async function cucinaQui(fungo: string, cuoco: string | null): Promise<Piatto | null> {
+  if (!app.stato) return null;
+  const p = cucina(app.stato, fungo, cuoco);
+  if (p) await salvaStato();
+  return p;
+}
+
+/** Porta un fungo nella sala dei funghi del museo: ritorna i biglietti guadagnati. */
+export async function esponiFungoQui(id: string): Promise<number | null> {
+  if (!app.stato) return null;
+  const n = esponiFungo(app.stato, id);
+  if (n !== null) await salvaStato();
+  return n;
+}
+
+/** Rimette un fungo nel bosco. */
+export async function lasciaFungoQui(id: string) {
+  if (!app.stato) return;
+  if (lasciaNelBosco(app.stato, id)) await salvaStato();
+}
+
+/** Il corvo ha già spiegato che nella vita vera i funghi si raccolgono solo con un grande. */
+export async function segnaAvvisoFunghi() {
+  if (!app.stato) return;
+  funghiDi(app.stato).avvisato = true;
+  await salvaStato();
+}
+
+/** Giada ha preso la cosa che brillava per terra. */
+export async function prendiRitrovamentoQui(): Promise<Preso | null> {
+  if (!app.stato) return null;
+  const p = prendiRitrovamento(app.stato, dataDiOggi());
+  if (p) await salvaStato();
+  return p;
+}
+
+/** Solo per le prove: rimette per terra una cosa da trovare. */
+export async function nuovoRitrovamento() {
+  if (!app.stato) return;
+  museoDi(app.stato);
+  app.stato.museo!.giornoPreso = '';
+  app.stato.museo!.extra = (app.stato.museo!.extra ?? 0) + 1;
+  await salvaStato();
 }
 
 /** Migliora la casa-bottega di un animale con le castagne. */

@@ -50,6 +50,11 @@ export const GUIDA: PaginaGuida[] = [
     testo: 'Dentro una casa, tocca il martello per migliorarla con le castagne: portico, camino, bandierine. Le botteghe migliorate vendono e ogni giorno mettono da parte castagne per te.',
   },
   {
+    icona: '🍄',
+    titolo: 'Funghi e museo',
+    testo: 'Tocca 🍄 per mandare qualcuno nel bosco a cercare funghi: torna dopo un po\' con il cestino. Ogni giorno nel villaggio brilla per terra una cosa: toccala! Con il museo le metti in vetrina.',
+  },
+  {
     icona: '🌙',
     titolo: 'Il tempo passa',
     testo: 'Gli animali vivono anche quando non ci sei. Torna quando vuoi: ti racconto cosa è successo. Nella Storia trovi i capitoli nuovi.',
