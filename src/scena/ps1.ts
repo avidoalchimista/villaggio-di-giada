@@ -290,8 +290,8 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
     Object.assign(shader.uniforms, uniform);
     shader.uniforms.uCurva = { get value() { return CURVA.valore; } } as THREE.IUniform;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uCurva;\nvarying vec2 vMondo;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMondo = (modelMatrix * vec4(position, 1.0)).xz;')
+      .replace('#include <common>', '#include <common>\nuniform float uCurva;\nvarying vec2 vMondo;\nvarying float vAlt;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMondo = (modelMatrix * vec4(position, 1.0)).xz;\nvAlt = (modelMatrix * vec4(position, 1.0)).y;')
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + CURVA_GLSL);
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -300,7 +300,7 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
         uniform sampler2D tErba; uniform sampler2D tTerra; uniform sampler2D tMacchie;
         uniform float uConsumato; uniform float uSentiero;
         uniform sampler2D tSentiero; uniform sampler2D tSassi; uniform sampler2D tMattoni;
-        varying vec2 vMondo;`,
+        varying vec2 vMondo; varying float vAlt;`,
       )
       .replace(
         '#include <map_fragment>',
@@ -334,6 +334,11 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
         suolo = mix(suolo, mattoni, bordo.b);
         vec3 ghiaia = mix(vec3(0.86, 0.82, 0.72), vec3(0.72, 0.68, 0.6), texture2D(tMacchie, vMondo * 2.3).r);
         suolo = mix(suolo, ghiaia, bordo.a);
+        // la pala di Giada: le buche diventano terra bagnata e sabbia, le montagnole più chiare in cima
+        float buca = smoothstep(-0.02, -0.12, vAlt);
+        vec3 fango = mix(terraCol * 1.05, vec3(0.86, 0.78, 0.58), 0.35) * mix(1.0, 0.75, smoothstep(-0.12, -0.5, vAlt));
+        suolo = mix(suolo, fango, buca);
+        suolo *= 1.0 + clamp(vAlt, 0.0, 2.0) * 0.08;
         diffuseColor.rgb *= suolo;
         `,
       );

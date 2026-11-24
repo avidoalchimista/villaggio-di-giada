@@ -13,8 +13,13 @@ export interface Oggetto extends Posto { id: string; tipo: 'cartello' | 'recinto
 export interface Arredo {
   /** dove Giada ha messo le cose: 'c:panchina', 'e:chiosco', 'b:<id animale>', 'castagno' */
   posti: Record<string, Posto>;
-  /** punti dove ha tolto alberi, fiori, sassi, cespugli (il bosco non ricresce lì) */
-  tolti: [number, number][];
+  /**
+   * punti dove ha tolto alberi, fiori, sassi, cespugli: lì resta libero per tanto tempo
+   * (con la data: dopo GIORNI_RICRESCITA giorni, se non c'è stato costruito niente, la natura ritorna)
+   */
+  tolti: [number, number, string?][];
+  /** il terreno modellato con la pala: vertici ogni mezzo metro "i,j" → altezza in centimetri (sotto zero = acqua) */
+  terreno?: Record<string, number>;
   aiuole: Aiuola[];
   semi: Record<string, number>;
   quadretti: Quadretto[];
@@ -52,7 +57,17 @@ export const PREZZI = {
   albero: 3,
   cespuglio: 1,
   piccolo: 0,
+  /** la pala: ogni palata (scavare o alzare) costa una castagna; spianare è gratis */
+  palata: 1,
 };
+
+/** Dopo quanti giorni dove è stato abbattuto un albero ricresce qualcosa (se è ancora libero). */
+export const GIORNI_RICRESCITA = 120;
+
+/** Il punto (x, z) è ancora sgombro? (tolto da meno di GIORNI_RICRESCITA giorni, o da prima che si segnasse la data) */
+export function toltoAncora(t: [number, number, string?], oggi: string): boolean {
+  return !t[2] || giorniTra(t[2], oggi) < GIORNI_RICRESCITA;
+}
 
 // ---------- semi e piante ----------
 
@@ -212,11 +227,70 @@ export function allargaCase(a: Arredo, minimo = 8): number {
 }
 
 /** Abbatte un albero o toglie un cespuglio, un sasso, dei fiori. Costa qualche castagna. */
-export function togliNatura(s: StatoGioco, x: number, z: number, costo: number): boolean {
+export function togliNatura(s: StatoGioco, x: number, z: number, costo: number, oggi?: string): boolean {
   if (s.ghiande < costo) return false;
   s.ghiande -= costo;
-  arredoDi(s).tolti.push([Math.round(x * 10) / 10, Math.round(z * 10) / 10]);
+  const t: [number, number, string?] = [Math.round(x * 10) / 10, Math.round(z * 10) / 10];
+  if (oggi) t.push(oggi);
+  arredoDi(s).tolti.push(t);
   return true;
+}
+
+// ---------- la pala: scavare laghetti e alzare montagnole ----------
+
+/** Il terreno modellabile: da -LATO_TERRENO/2 a +LATO_TERRENO/2 metri, un vertice ogni PASSO_TERRENO. */
+export const LATO_TERRENO = 60;
+export const PASSO_TERRENO = 0.5;
+export const N_TERRENO = LATO_TERRENO / PASSO_TERRENO; // 120 quadretti per lato
+/** Sotto questa altezza (in metri) c'è acqua. */
+export const LIVELLO_ACQUA = -0.12;
+const MIN_CM = -80, MAX_CM = 200;
+
+/** Altezza del terreno in (x, z), in metri (tra i vertici: una media pesata). */
+export function altezzaTerreno(t: Record<string, number> | undefined, x: number, z: number): number {
+  if (!t) return 0;
+  const fx = x / PASSO_TERRENO, fz = z / PASSO_TERRENO;
+  const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+  const h = (a: number, b: number) => t[`${a},${b}`] ?? 0;
+  const cm = h(i, j) * (1 - u) * (1 - v) + h(i + 1, j) * u * (1 - v) + h(i, j + 1) * (1 - u) * v + h(i + 1, j + 1) * u * v;
+  return cm / 100;
+}
+
+export type Palata = 'scava' | 'alza' | 'spiana';
+
+/**
+ * Una palata in (x, z): scava (giù), alza (su) o spiana (verso il prato piatto), morbida ai bordi.
+ * `libero(x, z)` dice dove si può toccare (non sotto le case e le costruzioni).
+ * Restituisce false se non è cambiato niente o mancano le castagne.
+ */
+export function palata(s: StatoGioco, x: number, z: number, cosa: Palata, libero: (x: number, z: number) => boolean = () => true, raggio = 1.4): boolean {
+  const costo = cosa === 'spiana' ? 0 : PREZZI.palata;
+  if (s.ghiande < costo) return false;
+  const a = arredoDi(s);
+  a.terreno ??= {};
+  const t = a.terreno;
+  const r = Math.ceil(raggio / PASSO_TERRENO), ci = Math.round(x / PASSO_TERRENO), cj = Math.round(z / PASSO_TERRENO);
+  const h = N_TERRENO / 2 - 2; // il bordo resta piatto (si attacca al prato di fuori)
+  let cambiato = false;
+  for (let i = ci - r; i <= ci + r; i++)
+    for (let j = cj - r; j <= cj + r; j++) {
+      if (Math.abs(i) > h || Math.abs(j) > h) continue;
+      const px = i * PASSO_TERRENO, pz = j * PASSO_TERRENO;
+      const d = Math.hypot(px - x, pz - z) / raggio;
+      if (d >= 1 || !libero(px, pz)) continue;
+      const peso = (1 - d * d) ** 2;
+      const k = `${i},${j}`, prima = t[k] ?? 0;
+      let dopo: number;
+      if (cosa === 'spiana') dopo = prima * (1 - 0.6 * peso);
+      else dopo = prima + (cosa === 'alza' ? 1 : -1) * 14 * peso;
+      dopo = Math.round(Math.max(MIN_CM, Math.min(MAX_CM, dopo)));
+      if (Math.abs(dopo) < 2) dopo = 0;
+      if (dopo === prima) continue;
+      if (dopo) t[k] = dopo; else delete t[k];
+      cambiato = true;
+    }
+  if (cambiato) s.ghiande -= costo;
+  return cambiato;
 }
 
 // ---------- sentiero ----------

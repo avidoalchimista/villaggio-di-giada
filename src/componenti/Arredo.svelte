@@ -5,7 +5,7 @@
   import { app, cambiaArredo } from '../lib/app.svelte';
   import {
     compraSemi, dipingiSentiero, fasePianta, giorniAllaFioritura, MATERIALI_SENTIERO, metteVia, nuovaAiuola, nuovoOggetto,
-    nuovoQuadretto, pianta, PIANTE, PREZZI, sposta, togliNatura, togliPianta, type Aiuola,
+    nuovoQuadretto, palata, pianta, PIANTE, PREZZI, sposta, togliNatura, togliPianta, type Aiuola, type Palata,
   } from '../lib/arredo';
   import { nomeAnimale, REGOLE } from '../lib/gioco';
   import type { EventoArredo, ModoArredo, Scena } from '../scena/scena';
@@ -19,6 +19,7 @@
   let scelto = $state<string | null>(null);
   let aiuolaAperta = $state<string | null>(null);
   let pennello = $state(1);
+  let pala = $state<Palata>('scava');
   let messaggio = $state('');
   let dipingi = $state(false);
   let cartello = $state<string | null>(null);
@@ -28,6 +29,7 @@
     sposta: 'Tocca una cosa per sceglierla, poi trascinala o tocca dove vuoi metterla.',
     togli: `Con l'accetta: ogni tocco è un colpo. Un albero cade dopo 5 colpi (🌰${PREZZI.albero}), un cespuglio dopo 2, un sasso dopo 3 (🌰${PREZZI.cespuglio}). Fiori ed erba si raccolgono gratis.`,
     sentiero: 'Trascina il dito per disegnare il sentiero. Con due dita sposti la vista.',
+    terreno: `Con la pala: trascina il dito per scavare un laghetto o alzare una montagnola (🌰${PREZZI.palata} a palata). Spianare è gratis.`,
     orto: `Compra un'aiuola, mettila dove vuoi e toccala per piantare i semi.`,
     quadri: 'Dipingi quadretti, metti cartelli per indicare la via e recinti.',
   };
@@ -76,13 +78,16 @@
         cambiaArredo((st) => sposta(st, e.chiave, e.posto));
         break;
       case 'togli':
-        if (cambiaArredo((st) => togliNatura(st, e.x, e.z, e.costo))) dici(`${NOMI_COSA[e.cosa] ?? 'Fatto'}${e.costo ? ` (🌰 ${e.costo})` : ''}.`);
+        if (cambiaArredo((st, oggi) => togliNatura(st, e.x, e.z, e.costo, oggi))) dici(`${NOMI_COSA[e.cosa] ?? 'Fatto'}${e.costo ? ` (🌰 ${e.costo})` : ''}.`);
         break;
       case 'poche':
         dici(`Servono 🌰 ${e.costo} per ${e.cosa === 'albero' ? "abbattere quest'albero" : 'toglierlo'}. Scrivi nel diario per averne altre!`);
         break;
       case 'dipingi':
-        cambiaArredo((st) => dipingiSentiero(st, e.x, e.z, pennello), false);
+        if (modo === 'terreno') {
+          if (pala !== 'spiana' && s.ghiande < PREZZI.palata) { dici('Servono castagne per scavare: scrivi nel diario per averne altre!'); break; }
+          cambiaArredo((st) => palata(st, e.x, e.z, pala, (x, z) => scena.liberoPerPala(x, z)), false);
+        } else cambiaArredo((st) => dipingiSentiero(st, e.x, e.z, pennello), false);
         break;
       case 'apri':
         if (e.chiave.startsWith('a:')) aiuolaAperta = e.chiave.slice(2);
@@ -276,6 +281,12 @@
             {/each}
             <button class="materiale gomma" class:attivo={pennello === 0} onclick={() => scegliPennello(0)}>Gomma</button>
           </div>
+        {:else if modo === 'terreno'}
+          <div class="riga materiali">
+            {#each [['scava', '⛏️ Scava', '#7a5a3a'], ['alza', '⛰️ Alza', '#5f9a48'], ['spiana', '🟩 Spiana', '#8fbf6a']] as [p, nome, colore] (p)}
+              <button class="materiale" class:attivo={pala === p} style:background={colore} onclick={() => (pala = p as Palata)}>{nome}</button>
+            {/each}
+          </div>
         {:else if modo === 'orto'}
           <div class="riga">
             <button class="tondo" disabled={s.ghiande < PREZZI.aiuola} onclick={compraAiuola}>Nuova aiuola 🌰 {PREZZI.aiuola}</button>
@@ -291,7 +302,7 @@
       </div>
 
       <div class="strumenti">
-        {#each [['sposta', '✋', 'Sposta'], ['togli', '🪓', 'Accetta'], ['sentiero', '🟫', 'Sentiero'], ['orto', '🌱', 'Aiuole'], ['quadri', '🪧', 'Cose']] as [m, icona, nome] (m)}
+        {#each [['sposta', '✋', 'Sposta'], ['togli', '🪓', 'Accetta'], ['sentiero', '🟫', 'Sentiero'], ['terreno', '⛏️', 'Pala'], ['orto', '🌱', 'Aiuole'], ['quadri', '🪧', 'Cose']] as [m, icona, nome] (m)}
           <button class="strumento" class:attivo={modo === m} onclick={() => cambiaModo(m as ModoArredo)}>
             <span class="icona">{icona}</span><span>{nome}</span>
           </button>

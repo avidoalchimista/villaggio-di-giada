@@ -5,7 +5,6 @@
 import * as THREE from 'three';
 import { contorno } from './ps1';
 import { corteccia, geo, mat, mesh } from './modelli';
-import { spriteTesto } from './ps1';
 
 export type CosaTagliata = 'albero' | 'cespuglio' | 'sasso';
 
@@ -185,10 +184,9 @@ export class Taglio {
     }
     // quanti colpi mancano: tanti pallini, quelli dati sono pieni
     if (this.contatore) { this.scena.remove(this.contatore); this.contatore.material.map?.dispose(); }
-    const testo = '●'.repeat(this.colpi) + '○'.repeat(Math.max(0, this.servono - this.colpi));
-    this.contatore = spriteTesto(testo, '#fff4d6', 128);
-    this.contatore.scale.set(0.35 * this.servono, 0.35 * this.servono, 1);
-    this.contatore.position.copy(p).setY(this.cosa === 'albero' ? 2.9 * (this.bersaglio.scale.y || 1) : 1.1);
+    this.contatore = spritePallini(this.colpi, this.servono);
+    // per terra davanti al tronco, dalla parte di chi guarda: si vede sempre, anche sotto le chiome alte
+    this.contatore.position.copy(p).addScaledVector(this.lato, this.raggioTronco + 1.1).setY(0.25);
     this.scena.add(this.contatore);
     if (this.colpi >= this.servono) this.inizioCaduta();
   }
@@ -305,8 +303,7 @@ export class Taglio {
     }
     // "+legna" che sale
     if (this.catasta - dt < 0.5 && this.catasta >= 0.5) {
-      const s = spriteTesto('+🪵', '#fff4d6', 128);
-      s.scale.setScalar(0.9);
+      const s = spriteScritta('+ legna');
       s.position.copy(this.legna.position).setY(1.3);
       this.scena.add(s);
       this.pezzetti.push({ o: s, vel: new THREE.Vector3(0, 0.6, 0), vita: 1.6, giro: new THREE.Vector3() });
@@ -334,6 +331,44 @@ export class Taglio {
     for (const q of this.pezzetti) this.scena.remove(q.o);
     if (this.cade >= 0 && this.bersaglio.parent === this.scena) this.scena.remove(this.bersaglio);
   }
+}
+
+/** I colpi dati e quelli che mancano: tanti pallini in fila, pieni quelli dati (disegnati interi, non tagliati). */
+function spritePallini(dati: number, tutti: number): THREE.Sprite {
+  const lato = 64, cv = document.createElement('canvas');
+  cv.width = lato * tutti; cv.height = lato;
+  const c = cv.getContext('2d')!;
+  for (let i = 0; i < tutti; i++) {
+    const x = lato * i + lato / 2, y = lato / 2;
+    c.beginPath(); c.arc(x, y, lato * 0.36, 0, Math.PI * 2);
+    c.fillStyle = i < dati ? '#ffd166' : 'rgba(255,255,255,0.55)';
+    c.fill();
+    c.lineWidth = lato * 0.09; c.strokeStyle = '#5a3a1a'; c.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sp.renderOrder = 10;
+  sp.scale.set(0.34 * tutti, 0.34, 1);
+  return sp;
+}
+
+/** Una scritta su una riga, larga quanto serve (non tagliata). */
+function spriteScritta(testo: string): THREE.Sprite {
+  const alto = 64, cv = document.createElement('canvas');
+  const c0 = cv.getContext('2d')!;
+  const font = `900 ${alto * 0.7}px 'Nunito Variable', sans-serif`;
+  c0.font = font;
+  cv.width = Math.ceil(c0.measureText(testo).width + alto * 0.6); cv.height = alto;
+  const c = cv.getContext('2d')!;
+  c.font = font; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.lineWidth = alto * 0.14; c.strokeStyle = '#5a3a1a'; c.strokeText(testo, cv.width / 2, alto / 2);
+  c.fillStyle = '#fff4d6'; c.fillText(testo, cv.width / 2, alto / 2);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sp.scale.set(0.5 * (cv.width / alto), 0.5, 1);
+  return sp;
 }
 
 const easeIn = (x: number) => x * x * x;
