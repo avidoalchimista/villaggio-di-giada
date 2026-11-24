@@ -1,5 +1,6 @@
 // Modello dati del Villaggio di Giada (vedi specifica, sezione 6).
 import type { Arredo } from './arredo';
+import type { Castoro } from './castoro';
 
 export const VIRTU = ['coraggio', 'umanita', 'saggezza', 'giustizia', 'temperanza', 'trascendenza'] as const;
 export type Virtu = (typeof VIRTU)[number];
@@ -114,7 +115,7 @@ export interface Edificio {
 
 export interface Evento {
   data: string;
-  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne' | 'compleanno';
+  tipo: 'uovo' | 'schiusa' | 'crescita' | 'mestiere' | 'edificio' | 'edificio_stato' | 'sonno' | 'risveglio' | 'storia' | 'ghiande' | 'costruzione' | 'richiesta' | 'abilita' | 'castagne' | 'compleanno' | 'castoro';
   testo: string;
   animale?: string; // di chi parla (per inquadrarlo)
 }
@@ -144,6 +145,7 @@ export interface StatoGioco {
   sorprese: Evento[]; // eventi importanti non ancora mostrati in primo piano
   compleanni?: string[]; // giorni in cui il villaggio ha festeggiato il compleanno di Giada (vedi festa.ts)
   pesca?: Pescato; // i pesci presi da Giada al laghetto (vedi pesca.ts)
+  castoro?: Castoro; // il castoro che rosicchia gli alberi del bosco (vedi castoro.ts)
 }
 
 export interface Pescato {

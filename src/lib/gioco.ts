@@ -2,6 +2,7 @@
 // Tutte le funzioni sono deterministiche (casualità con seme) e testabili.
 // Principi: nessun animale muore; la tristezza non si punisce mai.
 
+import { castoroDelGiorno } from './castoro';
 import regoleJson from '../dati/regole.json';
 import storiaJson from '../dati/storia.json';
 import { arredoDi, arredoVuoto } from './arredo';
@@ -470,6 +471,7 @@ export function simula(s: StatoGioco, fino: string): Evento[] {
     aggiornaEdifici(s, giorno, out);
     sbloccaStoria(s, giorno, out);
     vitaDelGiorno(s, giorno, out);
+    castoroDelGiorno(s, giorno, out);
     incassiDelGiorno(s, giorno);
   }
   s.ultimoAccesso = fino;
@@ -596,7 +598,7 @@ export function testoRichiesta(s: StatoGioco, r: Richiesta): string {
 }
 
 /** Eventi che contano davvero per vedere come si sviluppa il villaggio (niente castagne giornaliere). */
-const EVENTI_IMPORTANTI: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita'];
+const EVENTI_IMPORTANTI: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita', 'castoro'];
 
 /**
  * Solo per la modalità prova: fa passare `giorni` giorni dopo `da` come se Giada scrivesse

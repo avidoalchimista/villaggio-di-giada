@@ -80,14 +80,14 @@ describe('arredo', () => {
     expect(['gioia', 'fiducia', 'attesa', 'sorpresa']).toContain(emozioneDellaPagina(null, { id: 'a1' }));
   });
 
-  it('le case sono distanti almeno 5 metri e lasciano libero il viale', () => {
+  it('le case sono distanti almeno 8 metri (con la postazione di lavoro) e lasciano libero il viale', () => {
     for (const n of [1, 4, 8, 12]) {
       const p = postiCase(n, 22);
       expect(p).toHaveLength(n);
       for (let i = 0; i < n; i++) {
         const [x, z] = p[i];
         expect(z < 0 || Math.abs(x) > 4).toBe(true); // mai davanti sul viale
-        for (let j = 0; j < i; j++) expect(Math.hypot(x - p[j][0], z - p[j][1])).toBeGreaterThan(4.9);
+        for (let j = 0; j < i; j++) expect(Math.hypot(x - p[j][0], z - p[j][1])).toBeGreaterThan(7.9);
       }
     }
   });
