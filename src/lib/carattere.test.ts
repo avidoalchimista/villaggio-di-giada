@@ -10,12 +10,13 @@ function villaggio(giorni: number): StatoGioco {
 }
 
 describe('carattere degli animali', () => {
-  it('ognuno ha un carattere, e nel villaggio sono tutti diversi', () => {
+  it('ognuno ha un carattere: i primi otto tutti diversi, poi ogni carattere al massimo due volte', () => {
     const s = villaggio(400);
-    expect(s.animali.length).toBeGreaterThan(3);
+    expect(s.animali.length).toBeGreaterThan(8);
     const c = s.animali.map((a) => a.carattere);
     expect(c.every(Boolean)).toBe(true);
-    expect(new Set(c).size).toBe(c.length);
+    expect(new Set(c.slice(0, 8)).size).toBe(8);
+    for (const x of new Set(c)) expect(c.filter((y) => y === x).length).toBeLessThanOrEqual(2);
   });
 
   it('chi è stato salvato prima del carattere ne riceve uno con la migrazione', () => {
@@ -24,7 +25,7 @@ describe('carattere degli animali', () => {
     normalizzaStato(s);
     const c = s.animali.map((a) => a.carattere);
     expect(c.every((x) => CARATTERI.some((k) => k.id === x))).toBe(true);
-    expect(new Set(c).size).toBe(c.length);
+    expect(new Set(c).size).toBe(Math.min(c.length, CARATTERI.length));
   });
 
   it('di notte dormono, a pranzo mangiano o cucinano, al lavoro chi ha un mestiere sta al banco', () => {

@@ -11,7 +11,7 @@ import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
   aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo, SIMBOLI_MESTIERE,
   creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, creaCastagno, creaCastagna, creaCanna,
-  creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
+  animaLaghetto, puntoLago, creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto,
 } from './modelli';
@@ -28,7 +28,8 @@ export type Bersaglio =
   | { tipo: 'nido' }
   | { tipo: 'castagne' }
   | { tipo: 'aiuola'; id: string }
-  | { tipo: 'quadretto'; id: string };
+  | { tipo: 'quadretto'; id: string }
+  | { tipo: 'laghetto' };
 
 /** Cosa sta facendo Giada quando arreda il villaggio. */
 export type ModoArredo = 'sposta' | 'togli' | 'sentiero' | 'orto' | 'quadri';
@@ -137,7 +138,7 @@ const POSTI_COSTRUZIONI: Record<string, [number, number, number]> = {
   panchina: [2.9, 0.6, -1.3],
   laghetto: [4.4, 2.6, 0],
   falo: [0, 0, 0],
-  ponticello: [4.4, 2.6, 0.2],
+  ponticello: [3.6, 2.6, Math.PI / 2 + 0.15], // attraversa il laghetto nel lato corto
   pozzo: [-4.6, -1.6, 0.6],
   torretta: [-5.6, 4.4, 0.4],
   mulino: [5.8, -3.6, -0.8],
@@ -531,7 +532,7 @@ export class Scena {
         break;
       }
       case 'panchina': g = creaPanchina(); break;
-      case 'laghetto': g = creaLaghetto(); break;
+      case 'laghetto': g = creaLaghetto(); g.userData.bersaglio = { tipo: 'laghetto' }; break;
       case 'falo': { const f = creaFalo(); g = f.gruppo; this.fiamma = f.fiamma; break; }
       case 'ponticello': g = creaPonticello(); break;
       case 'pozzo': g = creaPozzo(); break;
@@ -675,7 +676,7 @@ export class Scena {
       const d = POSTI_COSTRUZIONI[id] ?? [0, 0, 0];
       // il ponticello segue il laghetto, se non l'ha spostato a parte
       const base = id === 'ponticello' && this.arredo.posti['c:laghetto'] && !this.arredo.posti['c:ponticello']
-        ? { ...this.arredo.posti['c:laghetto'], r: this.arredo.posti['c:laghetto'].r + 0.2 } : { x: d[0], z: d[1], r: d[2] };
+        ? { ...this.arredo.posti['c:laghetto'], r: this.arredo.posti['c:laghetto'].r + Math.PI / 2 + 0.15 } : { x: d[0], z: d[1], r: d[2] };
       this.posiziona(g, 'c:' + id, base);
     }
     this.aggiornaAiuole();
@@ -1306,7 +1307,7 @@ export class Scena {
     ray.setFromCamera(ndc, this.camera);
     const candidati: THREE.Object3D[] = [
       this.corvo.gruppo, this.quaderno, this.castagne, this.nido, ...(this.grande ? [this.grande] : []), ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
-      ...this.aiuole.values(), ...this.quadri.values(),
+      ...this.aiuole.values(), ...this.quadri.values(), ...(this.strutture.has('laghetto') ? [this.strutture.get('laghetto')!] : []),
       ...[...this.abitanti.values()].map((a) => a.m.gruppo),
     ];
     const hit = ray.intersectObjects(candidati, true)[0];
@@ -1450,6 +1451,8 @@ export class Scena {
       this.fiamma.scale.set(1 + Math.sin(t * 13) * 0.08, 1 + Math.sin(t * 9.3) * 0.15, 1 + Math.cos(t * 11) * 0.08);
       (this.fiamma.material as THREE.MeshToonMaterial).emissiveIntensity = 1.4 + Math.sin(t * 17) * 0.3;
     }
+    const lago = this.strutture.get('laghetto');
+    if (lago) animaLaghetto(lago, t);
     if (this.pale) this.pale.rotation.z += dt * (this.meteo === 'vento' || this.meteo === 'temporale' ? 2.2 : 0.6);
     // le case migliorate: il fumo del camino sale piano, la bandiera sventola
     for (const b of this.botteghe.values()) {
@@ -1710,7 +1713,7 @@ export class Scena {
       () => intorno(POSTO_CASTAGNO[0], POSTO_CASTAGNO[1], 1.8),
       () => { const k = this.casa(ab); return intorno(k.x, k.z, 0.9); },
     ];
-    if (this.strutture.has('laghetto')) posti.push(() => intorno(c.laghetto[0], c.laghetto[1], 2.2));
+    if (this.strutture.has('laghetto')) posti.push(() => this.rivaDelLago());
     if (this.strutture.has('aiuola')) posti.push(() => intorno(c.aiuola[0], c.aiuola[1], 1.1));
     if (this.strutture.has('pozzo')) posti.push(() => intorno(c.pozzo[0], c.pozzo[1], 1.3));
     if (this.strutture.has('torretta')) posti.push(() => intorno(c.torretta[0], c.torretta[1], 1.5));
@@ -1896,6 +1899,15 @@ export class Scena {
     }
   }
 
+  /** Un punto a caso sulla riva del laghetto (il lago è ovale e si può girare con l'arredo). */
+  private rivaDelLago(): THREE.Vector3 {
+    const lg = this.strutture.get('laghetto');
+    const [lx, lz, lr] = lg ? [lg.position.x, lg.position.z, lg.rotation.y] : POSTI_COSTRUZIONI.laghetto;
+    const [x, z] = puntoLago(Math.random() * Math.PI * 2, 1.2);
+    const c = Math.cos(lr), s = Math.sin(lr);
+    return new THREE.Vector3(lx + x * c + z * s, 0, lz - x * s + z * c);
+  }
+
   /** Dove si va a fare un'attività: vicino al castagno, sul bordo del laghetto, attorno al falò... */
   private luogoAttivita(id: string): THREE.Vector3 | null {
     const intorno = (x: number, z: number, r: number) => {
@@ -1908,7 +1920,7 @@ export class Scena {
     };
     switch (id) {
       case 'raccogliere': return intorno(this.castagno.position.x, this.castagno.position.z, 1.6);
-      case 'pescare': { const p = posto('laghetto'); return intorno(p[0], p[1], 2.1); }
+      case 'pescare': return this.rivaDelLago();
       case 'fiori': {
         // cura l'aiuola dei fiori o una delle aiuole di Giada
         const tutte = [posto('aiuola'), ...this.arredo.aiuole.map((a) => [a.x, a.z] as [number, number])];
