@@ -10,6 +10,7 @@ import { defMestiere, simboloMestiere, MESTIERI } from '../lib/mestieri';
 import { creaAttrezzoInMano, mettiCapo, mettiOcchiali, type Attacchi } from './sartoria';
 import { creaAttrezziMestiere, creaInsegnaMestiere } from './botteghe';
 import { contorno, macchie, materiale, ombra, spriteTesto, strisce, texture } from './ps1';
+import { creaAmpliamenti, creaGiardinetto } from './esterni';
 
 export const geo = {
   palla: (r: number, s = 18) => new THREE.SphereGeometry(r, s, Math.round(s * 0.75)),
@@ -1745,8 +1746,8 @@ export function creaQuaderno(): THREE.Group {
 
 // ---------- costruzioni che Giada sblocca con le ghiande ----------
 
-const pietra = () => mat('#ffffff', { map: texture(64, macchie(['#9c968c', '#857f76', '#b2aca2', '#6f6a62'], 1.2, 41)), rim: 0.15 });
-const assi = () => mat('#ffffff', { map: texture(64, macchie(['#9a6c44', '#83592f', '#b08050'], 1, 23)), rim: 0.1 });
+export const pietra = () => mat('#ffffff', { map: texture(64, macchie(['#9c968c', '#857f76', '#b2aca2', '#6f6a62'], 1.2, 41)), rim: 0.15 });
+export const assi = () => mat('#ffffff', { map: texture(64, macchie(['#9a6c44', '#83592f', '#b08050'], 1, 23)), rim: 0.1 });
 
 export function creaCartello(nome: string): THREE.Group {
   const g = new THREE.Group();
@@ -2081,7 +2082,7 @@ export function creaMulino(): { gruppo: THREE.Group; pale: THREE.Group } {
 
 // ---------- edifici ----------
 
-function legnoMat() {
+export function legnoMat() {
   return mat('#ffffff', { map: texture(64, macchie(['#c48c58', '#b07a48', '#d6a06a'], 1, 21)) });
 }
 
@@ -2307,7 +2308,7 @@ const CASA_EMOZIONE: Record<Emozione, { tetto: string; porta: string; muro: stri
  * della pagina con cui è nato. Crescendo la abbellisce (vasi, recinto, comignolo...).
  * È grande: circa 2,5 metri di lato, porta davanti (verso +z).
  */
-export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, mestiere: string | null, livelloCasa = 1): THREE.Group {
+export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, mestiere: string | null, livelloCasa = 1, ampliamenti: string[] = []): THREE.Group {
   const g = new THREE.Group();
   const c = CASA_EMOZIONE[emozione] ?? CASA_EMOZIONE.gioia;
   const muro = mat('#ffffff', { map: texture(64, macchie([c.muro, '#' + new THREE.Color(c.muro).offsetHSL(0, 0, -0.06).getHexString(), c.muro], 0.6, specie.length + emozione.length)) });
@@ -2540,43 +2541,11 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
     g.add(creaAttrezziMestiere(mestiere, fronte));
   }
 
-  // la decorazione dell'emozione, davanti a casa
-  const davanti = (x: number, o: THREE.Object3D) => { o.position.x += x; o.position.z += Math.max(fronte, 1.1) + 0.45; g.add(o); return o; };
-  switch (emozione) {
-    case 'gioia': for (const x of [-0.9, -0.65]) { const f = creaFiore('#ffcf33'); f.scale.setScalar(2.4); davanti(x, f); } break;
-    case 'fiducia': { const b = mesh(geo.scatola(0.9, 0.08, 0.3), legno, 0, 0.35, 0); b.add(mesh(geo.scatola(0.08, 0.35, 0.08), legno, -0.38, -0.17, 0)); b.add(mesh(geo.scatola(0.08, 0.35, 0.08), legno, 0.38, -0.17, 0)); davanti(-1.0, b); break; }
-    case 'paura': { const l = creaLanterna(); l.luce.material = mat('#ffe2a0', { emissive: '#ffb347', emissiveIntensity: 1.2, rim: 0 }); davanti(0.75, l.gruppo); break; }
-    case 'sorpresa': {
-      const filo = new THREE.Group();
-      const colori = ['#ff6f91', '#ffd166', '#7fc8f8', '#7ccf6a', '#b39ddb'];
-      for (let i = 0; i < 5; i++) { const b = mesh(geo.cono(0.09, 0.18, 3), mat(colori[i]), -0.8 + i * 0.4, 0, 0); b.rotation.x = Math.PI; filo.add(b); }
-      filo.position.set(0, altPorta + 0.45, fronte + 0.1);
-      g.add(filo);
-      break;
-    }
-    case 'tristezza': for (const x of [-0.9, 0.9]) { const v = mesh(geo.cil(0.16, 0.12, 0.25, 8), mat('#c8805a'), 0, 0.12, 0); for (let i = 0; i < 3; i++) { const f = creaFiore('#7fb4f8'); f.position.set((i - 1) * 0.07, 0.15, 0); v.add(f); } davanti(x, v); } break;
-    case 'disgusto': for (let i = 0; i < 3; i++) { const e = creaCiuffo(0.8); e.traverse((o) => { if (o instanceof THREE.Mesh) o.material = mat('#8fbf5a', { rim: 0.2, side: THREE.DoubleSide }); }); davanti(-0.9 + i * 0.3, e); } break;
-    case 'rabbia': { const leg = new THREE.Group(); for (let i = 0; i < 6; i++) { const t2 = mesh(geo.cil(0.09, 0.09, 0.6, 8), mat('#a06a40'), (i % 3) * 0.19 - 0.19, 0.09 + Math.floor(i / 3) * 0.17, 0); t2.rotation.z = Math.PI / 2; t2.rotation.y = Math.PI / 2; leg.add(t2); } davanti(1.0, leg); break; }
-    case 'attesa': { const p = mesh(geo.cil(0.04, 0.04, 0.9, 6), legno, 0, 0.45, 0); p.add(mesh(geo.scatola(0.32, 0.22, 0.4), mat(c.porta), 0, 0.5, 0)); davanti(1.0, p); break; }
-  }
-
-  // crescendo l'animale abbellisce la casa
-  const livello = { uovo: 0, cucciolo: 0, giovane: 1, adulto: 2, maestro: 3 }[fase];
-  if (livello >= 2) {
-    // un vialetto di sassi piatti fino alla porta
-    for (let i = 0; i < 3; i++) {
-      const s = mesh(geo.cil(0.18, 0.2, 0.05, 8), pietra(), (i % 2) * 0.12 - 0.06, 0.03, Math.max(fronte, 1.1) + 0.35 + i * 0.4);
-      s.userData.senzaContorno = true;
-      g.add(s);
-    }
-  }
-  if (livello >= 3) {
-    // un piccolo recinto basso intorno
-    for (let i = 0; i < 9; i++) {
-      const a = Math.PI * 0.15 + (i / 8) * Math.PI * 0.7;
-      g.add(mesh(geo.scatola(0.08, 0.45, 0.08), legno, Math.cos(a + Math.PI) * 1.9, 0.22, -Math.sin(a + Math.PI) * 1.9 * 0.8));
-    }
-  }
+  // davanti alla casa il giardinetto, pensato come un piccolo set col suo tema (secondo l'emozione);
+  // dietro e intorno i pezzi che l'animale si è costruito da solo col tempo (vedi lib/ampliamenti.ts)
+  void fase;
+  g.add(creaGiardinetto(emozione, c, fronte));
+  if (ampliamenti.length) creaAmpliamenti(g, specie, ampliamenti, c, fronte);
   if (livelloCasa >= 2) miglioraCasa(g, specie, c, livelloCasa, fronte, altPorta);
   return contorno(g);
 }
@@ -2692,14 +2661,7 @@ function miglioraCasa(g: THREE.Group, specie: Specie, c: { muro: string; tetto: 
   const bandiera = mesh(geo.scatola(0.6, 0.38, 0.02), mat(c.porta, { side: THREE.DoubleSide }), mezza + 0.66, 3.0, -0.6);
   bandiera.name = 'bandiera';
   g.add(bandiera);
-  const zg = Math.max(fronte, 1.1) + 1.25;
-  for (let i = 0; i < 8; i++) {
-    const x = (i < 4 ? -1 : 1) * (0.45 + (i % 4) * 0.22);
-    const f = creaFiore(colori[i % colori.length]);
-    f.scale.setScalar(2.2);
-    f.position.set(x, 0, zg + (i % 2) * 0.18);
-    g.add(f);
-  }
+  // (il giardino fiorito davanti adesso fa parte del giardinetto di ogni casa: vedi esterni.ts)
 }
 
 /** Cartello a freccia per indicare la via, con una scritta di Giada. */

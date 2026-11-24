@@ -153,7 +153,7 @@ export const MESTIERI: DefMestiere[] = [
 
   // ---------- trascendenza ----------
   d({ id: 'musicista', m: 'musicista', f: 'musicista', virtu: 'trascendenza', insegna: 'MUSICA', simbolo: '♪', cosa: 'suona il violino in piazza', colore: '#8a5ac8', tenda: null,
-    attrezzi: ['tamburo', 'leggio', 'note'], divisa: { testa: 'bombetta:nero:tinta', corpo: 'gilet:bordeaux:tinta', collo: 'papillon:rosso:tinta' },
+    attrezzi: ['tamburo', 'leggio', 'arpa', 'contrabbasso'], divisa: { testa: 'bombetta:nero:tinta', corpo: 'gilet:bordeaux:tinta', collo: 'papillon:rosso:tinta' },
     inMano: 'violino', lavoro: { dove: 'piazza', gesto: 'suona', fumetti: ['♪', '♫', '♬'] } }),
   d({ id: 'pittore', m: 'pittore', f: 'pittrice', virtu: 'trascendenza', insegna: 'PITTURA', simbolo: '🎨', cosa: 'dipinge il villaggio', colore: '#e0607a', tenda: null,
     attrezzi: ['cavalletto', 'tele', 'barattoli'], divisa: { testa: 'basco:bordeaux:tinta', corpo: 'grembiule:panna:macchie', collo: 'foulard:giallo:tinta' },

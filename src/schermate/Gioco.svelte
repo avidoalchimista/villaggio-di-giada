@@ -201,10 +201,12 @@
       else if (a && e.tipo === 'edificio') {
         const ed = s.edifici.find((x) => x.gestore === a.id);
         if (!(ed && scena.inquadra({ tipo: 'edificio', id: ed.tipo }))) scena.inquadra({ tipo: 'animale', id: a.id });
+      } else if (a && e.tipo === 'casa') {
+        if (!scena.inquadra({ tipo: 'casa', id: a.id })) scena.inquadra({ tipo: 'animale', id: a.id });
       } else if (a) scena.inquadra({ tipo: 'animale', id: a.id });
       await pausa(1200);
       if (!sp) return;
-      sp.testo = e.tipo === 'storia' ? `${e.testo}. Il corvo ha una storia nuova da raccontarti!` : e.tipo === 'sentiero' ? `🦫 ${e.testo}` : e.testo;
+      sp.testo = e.tipo === 'storia' ? `${e.testo}. Il corvo ha una storia nuova da raccontarti!` : e.tipo === 'sentiero' ? `🦫 ${e.testo}` : e.tipo === 'casa' ? `🔨 ${e.testo}` : e.testo;
     }
     sp.pronto = true;
   }

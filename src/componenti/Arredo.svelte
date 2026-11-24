@@ -4,8 +4,8 @@
   import { onDestroy, onMount } from 'svelte';
   import { app, cambiaArredo } from '../lib/app.svelte';
   import {
-    compraSemi, dipingiSentiero, fasePianta, giorniAllaFioritura, MATERIALI_SENTIERO, metteVia, nuovaAiuola, nuovoOggetto,
-    nuovoQuadretto, palata, pianta, PIANTE, PREZZI, sposta, togliNatura, togliPianta, type Aiuola, type Palata,
+    compraSemi, conAcqua, dipingiSentiero, fasePianta, FILA, giorniAllaFioritura, MATERIALI_SENTIERO, metteVia, nuovaAiuola, nuovaFila, nuovoOggetto,
+    nuovoQuadretto, palata, pianta, PIANTE, PREZZI, sposta, TIPI_FILA, togliAcqua, togliNatura, togliPianta, versaAcqua, type Aiuola, type Palata, type TipoFila,
   } from '../lib/arredo';
   import { nomeAnimale, REGOLE } from '../lib/gioco';
   import type { EventoArredo, ModoArredo, Scena } from '../scena/scena';
@@ -23,15 +23,20 @@
   let messaggio = $state('');
   let dipingi = $state(false);
   let cartello = $state<string | null>(null);
+  let tipoFila = $state<TipoFila>('recinto');
+  // "Annulla": com'era il villaggio prima di ogni cosa fatta (le ultime 40), per tornare indietro
+  let storia = $state<string[]>([]);
   let timerMsg: ReturnType<typeof setTimeout> | undefined;
 
   const AIUTO: Record<ModoArredo, string> = {
     sposta: 'Tocca una cosa per sceglierla, poi trascinala o tocca dove vuoi metterla.',
     togli: `Con l'accetta: ogni tocco è un colpo. Un albero cade dopo 5 colpi (🌰${PREZZI.albero}), un cespuglio dopo 2, un sasso dopo 3 (🌰${PREZZI.cespuglio}). Fiori ed erba si raccolgono gratis.`,
     sentiero: 'Trascina il dito per disegnare il sentiero. Con due dita sposti la vista.',
-    terreno: `Con la pala: trascina il dito per scavare un laghetto o alzare una montagnola (🌰${PREZZI.palata} a palata). Spianare è gratis.`,
+    terreno: `Con la pala: trascina il dito per scavare una buca o alzare una montagnola (🌰${PREZZI.palata} a palata). Spianare è gratis. Per fare un laghetto, poi riempi la buca con 💧 Acqua.`,
+    acqua: "Tocca una buca scavata con la pala: si riempie d'acqua e diventa un laghetto. Tocca l'acqua per toglierla.",
+    fila: 'Tocca per mettere un pezzo: il prossimo è già pronto in fondo, trasparente, basta toccarlo. Oppure trascina il dito per farne tanti in fila in un colpo.',
     orto: `Compra un'aiuola, mettila dove vuoi e toccala per piantare i semi.`,
-    quadri: 'Dipingi quadretti, metti cartelli per indicare la via e recinti.',
+    quadri: 'Dipingi quadretti e metti cartelli per indicare la via.',
   };
   const NOMI_COSA: Record<string, string> = { albero: "Hai abbattuto l'albero", cespuglio: 'Hai tolto il cespuglio', sasso: 'Hai spostato via il sasso', piccolo: 'Fatto spazio' };
 
@@ -41,9 +46,55 @@
     timerMsg = setTimeout(() => (messaggio = ''), 3200);
   }
 
+  const istantanea = () => JSON.stringify({ a: app.stato!.arredo, g: app.stato!.ghiande });
+
+  /** Ricorda com'era prima, per poter tornare indietro. */
+  function ricorda() {
+    storia = [...storia.slice(-39), istantanea()];
+  }
+
+  /** Fa una cosa al villaggio che si può annullare. */
+  function fai<T>(f: Parameters<typeof cambiaArredo<T>>[0], subito = true): T | undefined {
+    const prima = istantanea();
+    const r = cambiaArredo(f, subito);
+    if (istantanea() !== prima) storia = [...storia.slice(-39), prima];
+    return r;
+  }
+
+  /** Annulla l'ultima cosa fatta (anche un tratto intero di sentiero o di pala). Le castagne spese tornano. */
+  function annulla() {
+    const ora = istantanea();
+    let prima: string | undefined;
+    while (storia.length && (prima = storia[storia.length - 1]) === ora) storia = storia.slice(0, -1);
+    if (!storia.length || !prima || prima === ora) return dici('Non c\'è niente da annullare.');
+    storia = storia.slice(0, -1);
+    const { a: ar, g } = JSON.parse(prima);
+    cambiaArredo((st) => { st.arredo = ar; st.ghiande = g; });
+    scena.prossimaFila = null;
+    scena.aggiornaFantasmiFila();
+    scegli(null);
+    dici('↶ Fatto: tornato com\'era prima.');
+  }
+
+  function tasto(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !(e.target instanceof HTMLInputElement)) {
+      e.preventDefault();
+      annulla();
+    }
+  }
+
+  function scegliFila(t: TipoFila) {
+    tipoFila = t;
+    scena.tipoFila = t;
+    scena.prossimaFila = null;
+    scena.aggiornaFantasmiFila();
+  }
+
   function cambiaModo(m: ModoArredo) {
     modo = m;
     scena.modo = m;
+    scena.prossimaFila = null;
+    scena.aggiornaFantasmiFila();
     scegli(null);
     aiuolaAperta = null;
   }
@@ -75,14 +126,32 @@
         scegli(e.chiave);
         break;
       case 'sposta':
-        cambiaArredo((st) => sposta(st, e.chiave, e.posto));
+        fai((st) => sposta(st, e.chiave, e.posto));
         break;
       case 'togli':
-        if (cambiaArredo((st, oggi) => togliNatura(st, e.x, e.z, e.costo, oggi))) dici(`${NOMI_COSA[e.cosa] ?? 'Fatto'}${e.costo ? ` (🌰 ${e.costo})` : ''}.`);
+        if (fai((st, oggi) => togliNatura(st, e.x, e.z, e.costo, oggi))) dici(`${NOMI_COSA[e.cosa] ?? 'Fatto'}${e.costo ? ` (🌰 ${e.costo})` : ''}.`);
         break;
       case 'poche':
         dici(`Servono 🌰 ${e.costo} per ${e.cosa === 'albero' ? "abbattere quest'albero" : 'toglierlo'}. Scrivi nel diario per averne altre!`);
         break;
+      case 'tratto':
+        ricorda();
+        break;
+      case 'acqua': {
+        const c = conAcqua(app.stato!.arredo, e.x, e.z);
+        const n = fai((st) => (c ? togliAcqua(st, e.x, e.z) : versaAcqua(st, e.x, e.z)));
+        if (!n) dici(c ? 'Qui non c\'è acqua da togliere.' : 'Qui non c\'è una buca: prima scavala con la pala ⛏️, poi versaci l\'acqua.');
+        else dici(c ? 'Hai tolto l\'acqua: la buca è di nuovo asciutta.' : '💧 Splash! La buca è diventata un laghetto.');
+        break;
+      }
+      case 'fila': {
+        const def = FILA[scena.tipoFila];
+        const messi = fai((st) => nuovaFila(st, scena.tipoFila, e.pezzi)) ?? [];
+        if (!messi.length) dici(`Un pezzo di ${def.nome.toLowerCase()} costa 🌰 ${def.costo}.`);
+        else if (messi.length < e.pezzi.length) dici(`Messi ${messi.length} pezzi: per gli altri non bastano le castagne.`);
+        else if (messi.length > 1) dici(`${messi.length} pezzi in fila (🌰 ${messi.length * def.costo}).`);
+        break;
+      }
       case 'dipingi':
         if (modo === 'terreno') {
           if (pala !== 'spiana' && s.ghiande < PREZZI.palata) { dici('Servono castagne per scavare: scrivi nel diario per averne altre!'); break; }
@@ -111,10 +180,14 @@
     }
     scena.modo = modo;
     scena.pennello = pennello;
+    scena.tipoFila = tipoFila;
     scena.onArredo = evento;
+    window.addEventListener('keydown', tasto);
   });
   onDestroy(() => {
+    window.removeEventListener('keydown', tasto);
     scena.modo = null;
+    scena.prossimaFila = null;
     scena.seleziona(null);
     scena.onArredo = () => {};
     clearTimeout(timerMsg);
@@ -124,19 +197,19 @@
     if (!scelto) return;
     const p = scena.postoDi(scelto);
     if (!p) return;
-    cambiaArredo((st) => sposta(st, scelto!, { ...p, r: p.r + (verso * Math.PI) / 4 }));
+    fai((st) => sposta(st, scelto!, { ...p, r: p.r + (verso * Math.PI) / 4 }));
   }
 
   function mettiVia() {
     if (!scelto) return;
     const k = scelto;
-    cambiaArredo((st, oggi) => metteVia(st, k, oggi));
+    fai((st, oggi) => metteVia(st, k, oggi));
     scegli(null);
   }
 
   function compraAiuola() {
     const p = scena.puntoLibero();
-    const ai = cambiaArredo((st) => nuovaAiuola(st, p.x, p.z));
+    const ai = fai((st) => nuovaAiuola(st, p.x, p.z));
     if (!ai) return dici(`Un'aiuola costa 🌰 ${PREZZI.aiuola}.`);
     cambiaModo('sposta');
     scegli('a:' + ai.id);
@@ -144,18 +217,18 @@
   }
 
   function compra(specie: string) {
-    if (!cambiaArredo((st) => compraSemi(st, specie))) dici('Non bastano le castagne per questi semi.');
+    if (!fai((st) => compraSemi(st, specie))) dici('Non bastano le castagne per questi semi.');
   }
 
   function semina(ai: Aiuola, posto: number, specie: string) {
-    cambiaArredo((st, oggi) => pianta(st, ai.id, posto, specie, oggi));
+    fai((st, oggi) => pianta(st, ai.id, posto, specie, oggi));
   }
 
   function nuovoCartello() {
     const testo = (cartello ?? '').trim();
     if (!testo) return;
     const p = scena.puntoLibero();
-    const o = cambiaArredo((st) => nuovoOggetto(st, 'cartello', p.x, p.z, testo));
+    const o = fai((st) => nuovoOggetto(st, 'cartello', p.x, p.z, testo));
     cartello = null;
     if (!o) return dici(`Un cartello costa 🌰 ${PREZZI.cartello}.`);
     cambiaModo('sposta');
@@ -163,17 +236,9 @@
     dici('Mettilo dove serve e giralo con le frecce per indicare la strada.');
   }
 
-  function nuovoRecinto() {
-    const p = scena.puntoLibero();
-    const o = cambiaArredo((st) => nuovoOggetto(st, 'recinto', p.x, p.z));
-    if (!o) return dici(`Un pezzo di recinto costa 🌰 ${PREZZI.recinto}.`);
-    cambiaModo('sposta');
-    scegli('o:' + o.id);
-  }
-
   function appendi(disegno: string, cornice: number) {
     const p = scena.puntoLibero();
-    const q = cambiaArredo((st, oggi) => nuovoQuadretto(st, disegno, cornice, p.x, p.z, oggi));
+    const q = fai((st, oggi) => nuovoQuadretto(st, disegno, cornice, p.x, p.z, oggi));
     dipingi = false;
     if (!q) return dici(`Un quadretto costa 🌰 ${PREZZI.quadretto}.`);
     cambiaModo('sposta');
@@ -199,7 +264,10 @@
 <div class="arredo">
   <div class="barra-alta">
     <div class="pillola">🌰 {s.ghiande}</div>
-    <button class="tondo fatto" onclick={onchiudi}>Fatto ✓</button>
+    <div class="riga">
+      <button class="tondo grigio annulla" disabled={!storia.length} onclick={annulla} title="Annulla (Ctrl+Z)">↶ Annulla</button>
+      <button class="tondo fatto" onclick={onchiudi}>Fatto ✓</button>
+    </div>
   </div>
 
   <div class="sotto">
@@ -217,7 +285,7 @@
                 <div class="nome">{def(p.specie).nome}</div>
                 <div class="piccolo">{FASI_PIANTA[f]}</div>
                 {#if f < 3}<div class="piccolo">fiorisce tra {giorniAllaFioritura(p, app.stato!.ultimoAccesso)} g</div>{/if}
-                <button class="mini" onclick={() => cambiaArredo((st) => togliPianta(st, aiuola!.id, i))}>Togli</button>
+                <button class="mini" onclick={() => fai((st) => togliPianta(st, aiuola!.id, i))}>Togli</button>
               {:else}
                 <div class="grande">·</div>
                 {#if semiMiei.length}
@@ -287,6 +355,12 @@
               <button class="materiale" class:attivo={pala === p} style:background={colore} onclick={() => (pala = p as Palata)}>{nome}</button>
             {/each}
           </div>
+        {:else if modo === 'fila'}
+          <div class="riga materiali">
+            {#each TIPI_FILA as t (t)}
+              <button class="materiale fila" class:attivo={tipoFila === t} onclick={() => scegliFila(t)}>{FILA[t].simbolo} {FILA[t].nome} <span class="prezzo">🌰{FILA[t].costo}</span></button>
+            {/each}
+          </div>
         {:else if modo === 'orto'}
           <div class="riga">
             <button class="tondo" disabled={s.ghiande < PREZZI.aiuola} onclick={compraAiuola}>Nuova aiuola 🌰 {PREZZI.aiuola}</button>
@@ -296,13 +370,12 @@
           <div class="riga">
             <button class="mini" disabled={s.ghiande < PREZZI.quadretto} onclick={() => (dipingi = true)}>🖼 Quadretto 🌰{PREZZI.quadretto}</button>
             <button class="mini" disabled={s.ghiande < PREZZI.cartello} onclick={() => (cartello = '')}>🪧 Cartello 🌰{PREZZI.cartello}</button>
-            <button class="mini" disabled={s.ghiande < PREZZI.recinto} onclick={nuovoRecinto}>🚧 Recinto 🌰{PREZZI.recinto}</button>
           </div>
         {/if}
       </div>
 
       <div class="strumenti">
-        {#each [['sposta', '✋', 'Sposta'], ['togli', '🪓', 'Accetta'], ['sentiero', '🟫', 'Sentiero'], ['terreno', '⛏️', 'Pala'], ['orto', '🌱', 'Aiuole'], ['quadri', '🪧', 'Cose']] as [m, icona, nome] (m)}
+        {#each [['sposta', '✋', 'Sposta'], ['togli', '🪓', 'Accetta'], ['sentiero', '🟫', 'Sentiero'], ['terreno', '⛏️', 'Pala'], ['acqua', '💧', 'Acqua'], ['fila', '🚧', 'In fila'], ['orto', '🌱', 'Aiuole'], ['quadri', '🪧', 'Cose']] as [m, icona, nome] (m)}
           <button class="strumento" class:attivo={modo === m} onclick={() => cambiaModo(m as ModoArredo)}>
             <span class="icona">{icona}</span><span>{nome}</span>
           </button>
@@ -324,6 +397,10 @@
     font-weight: 800; color: #7a4a1a; box-shadow: 0 4px 0 var(--legno-scuro);
   }
   .fatto { padding: 8px 18px; }
+  .annulla { padding: 8px 14px; }
+  .annulla:disabled { opacity: 0.5; }
+  .materiale.fila { background: rgba(255, 255, 255, 0.14); text-shadow: none; }
+  .materiale .prezzo { font-size: 0.75rem; }
   .sotto { position: absolute; left: 10px; right: 10px; bottom: calc(80px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px; }
   .nuvoletta {
     align-self: center; background: #fffbe8; color: var(--inchiostro); border: 3px solid var(--legno); border-radius: 16px;
@@ -354,10 +431,10 @@
   .materiale.attivo { border-color: #ffe08a; transform: scale(1.06); }
   .strumenti { display: flex; gap: 4px; background: var(--panna); border: 3px solid var(--legno); border-radius: 18px; padding: 4px; box-shadow: 0 4px 0 var(--legno-scuro); }
   .strumento {
-    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0; padding: 5px 2px; border-radius: 12px;
-    background: transparent; color: var(--inchiostro); font-size: 0.72rem; font-weight: 800; box-shadow: none; border: none; text-shadow: none;
+    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 0; padding: 5px 1px; border-radius: 12px; white-space: nowrap;
+    background: transparent; color: var(--inchiostro); font-size: 0.66rem; font-weight: 800; box-shadow: none; border: none; text-shadow: none;
   }
-  .strumento .icona { font-size: 1.35rem; }
+  .strumento .icona { font-size: 1.25rem; }
   .strumento.attivo { background: #ffe08a; }
   .posti { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .posto { background: rgba(255, 255, 255, 0.07); border-radius: 10px; padding: 6px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px; }

@@ -8,7 +8,8 @@ export interface Pianta { specie: string; piantata: string }
 export interface Aiuola extends Posto { id: string; piante: (Pianta | null)[] }
 export interface Quadretto extends Posto { id: string; disegno: string; cornice: number; fatto: string }
 
-export interface Oggetto extends Posto { id: string; tipo: 'cartello' | 'recinto'; testo?: string }
+export type TipoFila = 'recinto' | 'siepe' | 'muretto' | 'lampione' | 'paletti';
+export interface Oggetto extends Posto { id: string; tipo: 'cartello' | TipoFila; testo?: string }
 
 export interface Arredo {
   /** dove Giada ha messo le cose: 'c:panchina', 'e:chiosco', 'b:<id animale>', 'castagno' */
@@ -20,6 +21,8 @@ export interface Arredo {
   tolti: [number, number, string?][];
   /** il terreno modellato con la pala: vertici ogni mezzo metro "i,j" → altezza in centimetri (sotto zero = acqua) */
   terreno?: Record<string, number>;
+  /** dove Giada ha versato l'acqua nelle buche scavate: vertici "i,j" (la pala fa solo buche asciutte) */
+  acqua?: Record<string, 1>;
   aiuole: Aiuola[];
   semi: Record<string, number>;
   quadretti: Quadretto[];
@@ -40,6 +43,12 @@ export function arredoVuoto(): Arredo {
 export function arredoDi(s: StatoGioco): Arredo {
   s.arredo ??= arredoVuoto();
   s.arredo.oggetti ??= [];
+  // i laghetti scavati prima che la pala facesse solo buche asciutte: l'acqua che c'era resta
+  if (s.arredo.terreno && !s.arredo.acqua) {
+    const acqua: Record<string, 1> = {};
+    for (const [k, h] of Object.entries(s.arredo.terreno)) if (h / 100 < LIVELLO_ACQUA) acqua[k] = 1;
+    s.arredo.acqua = acqua;
+  }
   return s.arredo;
 }
 
@@ -53,6 +62,8 @@ export const PREZZI = {
   quadretto: 3,
   cartello: 4,
   recinto: 2,
+  /** l'acqua per riempire le buche */
+  acqua: 0,
   /** abbattere con l'accetta: un albero costa più di un cespuglio; fiori ed erba si tolgono gratis */
   albero: 3,
   cespuglio: 1,
@@ -60,6 +71,49 @@ export const PREZZI = {
   /** la pala: ogni palata (scavare o alzare) costa una castagna; spianare è gratis */
   palata: 1,
 };
+
+/**
+ * Le cose che si mettono in fila (come le staccionate): si trascina il dito e se ne fanno tante in un colpo,
+ * oppure si tocca e ne resta subito un'altra "fantasma" pronta, attaccata in fondo alla prima.
+ * `passo` = quanto è lungo un pezzo (in metri).
+ */
+export const FILA: Record<TipoFila, { nome: string; simbolo: string; costo: number; passo: number }> = {
+  recinto: { nome: 'Staccionata', simbolo: '🚧', costo: 2, passo: 2 },
+  siepe: { nome: 'Siepe', simbolo: '🌳', costo: 2, passo: 1.5 },
+  muretto: { nome: 'Muretto di sassi', simbolo: '🧱', costo: 3, passo: 1.5 },
+  paletti: { nome: 'Paletti con la corda', simbolo: '🪢', costo: 1, passo: 2 },
+  lampione: { nome: 'Lampioni', simbolo: '🏮', costo: 4, passo: 3 },
+};
+export const TIPI_FILA = Object.keys(FILA) as TipoFila[];
+
+/**
+ * I pezzi di una fila da (x0, z0) a (x1, z1): uno ogni `passo` metri, girati lungo la fila.
+ * Se il tratto è più corto di un pezzo, ne viene uno solo (girato come `rDefault`).
+ */
+export function pezziFila(tipo: TipoFila, x0: number, z0: number, x1: number, z1: number, rDefault = 0): Posto[] {
+  const { passo } = FILA[tipo];
+  const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz);
+  if (l < passo * 0.5) return [{ x: x0, z: z0, r: rDefault }];
+  const n = Math.max(1, Math.round(l / passo));
+  const ux = dx / l, uz = dz / l, r = Math.atan2(-uz, ux) || 0;
+  const out: Posto[] = [];
+  for (let k = 0; k < n; k++) out.push({ x: x0 + ux * passo * (k + 0.5), z: z0 + uz * passo * (k + 0.5), r });
+  return out;
+}
+
+/** Mette una fila di pezzi (finché bastano le castagne e il posto). Restituisce quelli messi. */
+export function nuovaFila(s: StatoGioco, tipo: TipoFila, pezzi: Posto[]): Oggetto[] {
+  const a = arredoDi(s);
+  const out: Oggetto[] = [];
+  for (const p of pezzi) {
+    if (s.ghiande < FILA[tipo].costo || a.oggetti.length >= MAX_OGGETTI) break;
+    s.ghiande -= FILA[tipo].costo;
+    const o: Oggetto = { id: nuovoId(s, tipo), tipo, x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100, r: Math.round(p.r * 100) / 100 };
+    a.oggetti.push(o);
+    out.push(o);
+  }
+  return out;
+}
 
 /** Dopo quanti giorni dove è stato abbattuto un albero ricresce qualcosa (se è ancora libero). */
 export const GIORNI_RICRESCITA = 120;
@@ -87,7 +141,7 @@ export const PIANTE: DefPianta[] = [
 
 export const COSTO_AIUOLA = PREZZI.aiuola;
 export const COSTO_QUADRETTO = PREZZI.quadretto;
-export const MAX_OGGETTI = 40;
+export const MAX_OGGETTI = 160;
 export const POSTI_AIUOLA = 3;
 export const MAX_AIUOLE = 12;
 export const MAX_QUADRETTI = 12;
@@ -155,7 +209,7 @@ export function nuovoQuadretto(s: StatoGioco, disegno: string, cornice: number, 
 
 export function nuovoOggetto(s: StatoGioco, tipo: Oggetto['tipo'], x: number, z: number, testo?: string): Oggetto | null {
   const a = arredoDi(s);
-  const costo = PREZZI[tipo];
+  const costo = tipo === 'cartello' ? PREZZI.cartello : FILA[tipo].costo;
   if (s.ghiande < costo || a.oggetti.length >= MAX_OGGETTI) return null;
   s.ghiande -= costo;
   const o: Oggetto = { id: nuovoId(s, tipo), tipo, x, z, r: 0, ...(testo ? { testo: testo.slice(0, 18) } : {}) };
@@ -267,6 +321,7 @@ export function palata(s: StatoGioco, x: number, z: number, cosa: Palata, libero
   const costo = cosa === 'spiana' ? 0 : PREZZI.palata;
   if (s.ghiande < costo) return false;
   const a = arredoDi(s);
+  a.acqua ??= {}; // (prima del terreno: le buche nuove nascono asciutte)
   a.terreno ??= {};
   const t = a.terreno;
   const r = Math.ceil(raggio / PASSO_TERRENO), ci = Math.round(x / PASSO_TERRENO), cj = Math.round(z / PASSO_TERRENO);
@@ -287,10 +342,83 @@ export function palata(s: StatoGioco, x: number, z: number, cosa: Palata, libero
       if (Math.abs(dopo) < 2) dopo = 0;
       if (dopo === prima) continue;
       if (dopo) t[k] = dopo; else delete t[k];
+      if (a.acqua?.[k] && dopo / 100 >= LIVELLO_ACQUA) delete a.acqua[k]; // alzando, l'acqua lì se ne va
       cambiato = true;
     }
   if (cambiato) s.ghiande -= costo;
   return cambiato;
+}
+
+// ---------- l'acqua: si versa nelle buche (la pala fa solo buche asciutte) ----------
+
+/** In questo vertice del terreno c'è una buca abbastanza profonda per tenere l'acqua? */
+const buca = (t: Record<string, number>, k: string) => (t[k] ?? 0) / 100 < LIVELLO_ACQUA;
+
+/** Il vertice "i,j" più vicino a (x, z). */
+export const verticeVicino = (x: number, z: number) => `${Math.round(x / PASSO_TERRENO)},${Math.round(z / PASSO_TERRENO)}`;
+
+/** C'è acqua in (x, z)? (buca abbastanza profonda e Giada ci ha versato l'acqua) */
+export function conAcqua(a: Arredo | undefined, x: number, z: number): boolean {
+  if (!a?.acqua || !a.terreno) return false;
+  if (altezzaTerreno(a.terreno, x, z) >= LIVELLO_ACQUA) return false;
+  const fx = x / PASSO_TERRENO, fz = z / PASSO_TERRENO, i = Math.floor(fx), j = Math.floor(fz);
+  return !!(a.acqua[`${i},${j}`] || a.acqua[`${i + 1},${j}`] || a.acqua[`${i},${j + 1}`] || a.acqua[`${i + 1},${j + 1}`]);
+}
+
+/**
+ * Versa l'acqua nella buca sotto (x, z): si riempie tutta la buca (i vertici collegati sotto il livello dell'acqua).
+ * Restituisce quanti vertici si sono riempiti (0 = lì non c'è una buca, o era già piena).
+ */
+export function versaAcqua(s: StatoGioco, x: number, z: number): number {
+  const a = arredoDi(s);
+  const t = a.terreno ?? {};
+  // la buca più vicina entro un metro (il dito non è mai preciso)
+  let partenza: string | null = null;
+  for (let d = 0; d <= 2 && !partenza; d++)
+    for (let di = -d; di <= d && !partenza; di++)
+      for (let dj = -d; dj <= d; dj++) {
+        const k = `${Math.round(x / PASSO_TERRENO) + di},${Math.round(z / PASSO_TERRENO) + dj}`;
+        if (buca(t, k)) { partenza = k; break; }
+      }
+  if (!partenza) return 0;
+  a.acqua ??= {};
+  const coda = [partenza], visti = new Set(coda);
+  let n = 0;
+  while (coda.length && visti.size < 4000) {
+    const k = coda.pop()!;
+    if (!a.acqua[k]) { a.acqua[k] = 1; n++; }
+    const [i, j] = k.split(',').map(Number);
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const q = `${i + di},${j + dj}`;
+      if (!visti.has(q) && buca(t, q)) { visti.add(q); coda.push(q); }
+    }
+  }
+  return n;
+}
+
+/** Toglie l'acqua dalla buca sotto (x, z) (tutta quella collegata). Restituisce quanti vertici ha svuotato. */
+export function togliAcqua(s: StatoGioco, x: number, z: number): number {
+  const a = arredoDi(s);
+  if (!a.acqua) return 0;
+  let partenza: string | null = null;
+  for (let d = 0; d <= 2 && !partenza; d++)
+    for (let di = -d; di <= d && !partenza; di++)
+      for (let dj = -d; dj <= d; dj++) {
+        const k = `${Math.round(x / PASSO_TERRENO) + di},${Math.round(z / PASSO_TERRENO) + dj}`;
+        if (a.acqua[k]) { partenza = k; break; }
+      }
+  if (!partenza) return 0;
+  const coda = [partenza];
+  let n = 0;
+  while (coda.length) {
+    const k = coda.pop()!;
+    if (!a.acqua[k]) continue;
+    delete a.acqua[k];
+    n++;
+    const [i, j] = k.split(',').map(Number);
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) coda.push(`${i + di},${j + dj}`);
+  }
+  return n;
 }
 
 // ---------- sentiero ----------
