@@ -19,7 +19,7 @@ import {
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto,
 } from './modelli';
-import { CURVA, materiale, materialeTerreno, spriteTesto } from './ps1';
+import { CURVA, NEVE, materiale, materialeTerreno, spriteTesto } from './ps1';
 import type { Meteo } from '../lib/meteo';
 import { cappellinoDiFesta, Festa, POSTO_TORTA } from './festa';
 import { Pescata } from './pesca3d';
@@ -269,6 +269,8 @@ export class Scena {
   private conRichiesta: string | null = null;
   private precipitazioni!: THREE.Points;
   private meteo: Meteo = 'sole';
+  private neve = 0; // quanta neve si è posata (0-1)
+  private meteoDato = false;
   private fulmine = 0;
   private pale: THREE.Group | null = null;
   private raggio = 0;
@@ -489,6 +491,9 @@ export class Scena {
 
   /** Cambia il tempo che fa: lo chiama la schermata ogni volta che serve. */
   impostaMeteo(m: Meteo) {
+    // entrando nel villaggio mentre nevica, la neve c'è già; poi si posa e si scioglie piano
+    if (!this.meteoDato) this.neve = m === 'neve' ? 1 : 0;
+    this.meteoDato = true;
     if (m === this.meteo) return;
     this.meteo = m;
     const p = this.precipitazioni.material as THREE.PointsMaterial;
@@ -2186,7 +2191,10 @@ export class Scena {
       return true;
     });
 
+    this.neve += ((this.meteo === 'neve' ? 1 : 0) - this.neve) * Math.min(1, dt * (this.meteo === 'neve' ? 0.05 : 0.02));
+    NEVE.valore = this.neve < 0.01 ? 0 : this.neve;
     this.renderer.render(this.scene, this.camera);
+    NEVE.valore = 0;
   };
 
   private muovi(ab: Abitante, dt: number, t: number) {
