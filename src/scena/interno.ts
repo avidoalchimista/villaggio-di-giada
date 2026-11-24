@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { carattereDi, cosaFaInCasa, type Arredo, type AttivitaCasa, type Momento, type Posto } from '../lib/carattere';
 import { hash } from '../lib/caso';
 import type { Animale } from '../lib/tipi';
-import { aggiornaMestiere, creaAnimale, mat, posa, SIMBOLI_MESTIERE, type ModelloAnimale } from './modelli';
+import { aggiornaMestiere, ampiezzaPasso, creaAnimale, mat, posa, SIMBOLI_MESTIERE, type ModelloAnimale } from './modelli';
 import { contorno, CURVA, macchie, ombra, spriteTesto, texture } from './ps1';
 
 const geo = {
@@ -664,7 +664,8 @@ export class Interno {
     const m = creaAnimale(a);
     aggiornaMestiere(m, a.mestiere);
     const scala = ({ cucciolo: 1.15, giovane: 1.22, adulto: 1.28, maestro: 1.32, uovo: 1 } as const)[a.fase] * 0.82;
-    m.gruppo.scale.setScalar(scala * ((m.gruppo.userData.taglia as number) ?? 1));
+    // in casa i grandi (cavallo, mucca) si fanno un po' più piccoli, se no non ci stanno
+    m.gruppo.scale.setScalar(scala * Math.min(1.02, (m.gruppo.userData.taglia as number) ?? 1));
     m.testa.scale.setScalar(({ cucciolo: 1.12, giovane: 1.0, adulto: 0.9, maestro: 0.9, uovo: 1 } as const)[a.fase]);
     m.gruppo.userData.ospite = a.id;
     const i = this.ospiti.length;
@@ -915,7 +916,8 @@ export class Interno {
     const dir = meta.clone().sub(g.position).setY(0);
     const dist = dir.length();
     const cammina = dist > 0.06;
-    const erettoVoluto = o.dati.fase === 'cucciolo' ? 0 : o.dati.fase === 'giovane' ? (cammina ? 0 : 0.6) : 1;
+    // in casa camminano a quattro zampe e si alzano solo per fare le loro cose (leggere, cucinare, suonare...)
+    const erettoVoluto = o.dati.fase === 'cucciolo' || cammina || o.att.gesto === 'dorme' ? 0 : 1;
     o.eretto += (erettoVoluto - o.eretto) * Math.min(1, dt * 3);
     posa(m, o.eretto);
 
@@ -943,7 +945,7 @@ export class Interno {
       } else {
         o.passo += dt * 11;
         m.corpo.position.y = Math.abs(Math.sin(o.passo)) * 0.1;
-        m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(o.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7));
+        m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(o.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(m)));
       }
       if (m.coda) m.coda.rotation.y = Math.sin(o.passo) * 0.4;
       return;

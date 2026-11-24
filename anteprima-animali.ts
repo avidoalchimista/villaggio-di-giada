@@ -24,6 +24,10 @@ if (modo === 'specie') {
     celle.push({ specie: s, fase: 'cucciolo', sesso: 'f', manto: 0, tratto: '-' });
     celle.push({ specie: s, fase: 'adulto', sesso: 'm', manto: 0, tratto: '-' });
   });
+} else if (modo === 'adulti') {
+  // una specie per cella, grande: per confrontare le sagome (s=elenco, fase=cucciolo|adulto)
+  const elenco = (q.get('s') ?? SPECIE.join(',')).split(',');
+  elenco.forEach((s, i) => celle.push({ specie: s, fase: q.get('fase') ?? 'adulto', sesso: i % 2 ? 'f' : 'm', manto: +(q.get('manto') ?? 0), tratto: '-' }));
 } else if (modo === 'tasso') {
   const sp = q.get('s') ?? 'tasso';
   for (let m = 0; m < 4; m++) celle.push({ specie: sp, fase: 'cucciolo', sesso: m % 2 ? 'm' : 'f', manto: m, tratto: '-' });
@@ -34,23 +38,23 @@ if (modo === 'specie') {
   for (let i = 0; i < n; i++) {
     const a: any = { id: 'v' + i + (q.get('seme') ?? ''), fase: 'adulto', xp: 300, nutrimento: { coraggio: (i * 7) % 6, umanita: (i * 5) % 7, saggezza: (i * 3) % 5, giustizia: i % 4, temperanza: (i * 11) % 6, trascendenza: (i * 13) % 7 } };
     aggiornaGuardaroba(a);
-    celle.push({ specie: SPECIE[i % 3], fase: 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: '-', vestiti: a.vestiti, id: a.id });
+    celle.push({ specie: SPECIE[i % SPECIE.length], fase: 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: '-', vestiti: a.vestiti, id: a.id });
   }
 } else if (modo === 'mestieri') {
   // ogni mestiere con la sua divisa e l'attrezzo in mano
   const da = +(q.get('da') ?? 0), quanti = +(q.get('n') ?? 12);
-  MESTIERI.slice(da, da + quanti).forEach((m, i) => celle.push({ specie: SPECIE[i % 3], fase: 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: '-', mestiere: m.id, divisa: true, etichetta: i % 2 ? m.m : m.f }));
+  MESTIERI.slice(da, da + quanti).forEach((m, i) => celle.push({ specie: SPECIE[(i + da) % SPECIE.length], fase: 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: '-', mestiere: m.id, divisa: true, etichetta: i % 2 ? m.m : m.f }));
 } else if (modo === 'scelti') {
-  for (const v of (q.get('t') ?? '').split(',')) { const i = +v; celle.push({ specie: SPECIE[i % 6], fase: i % 3 ? 'cucciolo' : 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: tr(i), lato: 1 }); }
+  for (const v of (q.get('t') ?? '').split(',')) { const i = +v; celle.push({ specie: SPECIE[i % SPECIE.length], fase: i % 3 ? 'cucciolo' : 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: tr(i), lato: 1, etichetta: tr(i) }); }
 } else if (modo === 'tratti') {
   const da = +(q.get('da') ?? 0);
-  for (let i = da; i < Math.min(TRATTI.length, da + 16); i++) celle.push({ specie: SPECIE[i % 6], fase: i % 3 ? 'cucciolo' : 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: tr(i), lato: 1 });
+  for (let i = da; i < Math.min(TRATTI.length, da + 16); i++) celle.push({ specie: SPECIE[i % SPECIE.length], fase: i % 3 ? 'cucciolo' : 'adulto', sesso: i % 2 ? 'm' : 'f', manto: i % 4, tratto: tr(i), lato: 1, etichetta: tr(i) });
 }
-const cols = modo === 'mestieri' ? 6 : modo === 'vestiti' ? 6 : modo === 'specie' ? 6 : modo === 'tratti' ? 8 : 4;
+const cols = modo === 'adulti' ? +(q.get('c') ?? 4) : modo === 'mestieri' ? 6 : modo === 'vestiti' ? 6 : modo === 'specie' ? 6 : modo === 'tratti' ? 8 : 4;
 
 const rows = Math.ceil(celle.length / cols);
 const etichette: { testo: string; x: number; y: number }[] = [];
-const passo = 2.0;
+const passo = +(q.get('passo') ?? 2.0);
 celle.forEach((c, i) => {
   const col = modo === 'specie' ? Math.floor(i / 2) : i % cols;
   const row = modo === 'specie' ? i % 2 : Math.floor(i / cols);
@@ -59,14 +63,15 @@ celle.forEach((c, i) => {
   const m = creaAnimale(a, !!c.divisa);
   if (m.accessorio) m.accessorio.visible = true;
   if (c.divisa) { m.zampe[0].rotation.x = -1.0; }
-  const e = c.fase === 'cucciolo' ? 0 : c.fase === 'giovane' ? 0.6 : 1;
+  // a quattro zampe come gli animali veri; in piedi (e=1) solo per lavorare (o con ?e=1)
+  const e = c.divisa ? 1 : +(q.get('e') ?? 0);
   posa(m, e);
-  m.gruppo.scale.setScalar(c.fase === 'cucciolo' ? 1.2 : 1.45);
+  m.gruppo.scale.setScalar((c.fase === 'cucciolo' ? 1.15 : 1.28) * (m.gruppo.userData.taglia ?? 1));
   m.gruppo.position.set((col - (cols - 1) / 2) * passo, 0, -row * passo * 1.0 + 0);
   m.gruppo.position.y = -row * (modo === 'specie' || modo === 'vestiti' || modo === 'mestieri' ? 3.1 : 2.6);
   if (c.etichetta) etichette.push({ testo: c.etichetta, x: m.gruppo.position.x, y: m.gruppo.position.y - 0.25 });
   m.gruppo.position.z = 0;
-  m.gruppo.rotation.y = +(q.get('rot') ?? 0.35);
+  m.gruppo.rotation.y = +(q.get('rot') ?? 0.9);
   sc.add(m.gruppo);
 });
 if (modo === 'case') {

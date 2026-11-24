@@ -134,7 +134,7 @@ const MANTI: Record<Specie, Mantello[]> = {
   ],
   // mucca: extra = le macchie, muso = il musone rosa
   mucca: [
-    { corpo: '#fbf8f2', pancia: '#ffffff', muso: '#f6b8bc', zampe: '#3a3230', extra: '#2e2826', occhi: '#1e1614' },
+    { corpo: '#fbf8f2', pancia: '#ffffff', muso: '#f6b8bc', zampe: '#f2eee8', extra: '#2e2826', occhi: '#1e1614' },
     { corpo: '#fbf6ee', pancia: '#ffffff', muso: '#f6c0b8', zampe: '#7a4026', extra: '#a8502e', occhi: '#2a140a' },
     { corpo: '#a8784e', pancia: '#e8d2b4', muso: '#e8d8c8', zampe: '#5a3e26', extra: '#8a5e3a', occhi: '#1e120a' },
     { corpo: '#f2e2c0', pancia: '#fff8e8', muso: '#f8c8c0', zampe: '#c8a878', extra: '#e0c89a', occhi: '#3a2a18' },
@@ -173,6 +173,8 @@ export interface ModelloAnimale {
   occhi: THREE.Object3D[];
   accessorio: THREE.Object3D | null;
   mestiere: string | null;
+  /** Le giunture per alzarsi sulle zampe dietro: il tronco gira sulle anche, spalle e testa restano dritte. */
+  ossa: { tronco: THREE.Group; spalle: THREE.Group[]; perno: THREE.Group; alza: number };
 }
 
 export function varia(colore: string, tinta: number, luce: number) {
@@ -185,118 +187,269 @@ function aspettoDiRiserva(a: Animale) {
   return { manto: Math.floor(r() * 4), tratto: 'lentiggini', forma: r() * 2 - 1, occhi: r(), orecchie: r(), taglia: 1, lato: 1 };
 }
 
+/** Un pezzo di una linea (da u = da a u = a), per i tubi della coda. */
+class Tratto extends THREE.Curve<THREE.Vector3> {
+  constructor(private linea: THREE.Curve<THREE.Vector3>, private da: number, private a: number) { super(); }
+  getPoint(u: number, v = new THREE.Vector3()) { return this.linea.getPoint(this.da + (this.a - this.da) * u, v); }
+}
+
+// ---------- come è fatta ogni specie (proporzioni prese dagli animali veri, poi addolcite) ----------
+// Riferimenti: foto e tavole anatomiche delle specie vere, e come i giochi di animali "credibili" (gestionali di zoo,
+// giochi di fattoria, avventure naturalistiche low-poly) le rendono riconoscibili: prima la sagoma, poi i dettagli.
+// Regola: si deve capire che animale è anche solo dall'ombra (collo, zampe, orecchie, coda, muso).
+type Piede = 'zoccolo' | 'zampa' | 'artiglio';
+interface Forma {
+  taglia: number; // grandezza della specie nel villaggio (un riccio è più piccolo di un cavallo)
+  L: number; H: number; W: number; // corpo: lunghezza, altezza, larghezza
+  gamba: number; gR: number; piede: Piede; // zampe: altezza da terra, spessore, piede
+  collo: number; colloA: number; colloR: number; // collo: lunghezza, inclinazione in avanti (0 = dritto), spessore
+  testa: number; testaA: number; // grandezza della testa e quanto punta il naso in giù
+  cranio: [number, number, number];
+  muso: { l: number; r: number; punta: number; y: number }; // lunghezza, larghezza alla base e in punta, quanto scende
+  occhiLato: number; // le prede hanno gli occhi più di lato
+  alza: number; // quanto si alza sulle zampe dietro per lavorare
+  inclina?: number; // il corpo che pende in avanti (la lepre ha il sedere alto)
+}
+const FORME: Record<Specie, Forma> = {
+  volpe: { taglia: 0.92, L: 0.92, H: 0.4, W: 0.36, gamba: 0.42, gR: 0.032, piede: 'zampa', collo: 0.2, colloA: 0.75, colloR: 0.14, testa: 0.5, testaA: 0.05, cranio: [0.98, 0.86, 0.95], muso: { l: 0.36, r: 0.2, punta: 0.07, y: -0.13 }, occhiLato: 0.1, alza: 1.25 },
+  daino: { taglia: 1.12, L: 1.0, H: 0.48, W: 0.4, gamba: 0.66, gR: 0.034, piede: 'zoccolo', collo: 0.46, colloA: 0.38, colloR: 0.13, testa: 0.56, testaA: 0.2, cranio: [0.92, 0.94, 1], muso: { l: 0.38, r: 0.21, punta: 0.12, y: -0.13 }, occhiLato: 0.4, alza: 1.2 },
+  tasso: { taglia: 0.9, L: 1.0, H: 0.44, W: 0.52, gamba: 0.2, gR: 0.075, piede: 'artiglio', collo: 0.08, colloA: 1.1, colloR: 0.18, testa: 0.6, testaA: 0.22, cranio: [1.02, 0.86, 1.05], muso: { l: 0.34, r: 0.22, punta: 0.08, y: -0.12 }, occhiLato: 0.05, alza: 1.3 },
+  riccio: { taglia: 0.72, L: 0.66, H: 0.42, W: 0.52, gamba: 0.12, gR: 0.05, piede: 'zampa', collo: 0.02, colloA: 1.2, colloR: 0.14, testa: 0.56, testaA: 0.25, cranio: [0.95, 0.9, 1], muso: { l: 0.3, r: 0.2, punta: 0.06, y: -0.12 }, occhiLato: 0.05, alza: 1.2 },
+  scoiattolo: { taglia: 0.72, L: 0.58, H: 0.32, W: 0.3, gamba: 0.24, gR: 0.04, piede: 'zampa', collo: 0.06, colloA: 0.5, colloR: 0.12, testa: 0.56, testaA: -0.1, cranio: [0.96, 0.96, 1], muso: { l: 0.18, r: 0.2, punta: 0.11, y: -0.12 }, occhiLato: 0.25, alza: 1.25, inclina: -0.35 },
+  lepre: { taglia: 0.85, L: 0.74, H: 0.42, W: 0.36, gamba: 0.38, gR: 0.04, piede: 'zampa', collo: 0.1, colloA: 0.4, colloR: 0.13, testa: 0.56, testaA: 0.1, cranio: [0.92, 0.98, 1.05], muso: { l: 0.2, r: 0.22, punta: 0.13, y: -0.12 }, occhiLato: 0.45, alza: 1.2, inclina: -0.2 },
+  cavallo: { taglia: 1.3, L: 1.3, H: 0.62, W: 0.5, gamba: 0.7, gR: 0.055, piede: 'zoccolo', collo: 0.55, colloA: 0.62, colloR: 0.18, testa: 0.5, testaA: 0.75, cranio: [0.85, 0.9, 0.95], muso: { l: 0.72, r: 0.3, punta: 0.21, y: -0.12 }, occhiLato: 0.45, alza: 1.15 },
+  asino: { taglia: 1.12, L: 1.1, H: 0.56, W: 0.48, gamba: 0.62, gR: 0.055, piede: 'zoccolo', collo: 0.4, colloA: 0.62, colloR: 0.18, testa: 0.66, testaA: 0.45, cranio: [0.92, 0.95, 0.95], muso: { l: 0.52, r: 0.27, punta: 0.22, y: -0.08 }, occhiLato: 0.4, alza: 1.15 },
+  mucca: { taglia: 1.25, L: 1.4, H: 0.72, W: 0.62, gamba: 0.5, gR: 0.065, piede: 'zoccolo', collo: 0.26, colloA: 1.0, colloR: 0.24, testa: 0.56, testaA: 0.35, cranio: [0.95, 0.92, 0.95], muso: { l: 0.32, r: 0.27, punta: 0.24, y: -0.12 }, occhiLato: 0.4, alza: 1.1 },
+  maiale: { taglia: 1.0, L: 1.08, H: 0.58, W: 0.56, gamba: 0.24, gR: 0.06, piede: 'zoccolo', collo: 0.05, colloA: 1.2, colloR: 0.26, testa: 0.66, testaA: 0.12, cranio: [1.02, 0.95, 1], muso: { l: 0.26, r: 0.24, punta: 0.2, y: -0.1 }, occhiLato: 0.2, alza: 1.2 },
+  // gli uccelli hanno un corpo loro (vedi creaUccello)
+  uccellino: { taglia: 0.62, L: 0.5, H: 0.5, W: 0.44, gamba: 0.16, gR: 0.02, piede: 'artiglio', collo: 0, colloA: 0, colloR: 0.1, testa: 0.62, testaA: 0, cranio: [1, 1, 1], muso: { l: 0, r: 0, punta: 0, y: 0 }, occhiLato: 0.5, alza: 0 },
+  papera: { taglia: 0.78, L: 0.78, H: 0.46, W: 0.46, gamba: 0.16, gR: 0.03, piede: 'zampa', collo: 0.28, colloA: 0.1, colloR: 0.12, testa: 0.6, testaA: 0, cranio: [0.95, 0.92, 1.05], muso: { l: 0, r: 0, punta: 0, y: 0 }, occhiLato: 0.4, alza: 0 },
+};
+/** Quanto è grande la specie nel villaggio (per le case, le prove, il ritratto). */
+export const tagliaSpecie = (s: Specie) => FORME[s].taglia;
+
 /** divisa: se sta lavorando, con la divisa del suo mestiere. */
 export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
   const asp = a.aspetto ?? aspettoDiRiserva(a);
   const base = MANTI[a.specie][asp.manto % MANTI[a.specie].length];
   const t = { segno: asp.tratto, lato: asp.lato, taglia: asp.taglia };
   const p = { ...base, zampe: t.segno === 'calzini bianchi' ? '#fbf8f2' : base.zampe };
+  const piccolo = a.fase === 'cucciolo';
+  const uccello = a.specie === 'uccellino' || a.specie === 'papera';
+  const F = FORME[a.specie];
   const orecchieDi: THREE.Object3D[] = [];
   const gruppo = new THREE.Group();
   const corpo = new THREE.Group();
   gruppo.add(corpo);
-  gruppo.add(ombra(0.55));
 
-  // corpo piccolo e tondo (a pera)
-  const busto = mesh(geo.palla(0.34), pelo(p.corpo), 0, 0.42, 0);
+  // I cuccioli come quelli veri: testa più grande, muso più corto, occhi più grandi, corpo più corto.
+  // (I puledri e i cerbiatti hanno già le zampe lunghe: le gambe restano quasi uguali.)
+  const zoccoli = F.piede === 'zoccolo';
+  const kTesta = piccolo ? 1.32 : a.fase === 'giovane' ? 1.1 : 1;
+  const kMuso = piccolo ? 0.68 : a.fase === 'giovane' ? 0.88 : 1;
+  const kOcchi = piccolo ? 1.25 : 1;
+  const kCorpo = piccolo ? 0.82 : 1;
+  const kGamba = piccolo ? (zoccoli ? 0.92 : 0.8) : 1;
   // corporatura: rotondetto (forma < 0) o slanciato (forma > 0)
-  busto.scale.set(1 - asp.forma * 0.16, 0.95 * (1 + asp.forma * 0.1), 1.05 - asp.forma * 0.1);
-  corpo.add(busto);
-  const pancia = mesh(geo.palla(0.24), mat(p.pancia, { rim: 0.2 }), 0, 0.38, 0.14);
-  pancia.scale.set(1, 1.05, 0.75);
-  corpo.add(pancia);
+  const L = F.L * kCorpo * (1 + asp.forma * 0.06), H = F.H * kCorpo * (1 - asp.forma * 0.05), W = F.W * kCorpo * (1 - asp.forma * 0.08);
+  const gamba = F.gamba * kGamba;
+  gruppo.add(ombra(Math.max(L * 0.62, 0.32)));
 
-  // zampette corte e tozze, con i piedini tondi
+  // il tronco: gira sulle anche quando si alza sulle zampe dietro
+  const yB = gamba + H * 0.38;
+  const tronco = new THREE.Group();
+  tronco.position.set(0, yB, -L * 0.32);
+  tronco.rotation.x = F.inclina ?? 0;
+  tronco.userData.inclina = F.inclina ?? 0;
+  corpo.add(tronco);
+  // il busto è la palla di sempre (i vestiti ci si appoggiano sopra), sdraiata in avanti e allungata:
+  // il suo "davanti" diventa la pancia, la sua "schiena" la schiena, il suo "sopra" il petto verso il collo
+  const busto = mesh(geo.palla(0.34, 22), pelo(p.corpo), 0, 0, L * 0.32);
+  busto.rotation.x = Math.PI / 2;
+  busto.scale.set(W / 0.68, L / 0.68, H / 0.68);
+  tronco.add(busto);
+  const pancia = mesh(geo.palla(0.26, 16), mat(p.pancia, { rim: 0.2 }), 0, 0.02, 0.12);
+  pancia.scale.set(0.95, 1.05, 0.7);
+  pancia.userData.senzaContorno = true;
+  busto.add(pancia);
+  /** La riga scura lungo la schiena (daino, asino): un arco che segue la curva del busto. */
+  const rigaDorso = (colore: string, spessore: number) => {
+    const r = mesh(new THREE.TorusGeometry(0.338, spessore, 5, 24, 2.2), mat(colore, { rim: 0 }));
+    r.rotation.set(0, Math.PI / 2, Math.PI / 2 + 0.2);
+    r.scale.set(1, 1, 0.5);
+    return r;
+  };
+  /** Un pezzo appoggiato sul busto senza essere stirato come lui. */
+  const sulBusto = (o: THREE.Object3D, s = 1) => {
+    o.scale.set(s / busto.scale.x, s / busto.scale.y, s / busto.scale.z);
+    busto.add(o);
+    return o;
+  };
+
+  // ---- zampe ----
   const zampe: THREE.Object3D[] = [];
-  const lunga = ({ daino: 0.1, cavallo: 0.13, asino: 0.08, mucca: 0.05 } as Partial<Record<Specie, number>>)[a.specie] ?? 0;
-  for (const [x, z] of [[-0.17, 0.13], [0.17, 0.13], [-0.16, -0.14], [0.16, -0.14]]) {
+  const spalle: THREE.Group[] = [];
+  const lungZ = gamba + H * 0.28; // dalla spalla/anca fino a terra
+  const zampa = (davanti: boolean, s: number) => {
     const perno = new THREE.Group();
-    perno.position.set(x, 0.26 + lunga, z);
-    perno.add(mesh(geo.capsula(0.085, 0.06 + lunga), pelo(p.zampe), 0, -0.08 - lunga / 2, 0));
-    perno.add(mesh(geo.palla(0.095), mat(p.zampe), 0, -0.17 - lunga, 0.03));
-    corpo.add(perno);
+    const r = F.gR * (piccolo ? 1.05 : 1) * (davanti ? 1 : 1.1);
+    const alta = davanti ? 1 : 1.25;
+    // la coscia del colore del corpo, la parte di sotto del colore delle zampe (le "calze" della volpe, del cavallo baio)
+    // la coscia: una massa morbida che entra nel corpo (la spalla, la natica), non un tubo
+    const coscia = mesh(geo.palla(1, 14), pelo(p.corpo), 0, -H * 0.12, davanti ? r * 0.2 : -r * 0.4);
+    coscia.scale.set(r * 1.8 * alta, H * 0.34 * (davanti ? 0.85 : 1), Math.max(r * 2.2, H * 0.22) * alta * (davanti ? 1 : 1.2));
+    coscia.userData.senzaContorno = true; // si fonde col corpo
+    perno.add(coscia);
+    const stinco = mesh(geo.cil(r * 0.78, r * 1.15, lungZ * 0.72, 10), pelo(a.specie === 'lepre' ? varia(p.corpo, 0, -0.04) : p.zampe), 0, -lungZ * 0.55, 0);
+    perno.add(stinco);
+    let piede: THREE.Mesh;
+    if (F.piede === 'zoccolo') {
+      piede = mesh(geo.cil(r * 1.05, r * 1.3, Math.max(0.05, r * 1.3), 10), mat(a.specie === 'maiale' ? varia(p.zampe, 0, -0.15) : '#3e3029', { rim: 0.2 }), 0, -lungZ + r * 0.6, 0.005);
+    } else {
+      piede = mesh(geo.palla(r * 1.45, 10), mat(p.zampe), 0, -lungZ + r * 0.75, r * 0.6);
+      piede.scale.set(1, 0.6, 1.35);
+      if (F.piede === 'artiglio') for (const dx of [-1, 0, 1]) {
+        const u = mesh(geo.cono(r * 0.3, r * 1.2, 5), mat('#f4ead8', { rim: 0 }), dx * r * 0.55, -lungZ + r * 0.5, r * 1.9);
+        u.rotation.x = Math.PI / 2 + 0.3;
+        u.userData.senzaContorno = true;
+        perno.add(u);
+      }
+    }
+    perno.add(piede);
+    perno.userData.lunghezza = lungZ;
+    if (davanti) {
+      const spalla = new THREE.Group();
+      spalla.position.set(s * W * 0.3, -H * 0.1, L * 0.32 + L * 0.3);
+      spalla.add(perno);
+      tronco.add(spalla);
+      spalle.push(spalla);
+    } else {
+      perno.position.set(s * W * 0.3, yB - H * 0.1 + (F.inclina ? Math.sin(-F.inclina) * 0 : 0), -L * 0.32 - L * 0.0);
+      corpo.add(perno);
+    }
     zampe.push(perno);
+    return perno;
+  };
+  if (!uccello) {
+    zampa(true, -1); zampa(true, 1); zampa(false, -1); zampa(false, 1);
+    // le anche: le zampe di dietro partono un po' più avanti della punta del sedere
+    for (const z of zampe.slice(2)) z.position.z = -L * 0.32 + L * 0.06;
   }
-  corpo.position.y = lunga;
 
-  // testa grande, fronte alta
-  const testa = new THREE.Group();
-  testa.position.set(0, 0.92, 0.06);
-  corpo.add(testa);
-  const cranio = mesh(geo.palla(0.46, 22), pelo(p.corpo));
-  cranio.scale.set(1.08, 0.98, 1);
-  testa.add(cranio);
-  // muso piccolo e basso; volpe e daino lo hanno un po' più a punta, così si riconoscono subito
-  const aPunta = ({ volpe: 1.6, daino: 1.35, tasso: 1.3, riccio: 1.45, cavallo: 1.55, asino: 1.5 } as Partial<Record<Specie, number>>)[a.specie] ?? 1;
-  const muso = mesh(geo.palla(0.17), mat(p.muso, { rim: 0.15 }), 0, -0.16, 0.32 + (aPunta - 1) * 0.08);
-  muso.scale.set(aPunta > 1 ? 1.05 : 1.25, 0.8, 0.85 * aPunta);
-  muso.userData.senzaContorno = true; // con il contorno sembrava un grugno
-  testa.add(muso);
-  const naso = mesh(geo.palla(0.055), mat('#2a1a14', { rim: 0 }), 0, -0.12 + (aPunta - 1) * 0.02, 0.48 + (aPunta - 1) * 0.2);
-  naso.scale.set(1.3, 0.9, 1);
-  naso.userData.senzaContorno = true;
-  testa.add(naso);
-  // boccuccia a "ω" sotto il naso: piccola, sorridente
-  const davantiMuso = muso.position.z + 0.17 * muso.scale.z;
-  const bocca = new THREE.Group();
-  for (const s of [-1, 1]) {
-    const arco = mesh(new THREE.TorusGeometry(0.028, 0.008, 4, 10, Math.PI), mat('#3a2418', { rim: 0 }), s * 0.028, 0, 0);
-    arco.rotation.z = Math.PI;
-    arco.userData.senzaContorno = true;
-    bocca.add(arco);
+  // ---- collo e testa ----
+  const colloG = new THREE.Group();
+  colloG.position.set(0, H * 0.22, L * 0.32 + L * 0.36);
+  colloG.rotation.x = F.colloA;
+  tronco.add(colloG);
+  if (F.collo > 0.04) {
+    // più grosso dove entra nelle spalle, più sottile sotto la testa
+    const rc = F.colloR * (piccolo ? 0.9 : 1);
+    colloG.add(mesh(geo.cil(rc * 0.8, rc * 1.3, F.collo, 14), pelo(p.corpo), 0, F.collo / 2, 0));
+    colloG.add(mesh(geo.palla(rc * 1.3, 14), pelo(p.corpo), 0, 0, 0));
   }
-  bocca.position.set(0, -0.2 - (aPunta - 1) * 0.03, davantiMuso - 0.035);
-  bocca.rotation.x = -0.35;
-  testa.add(bocca);
-  // occhi grandi, bassi e lucidi
+  const perno = new THREE.Group();
+  perno.position.set(0, F.collo, 0);
+  perno.rotation.x = -F.colloA + F.testaA;
+  perno.userData.base = perno.rotation.x;
+  perno.scale.setScalar(F.testa * kTesta);
+  colloG.add(perno);
+  const testa = new THREE.Group();
+  perno.add(testa);
+  // sopra il collo la testa sta un po' più avanti, così il collo entra nella nuca
+  testa.position.set(0, 0.12, 0.1);
+  const cranio = mesh(geo.palla(0.46, 22), pelo(p.corpo));
+  cranio.scale.set(...F.cranio);
+  testa.add(cranio);
+
+  // il muso: un cono morbido che esce dalla faccia, di sopra del colore del corpo e di sotto chiaro
+  const lM = F.muso.l * kMuso;
+  const davFaccia = 0.46 * F.cranio[2] * 0.72;
+  const muso = new THREE.Group();
+  muso.position.set(0, F.muso.y, davFaccia);
+  testa.add(muso);
+  const davantiMuso = davFaccia + lM + F.muso.punta * 0.6;
+  const naso = mesh(geo.palla(0.06), mat('#2a1a14', { rim: 0 }), 0, F.muso.y + F.muso.punta * 0.45, davantiMuso);
+  naso.scale.set(1.3, 0.9, 0.8);
+  naso.userData.senzaContorno = true;
+  const bocca = new THREE.Group();
+  if (lM > 0) {
+    const sopra = mesh(geo.cil(F.muso.punta, F.muso.r, lM, 14), pelo(p.corpo), 0, 0.02, lM / 2);
+    sopra.rotation.x = Math.PI / 2;
+    sopra.scale.set(1, 1, 0.85);
+    muso.add(sopra);
+    const tappo = mesh(geo.palla(F.muso.punta * 1.02, 12), pelo(p.corpo), 0, 0.02, lM);
+    tappo.scale.set(1, 0.85, 0.75);
+    muso.add(tappo);
+    // la mandibola chiara
+    const sotto = mesh(geo.palla(1, 14), mat(p.muso, { rim: 0.15 }), 0, -F.muso.r * 0.3, lM * 0.5);
+    sotto.scale.set((F.muso.r + F.muso.punta) * 0.5, (F.muso.r + F.muso.punta) * 0.3, lM * 0.55 + F.muso.punta * 0.4);
+    sotto.userData.senzaContorno = true;
+    muso.add(sotto);
+    testa.add(naso);
+    // la bocca: una riga sottile sotto il naso, appena all'insù
+    const riga = mesh(new THREE.TorusGeometry(F.muso.punta * 0.6, 0.007, 4, 10, Math.PI), mat('#3a2418', { rim: 0 }), 0, 0, 0);
+    riga.rotation.z = Math.PI;
+    riga.userData.senzaContorno = true;
+    bocca.add(riga);
+    bocca.position.set(0, F.muso.y - F.muso.punta * 0.15, davantiMuso - F.muso.punta * 0.35);
+    bocca.rotation.x = -0.5;
+    testa.add(bocca);
+  }
+
+  // occhi: lucidi e un po' grandi (teneri), ma messi dove li ha l'animale vero
   const occhi: THREE.Object3D[] = [];
-  for (const x of [-0.19, 0.19]) {
+  const dimOcchio = 0.085 * kOcchi * (0.85 + asp.occhi * 0.3);
+  for (const s of [-1, 1]) {
+    const x = s * 0.2, y = 0.04;
+    const [sx, sy, sz] = F.cranio;
+    const zS = 0.46 * sz * Math.sqrt(Math.max(0.05, 1 - (x / (0.46 * sx)) ** 2 - (y / (0.46 * sy)) ** 2));
     const g = new THREE.Group();
-    g.position.set(x, -0.02, a.specie === 'tasso' ? 0.43 : 0.37);
-    g.rotation.y = x * 1.4;
-    // occhi di due colori: uno azzurro
-    const coloreOcchio = t.segno === 'occhi di due colori' && Math.sign(x) === t.lato ? '#3f86c8' : p.occhi;
-    const bulbo = mesh(geo.palla(0.105), mat(coloreOcchio, { rim: 0 }));
-    bulbo.scale.set(0.95, 1.15, 0.55);
-    g.add(bulbo);
-    g.scale.setScalar(0.82 + asp.occhi * 0.36);
-    g.add(mesh(geo.palla(0.038, 10), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.8, rim: 0 }), 0.03, 0.05, 0.05));
-    g.add(mesh(geo.palla(0.018, 8), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.8, rim: 0 }), -0.035, -0.04, 0.05));
-    // femmine: ciglia lunghe all'insù
-    if (a.sesso === 'f') for (let k = 0; k < 3; k++) {
-      const ciglio = mesh(geo.capsula(0.012, 0.05), mat('#1e140e', { rim: 0 }), Math.sign(x) * (0.05 + k * 0.03), 0.1 + (1 - k) * 0.01, 0.02);
-      ciglio.rotation.z = -Math.sign(x) * (0.5 + k * 0.35);
+    g.position.set(x, y, zS - 0.02);
+    g.rotation.y = s * (0.35 + F.occhiLato * 0.7);
+    const coloreOcchio = t.segno === 'occhi di due colori' && s === t.lato ? '#3f86c8' : p.occhi;
+    // la volpe ha l'iride ambra; gli altri l'occhio scuro
+    if (a.specie === 'volpe') {
+      const iride = mesh(geo.palla(dimOcchio, 14), mat('#c8892e', { rim: 0 }));
+      iride.scale.set(1, 1, 0.5);
+      g.add(iride);
+      const pupilla = mesh(geo.palla(dimOcchio * 0.62, 12), mat(coloreOcchio === '#3f86c8' ? coloreOcchio : '#1a100a', { rim: 0 }), 0, 0, dimOcchio * 0.18);
+      pupilla.scale.set(1, 1, 0.5);
+      g.add(pupilla);
+    } else {
+      const bulbo = mesh(geo.palla(dimOcchio, 14), mat(coloreOcchio, { rim: 0 }));
+      bulbo.scale.set(1.08, 0.95, 0.5);
+      g.add(bulbo);
+    }
+    g.add(mesh(geo.palla(dimOcchio * 0.32, 8), mat('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.8, rim: 0 }), dimOcchio * 0.3, dimOcchio * 0.35, dimOcchio * 0.45));
+    // le femmine: due ciglia piccole
+    if (a.sesso === 'f') for (let k = 0; k < 2; k++) {
+      const ciglio = mesh(geo.capsula(0.009, 0.035), mat('#1e140e', { rim: 0 }), s * (dimOcchio * 0.55 + k * 0.025), dimOcchio * 0.95, 0.0);
+      ciglio.rotation.z = -s * (0.6 + k * 0.4);
       ciglio.userData.senzaContorno = true;
       g.add(ciglio);
     }
-    // segno particolare: macchia intorno a un occhio
-    if (t.segno === 'macchia sull\'occhio' && Math.sign(x) === t.lato) {
-      const macchia = mesh(geo.palla(0.15), mat(a.specie === 'tasso' ? '#ffffff' : varia(base.corpo, 0, -0.2), { rim: 0 }), x * 1.05, 0.0, 0.3);
+    if (t.segno === 'macchia sull\'occhio' && s === t.lato) {
+      const macchia = mesh(geo.palla(0.14), mat(a.specie === 'tasso' ? '#ffffff' : varia(base.corpo, 0, -0.2), { rim: 0 }), x * 1.05, y, zS - 0.08);
       macchia.scale.set(1, 1.05, 0.45);
+      macchia.rotation.y = s * 0.5;
       macchia.userData.senzaContorno = true;
       testa.add(macchia);
     }
     testa.add(g);
     occhi.push(g);
-    // guance piene e rosate
-    const guancia = mesh(geo.palla(0.085), mat('#ff9aa8', { rim: 0 }), x * 1.5, -0.15, 0.3);
-    guancia.scale.set(1.1, 0.6, 0.4);
-    guancia.userData.senzaContorno = true;
-    testa.add(guancia);
   }
 
-  // dettagli per specie
-  let coda: THREE.Object3D | null = null;
-  const orecchio = (x: number, r: number, h: number, colore: string, inclina = 0.3, interno?: string) => {
+  /** Orecchio a punta (cono schiacciato) con l'interno chiaro. */
+  const orecchio = (x: number, r: number, h: number, colore: string, inclina = 0.3, interno?: string, y = 0.32, z = -0.06) => {
     const g = new THREE.Group();
-    g.position.set(x, 0.32, -0.04);
+    g.position.set(x, y, z);
     g.rotation.z = -Math.sign(x) * inclina;
     const o = mesh(geo.cono(r, h, 10), pelo(colore), 0, h / 2, 0);
-    o.scale.z = 0.55;
+    o.scale.z = 0.5;
     g.add(o);
     if (interno) {
-      const i = mesh(geo.cono(r * 0.6, h * 0.7, 8), mat(interno, { rim: 0 }), 0, h * 0.4, 0.04);
-      i.scale.z = 0.4;
+      const i = mesh(geo.cono(r * 0.62, h * 0.72, 8), mat(interno, { rim: 0 }), 0, h * 0.4, 0.035);
+      i.scale.z = 0.35;
       i.userData.senzaContorno = true;
       g.add(i);
     }
@@ -304,106 +457,166 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
     orecchieDi.push(g);
     return g;
   };
+  /** Orecchio a foglia (cervidi, mucca, maiale). */
+  const orecchioFoglia = (s: number, l: number, larga: number, colore: string, interno: string, rotZ: number, y: number, z = -0.04, x = 0.36) => {
+    const g = new THREE.Group();
+    g.position.set(s * x, y, z);
+    g.rotation.z = -s * rotZ;
+    const o = mesh(geo.palla(0.1, 12), pelo(colore), 0, l * 0.5, 0);
+    o.scale.set(larga * 10, l * 10, 0.38);
+    g.add(o);
+    const i = mesh(geo.palla(0.075, 10), mat(interno, { rim: 0 }), 0, l * 0.5, 0.025);
+    i.scale.set(larga * 10, l * 10, 0.25);
+    i.userData.senzaContorno = true;
+    g.add(i);
+    testa.add(g);
+    orecchieDi.push(g);
+    return g;
+  };
+  /** Coda (o criniera) morbida: un tubo che segue una linea (z verso dietro, y in su) e cambia spessore. */
+  const codaLungo = (punti: [number, number][], raggi: number[], colore: string, puntaColore?: string, quanteP = 0) => {
+    const g = new THREE.Group();
+    const linea = new THREE.CatmullRomCurve3(punti.map(([y, z]) => new THREE.Vector3(0, y, z)));
+    const raggio = (u: number) => {
+      const x = u * (raggi.length - 1), i = Math.min(raggi.length - 2, Math.floor(x));
+      if (raggi.length === 1) return raggi[0];
+      return THREE.MathUtils.lerp(raggi[i], raggi[i + 1], x - i) * (u > 0.9 ? Math.sqrt(Math.max(0.15, (1 - u) / 0.1)) : 1);
+    };
+    const pezzo = (da: number, a: number, m: THREE.Material, gonfio = 1) => {
+      const curva = new Tratto(linea, da, a);
+      const seg = 24, rad = 10;
+      const tubo = new THREE.TubeGeometry(curva, seg, 1, rad, false);
+      const pos = tubo.attributes.position;
+      const v = new THREE.Vector3(), c = new THREE.Vector3();
+      for (let i = 0; i <= seg; i++) {
+        const u = i / seg;
+        curva.getPoint(u, c);
+        const r = raggio(da + (a - da) * u) * gonfio;
+        for (let j = 0; j <= rad; j++) {
+          const k = i * (rad + 1) + j;
+          v.fromBufferAttribute(pos, k).sub(c).multiplyScalar(r).add(c);
+          pos.setXYZ(k, v.x, v.y, v.z);
+        }
+      }
+      tubo.computeVertexNormals();
+      g.add(mesh(tubo, m));
+      // la radice chiusa da una pallina
+      if (da === 0) g.add(mesh(geo.palla(raggio(0) * gonfio, 10), m, ...linea.getPoint(0).toArray()));
+    };
+    const fine = puntaColore ? 1 - Math.min(0.4, quanteP * 0.08) : 1;
+    pezzo(0, puntaColore ? fine + 0.02 : 1, pelo(colore));
+    if (puntaColore) pezzo(fine, 1, mat(puntaColore, { rim: 0.2 }), 1.02);
+    g.userData.punta = linea.getPoint(1);
+    return g;
+  };
+  let coda: THREE.Object3D | null = null;
+  const attaccaCoda = (c: THREE.Object3D, y = H * 0.18, z = -L * 0.47) => {
+    c.position.set(0, yB + y, z);
+    corpo.add(c);
+    coda = c;
+  };
+
   switch (a.specie) {
     case 'volpe': {
-      // orecchie grandi a triangolo con la punta scura
-      for (const x of [-0.25, 0.25]) {
-        const o = orecchio(x, 0.17, 0.4, p.corpo, 0.28, '#fff3e0');
-        const punta = mesh(geo.cono(0.075, 0.13, 10), mat('#3a2418'), 0, 0.36, 0);
-        punta.scale.z = 0.55;
+      // Volpe rossa: orecchie grandi a punta col retro nero, muso lungo e sottile, guance e gola bianche,
+      // "calze" nere sulle zampe, codone folto lungo quasi come il corpo con la punta bianca.
+      for (const s of [-1, 1]) {
+        const o = orecchio(s * 0.25, 0.17, 0.4, p.corpo, 0.22, '#fff3e0');
+        const punta = mesh(geo.cono(0.08, 0.15, 10), mat('#2e1c12'), 0, 0.33, -0.005);
+        punta.scale.z = 0.52;
         o.add(punta);
       }
-      // guance bianche a ciuffo, tipiche della volpe
-      for (const x of [-0.3, 0.3]) {
-        const c = mesh(geo.palla(0.13), mat(p.extra, { rim: 0.2 }), x, -0.2, 0.2);
-        c.scale.set(1.2, 0.75, 0.8);
-        testa.add(c);
-      }
-      // pettorina bianca
-      const petto = mesh(geo.palla(0.17), mat(p.extra, { rim: 0.2 }), 0, 0.62, 0.22);
-      petto.scale.set(1.1, 0.8, 0.5);
+      // guance, labbro e gola bianchi: la metà di sotto della faccia
+      const mento = mesh(geo.palla(0.36, 16), mat(p.extra, { rim: 0.2 }), 0, -0.2, 0.12);
+      mento.scale.set(1.12, 0.62, 0.95);
+      mento.userData.senzaContorno = true;
+      testa.add(mento);
+      const petto = mesh(geo.palla(0.16, 12), mat(p.extra, { rim: 0.2 }), 0, 0.3, 0.12);
       petto.userData.senzaContorno = true;
-      corpo.add(petto);
-      // coda gonfia che gira di lato, così si vede anche da davanti, con la punta bianca
-      const c = new THREE.Group();
-      c.position.set(0, 0.36, -0.3);
-      const giro = new THREE.Group();
-      giro.rotation.y = a.sesso === 'm' ? 0.85 : -0.85;
-      const pennacchio = mesh(geo.palla(0.22), pelo(p.corpo), 0, 0.06, -0.26);
-      pennacchio.scale.set(0.9, 0.85, 1.7);
-      giro.add(pennacchio);
-      const bianca = mesh(geo.palla(0.15), mat(p.extra), 0, 0.08, -0.58);
-      bianca.scale.set(1, 1, 1.2);
-      giro.add(bianca);
-      c.add(giro);
-      corpo.add(c);
-      coda = c;
+      sulBusto(petto);
+      petto.scale.y *= 0.6;
+      const lunga = piccolo ? 0.6 : 1;
+      attaccaCoda(codaLungo([[0, 0], [-0.08, -0.2 * lunga], [-0.18, -0.45 * lunga], [-0.2, -0.7 * lunga]], [0.08, 0.13, 0.15, 0.15, 0.13, 0.1], p.corpo, p.extra, 3));
       break;
     }
     case 'daino': {
-      // orecchie grandi a foglia, di lato
-      for (const x of [-1, 1]) {
-        const g = new THREE.Group();
-        g.position.set(x * 0.4, 0.14, -0.04);
-        g.rotation.z = -x * 1.25;
-        const o = mesh(geo.palla(0.13), pelo(p.corpo), 0, 0.14, 0);
-        o.scale.set(0.75, 1.6, 0.35);
-        g.add(o);
-        const i = mesh(geo.palla(0.09), mat('#f0b8a8', { rim: 0 }), 0, 0.14, 0.03);
-        i.scale.set(0.65, 1.4, 0.3);
-        i.userData.senzaContorno = true;
-        g.add(i);
-        testa.add(g);
-        orecchieDi.push(g);
-      }
-      // macchie bianche sulla schiena e sulla fronte
-      // da cucciolo pieno di macchie, da grande ne restano poche e sbiadite
-      const tutte = [[-0.14, 0.7, -0.02, 0.055], [0.13, 0.72, 0.04, 0.05], [0.22, 0.6, -0.14, 0.045], [-0.03, 0.72, -0.18, 0.05], [-0.24, 0.58, -0.12, 0.045], [0.06, 0.66, -0.28, 0.04], [0.27, 0.48, 0.02, 0.04], [-0.28, 0.46, 0.04, 0.04], [-0.12, 0.6, -0.3, 0.04]];
-      for (const [x, y, z, r] of a.fase === 'cucciolo' ? tutte : tutte.slice(0, 5)) {
-        const m = mesh(geo.palla(r), mat(p.extra, { rim: 0 }), x, y, z);
-        m.scale.y = 0.6;
+      // Daino: zampe lunghe e sottili, collo lungo, orecchie grandi, mantello fulvo con le macchie bianche
+      // (il daino le tiene anche da grande), riga scura sulla schiena, specchio bianco sul sedere
+      // con la codina nera sopra. I maschi adulti hanno i palchi a pala.
+      for (const s of [-1, 1]) orecchioFoglia(s, 0.3, 0.13, p.corpo, '#f0c8b8', 1.05, 0.26, -0.08, 0.3);
+      const r = rng(hash(a.id + 'macchie'));
+      const quante = piccolo ? 22 : 14;
+      for (let k = 0; k < quante; k++) {
+        // sui fianchi alti, in file lungo il corpo
+        const lungo = -0.75 + r() * 1.4, giro = (r() < 0.5 ? -1 : 1) * (0.35 + r() * 0.55);
+        const d = new THREE.Vector3(Math.sin(giro) * Math.sqrt(1 - lungo * lungo * 0.6), lungo, -Math.cos(giro) * Math.sqrt(1 - lungo * lungo * 0.6)).normalize();
+        const m = mesh(geo.palla(0.022 + r() * 0.01, 6), mat(p.extra, { rim: 0 }), d.x * 0.34, d.y * 0.34, d.z * 0.34);
         m.userData.senzaContorno = true;
-        corpo.add(m);
+        sulBusto(m);
       }
-      const stella = mesh(geo.palla(0.06), mat(p.extra, { rim: 0 }), 0, 0.28, 0.38);
-      stella.scale.set(0.8, 1.2, 0.4);
-      stella.userData.senzaContorno = true;
-      testa.add(stella);
-      if (a.sesso === 'm' && a.fase !== 'cucciolo') for (const x of [-0.13, 0.13]) {
-        const corno = mesh(geo.capsula(0.025, 0.18), mat('#8a5a36'), x, 0.46, -0.06);
-        corno.rotation.z = -x * 2.2;
-        testa.add(corno);
+      const riga = rigaDorso(varia(p.corpo, 0, -0.22), 0.028);
+      riga.userData.senzaContorno = true;
+      busto.add(riga);
+      const specchio = mesh(geo.palla(0.13, 12), mat('#fbf6ee', { rim: 0 }), 0, -0.31, -0.08);
+      specchio.scale.set(1, 0.35, 1.1);
+      specchio.userData.senzaContorno = true;
+      busto.add(specchio);
+      const c = new THREE.Group();
+      const codina = mesh(geo.capsula(0.035, 0.12), mat('#2a1c14'), 0, -0.08, -0.02);
+      codina.rotation.x = 0.25;
+      c.add(codina);
+      c.userData.punta = new THREE.Vector3(0, -0.16, -0.04);
+      attaccaCoda(c, H * 0.25);
+      if (a.sesso === 'm') {
+        if (piccolo) for (const s of [-1, 1]) testa.add(mesh(geo.palla(0.045), mat('#8a5a36'), s * 0.14, 0.4, -0.04));
+        else for (const s of [-1, 1]) {
+          // palco: un'asta che sale, la pala piatta in cima e qualche punta
+          const palco = new THREE.Group();
+          palco.position.set(s * 0.15, 0.36, -0.06);
+          palco.rotation.z = -s * 0.45;
+          const corno = mat('#c8a882', { rim: 0.2 });
+          palco.add(mesh(geo.cil(0.025, 0.035, 0.32, 6), corno, 0, 0.16, 0));
+          const punta1 = mesh(geo.cono(0.022, 0.14, 5), corno, 0, 0.12, 0.07);
+          punta1.rotation.x = 1.0;
+          palco.add(punta1);
+          const pala = mesh(geo.palla(0.13, 10), corno, s * 0.06, 0.38, -0.04);
+          pala.scale.set(1.25, 0.9, 0.22);
+          pala.rotation.z = -s * 0.5;
+          palco.add(pala);
+          for (const k of [0, 1, 2]) {
+            const pp = mesh(geo.cono(0.02, 0.1, 5), corno, s * (0.02 + k * 0.07), 0.48 + (k === 1 ? 0.04 : 0), -0.04);
+            pp.rotation.z = -s * (0.3 + k * 0.25);
+            palco.add(pp);
+          }
+          testa.add(palco);
+        }
       }
-      const c = mesh(geo.palla(0.09), mat(p.extra), 0, 0.5, -0.36);
-      corpo.add(c);
-      coda = c;
       break;
     }
     case 'tasso': {
-      // Come un peluche di tasso: testa bianca a cuneo, due strisce scure che partono vicino al naso,
-      // passano sugli occhi e vanno fino alla nuca; orecchiette tonde orlate di bianco; corpo largo e basso.
-      cranio.scale.set(1.16, 0.93, 1.02);
-      // davanti la faccia bianca, dietro la nuca del colore del corpo
-      const faccia = mesh(geo.palla(0.44, 22), pelo(p.muso), 0, -0.01, 0.05);
-      faccia.scale.set(1.13, 0.92, 1.0);
-      faccia.userData.senzaContorno = true;
-      testa.add(faccia);
-      // da cucciolo le strisce sono più morbide, da adulto nette (come nel documento delle specie)
-      const scura = a.fase === 'cucciolo' ? varia(p.extra, 0, 0.1) : p.extra;
+      // Tasso: basso e largo come una scavatrice, testa a cuneo bianca con due strisce nere dal naso alle orecchie,
+      // orecchiette tonde orlate di bianco, zampe corte e nere con le unghie lunghe, codina corta.
+      cranio.material = pelo(p.muso);
+      for (const m of muso.children) if (m instanceof THREE.Mesh) m.material = pelo(p.muso);
+      const scura = piccolo ? varia(p.extra, 0, 0.08) : p.extra;
       for (const s of [-1, 1]) {
         const arco = new THREE.Group();
-        arco.position.x = s * 0.18;
+        arco.position.x = s * 0.17;
         arco.rotation.y = -Math.PI / 2;
-        arco.scale.y = 0.93;
-        const striscia = mesh(new THREE.TorusGeometry(0.425, 0.055, 8, 28, 2.75), mat(scura, { rim: 0.15 }));
-        striscia.rotation.z = -0.45;
-        striscia.scale.z = 1.75;
+        const striscia = mesh(new THREE.TorusGeometry(0.43, 0.06, 8, 28, 2.4), mat(scura, { rim: 0.15 }));
+        striscia.rotation.z = -0.15;
+        striscia.scale.set(1.0, 0.9, 1.6);
         striscia.userData.senzaContorno = true;
         arco.add(striscia);
         testa.add(arco);
-        // orecchietta tonda, scura con l'orlo bianco, in fondo alla striscia
+        // la striscia continua lungo il muso fin quasi al naso
+        const sm = mesh(geo.cil(0.035, 0.055, lM * 0.9, 6), mat(scura, { rim: 0 }), s * F.muso.r * 0.62, F.muso.y + 0.07, davFaccia + lM * 0.42);
+        sm.rotation.x = Math.PI / 2;
+        sm.rotation.y = -s * 0.28;
+        sm.userData.senzaContorno = true;
+        testa.add(sm);
         const g = new THREE.Group();
-        g.position.set(s * 0.37, 0.24, -0.12);
+        g.position.set(s * 0.36, 0.22, -0.14);
         g.rotation.z = -s * 0.7;
         const orlo = mesh(geo.palla(0.1), mat('#fbf8f2', { rim: 0.2 }), 0, 0.04, 0);
         orlo.scale.set(1, 0.85, 0.45);
@@ -415,55 +628,37 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
         testa.add(g);
         orecchieDi.push(g);
       }
-      // corpo largo e basso, da scavatore
-      busto.scale.set(1.22 - asp.forma * 0.14, 0.86 * (1 + asp.forma * 0.1), 1.18 - asp.forma * 0.1);
-      pancia.scale.set(1.3, 1.0, 0.85);
-      // da grande: unghie da scavo chiare sulle zampe davanti
-      if (a.fase !== 'cucciolo') for (const z of zampe.slice(0, 2)) for (const dx of [-0.04, 0, 0.04]) {
-        const unghia = mesh(geo.cono(0.017, 0.07, 5), mat('#f4ead8', { rim: 0 }), dx, -0.19, 0.12);
-        unghia.rotation.x = Math.PI / 2;
-        z.add(unghia);
-      }
-      const c = new THREE.Group();
-      c.position.set(0, 0.36, -0.36);
-      const ciuffo = mesh(geo.palla(0.11), pelo(p.corpo), 0, 0, -0.02);
-      ciuffo.scale.set(0.9, 0.75, 1.1);
-      c.add(ciuffo);
-      c.add(mesh(geo.palla(0.06), mat(p.pancia), 0, 0.01, -0.12));
-      corpo.add(c);
-      coda = c;
+      // la pancia e le zampe scure, il dorso grigio
+      pancia.material = mat(varia(p.zampe, 0, 0.05), { rim: 0.2 });
+      const c = codaLungo([[0, 0], [-0.03, -0.1], [-0.05, -0.17]], [0.07, 0.08, 0.06], p.corpo);
+      attaccaCoda(c, H * 0.05);
       break;
     }
     case 'riccio': {
-      // Come un riccio di peluche: cupola di aculei pettinati all'indietro, dalla fronte (a punta, come una frangetta)
-      // fino al sedere; aculei a due colori (scuri con la punta chiara); faccina chiara a cuore,
-      // musetto a punta con il nasone a bottone e orecchiette tonde che spuntano ai lati.
-      // Da cucciolo gli aculei sono corti, morbidi e chiari; da grande più lunghi e scuri.
-      const piccolo = a.fase === 'cucciolo';
+      // Riccio: una cupola di aculei (scuri con la punta chiara) dalla fronte al sedere, faccina chiara a punta,
+      // nasone nero lucido, occhietti neri, orecchiette tonde, zampette che quasi non si vedono.
       const coloreAculei = piccolo ? varia(p.extra, 0, 0.14) : p.extra;
-      const punta = piccolo ? '#fbf3e6' : varia(p.muso, 0, 0.04);
-      const lung = piccolo ? 0.12 : 0.19;
+      const puntaA = piccolo ? '#fbf3e6' : varia(p.muso, 0, 0.04);
+      const lung = piccolo ? 0.1 : 0.15;
       const r = rng(hash(a.id + 'aculei'));
       cranio.material = pelo(p.muso);
-      naso.scale.set(1.6, 1.25, 1.3);
-      // orecchiette tonde
+      for (const m of muso.children) if (m instanceof THREE.Mesh) m.material = pelo(p.muso);
+      naso.scale.set(1.5, 1.2, 1.2);
       for (const s of [-1, 1]) {
         const g = new THREE.Group();
-        g.position.set(s * 0.38, 0.13, 0.3);
-        g.rotation.set(0, s * 0.7, -s * 0.3);
-        g.scale.setScalar(1.2);
-        const o = mesh(geo.palla(0.075), pelo(p.muso), 0, 0, 0);
+        g.position.set(s * 0.34, 0.2, 0.05);
+        g.rotation.set(0, s * 0.6, -s * 0.3);
+        const o = mesh(geo.palla(0.08), pelo(p.muso), 0, 0, 0);
         o.scale.set(1, 1, 0.5);
         g.add(o);
-        const i = mesh(geo.palla(0.045), mat('#f4b0b0', { rim: 0 }), 0, 0, 0.03);
+        const i = mesh(geo.palla(0.05), mat('#f4b0b0', { rim: 0 }), 0, 0, 0.03);
         i.scale.set(1, 1, 0.4);
         i.userData.senzaContorno = true;
         g.add(i);
         testa.add(g);
         orecchieDi.push(g);
       }
-      /** Aculei su un ellissoide, pettinati all'indietro; `tiene` sceglie dove crescono. */
-      const aculei = (rx: number, ry: number, rz: number, quanti: number, tiene: (d: THREE.Vector3) => boolean, davantiSu = false) => {
+      const aculei = (rx: number, ry: number, rz: number, quanti: number, tiene: (d: THREE.Vector3) => boolean, scala = 1) => {
         const scuri: THREE.BufferGeometry[] = [];
         const chiari: THREE.BufferGeometry[] = [];
         for (let k = 0; k < quanti; k++) {
@@ -473,399 +668,431 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
           const d = new THREE.Vector3(Math.cos(th) * rr, y, Math.sin(th) * rr);
           if (!tiene(d)) continue;
           const pos = new THREE.Vector3(d.x * rx, d.y * ry, d.z * rz);
-          // sulla fronte gli aculei stanno più dritti, così il bordo è frastagliato e non sembra un caschetto
-          const pettine = davantiSu ? 0.65 * (1 - Math.max(0, d.z) * 0.9) : 0.65;
-          const verso = d.clone().add(new THREE.Vector3(0, 0.05, -pettine)).normalize();
+          const verso = d.clone().add(new THREE.Vector3(0, 0.15, -0.8)).normalize();
           const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), verso);
-          const l = lung * (0.85 + r() * 0.3);
-          const c = new THREE.ConeGeometry(0.06, l, 6);
+          const l = lung * scala * (0.85 + r() * 0.3);
+          const c = new THREE.ConeGeometry(0.045 * scala, l, 5);
           c.translate(0, l / 2 - 0.02, 0);
           c.applyQuaternion(q);
           c.translate(pos.x, pos.y, pos.z);
           scuri.push(c.toNonIndexed());
-          const t = new THREE.ConeGeometry(0.026, l * 0.36, 6);
-          t.translate(0, l * 0.82, 0);
-          t.applyQuaternion(q);
-          t.translate(pos.x, pos.y, pos.z);
-          chiari.push(t.toNonIndexed());
+          const tt = new THREE.ConeGeometry(0.02 * scala, l * 0.36, 5);
+          tt.translate(0, l * 0.82, 0);
+          tt.applyQuaternion(q);
+          tt.translate(pos.x, pos.y, pos.z);
+          chiari.push(tt.toNonIndexed());
         }
         const g = new THREE.Group();
         g.add(mesh(unisci(scuri), mat(coloreAculei, { rim: 0.3 })));
-        const tips = mesh(unisci(chiari), mat(punta, { rim: 0.2 }));
+        const tips = mesh(unisci(chiari), mat(puntaA, { rim: 0.2 }));
         tips.userData.senzaContorno = true;
         g.add(tips);
         return g;
       };
-      // la schiena: una cupola sola dal collo alla coda
-      const schiena = mesh(geo.palla(0.42, 20), pelo(coloreAculei), 0, 0.55, -0.1);
-      schiena.scale.set(1.05, 0.98, 1.12);
-      corpo.add(schiena);
-      const dorso = aculei(0.44, 0.41, 0.47, 260, (d) => d.z < 0.3 && d.y > -0.35 - Math.max(0, -d.z) * 0.3);
-      dorso.position.set(0, 0.55, -0.1);
-      corpo.add(dorso);
-      // la testa: un cappuccio che lascia scoperta la faccina e scende a punta in mezzo alla fronte
-      const fuori = (d: THREE.Vector3) => {
-        if (d.z > 0.88) return false;
-        const fronte = 0.0 + Math.abs(d.x) * 0.5; // a "V": più basso al centro
-        return d.y > fronte - Math.max(0, -d.z) * 1.4 || d.z < -0.2;
-      };
-      const cappuccio = mesh(geo.palla(0.47, 22), pelo(coloreAculei), 0, 0.12, -0.07);
-      cappuccio.scale.set(1.1, 0.98, 1);
+      // il mantello di aculei sopra il corpo (lascia scoperta la pancia)
+      busto.material = pelo(coloreAculei);
+      const dorso = aculei(W / 2, H / 2, L / 2, 340, (d) => d.y > -0.2 && d.z < 0.85);
+      dorso.position.set(0, 0.02, L * 0.32);
+      tronco.add(dorso);
+      // la fronte: un cappuccio di aculei che lascia libera la faccina e scende a punta sulla fronte
+      const cappuccio = mesh(geo.palla(0.45, 18), pelo(coloreAculei), 0, 0.08, -0.12);
+      cappuccio.scale.set(1.05, 0.95, 0.95);
       testa.add(cappuccio);
-      const testaAculei = aculei(0.5, 0.45, 0.47, 300, fuori, true);
-      testaAculei.position.set(0, 0.1, -0.03);
+      const testaAculei = aculei(0.48, 0.44, 0.46, 220, (d) => d.z < 0.55 - Math.abs(d.x) * 0.3 && d.y > -0.05 + Math.max(0, d.z) * 0.6, 1.3);
+      testaAculei.position.set(0, 0.06, -0.1);
       testa.add(testaAculei);
-      // frangetta a punta sulla fronte
-      const frangetta = mesh(geo.cono(0.1, 0.18, 8), pelo(coloreAculei), 0, 0.22, 0.42);
-      frangetta.rotation.set(Math.PI - 0.7, 0, 0);
-      frangetta.scale.z = 0.5;
-      testa.add(frangetta);
+      const c = new THREE.Group();
+      c.add(mesh(geo.palla(0.04, 6), pelo(p.muso), 0, 0, 0));
+      c.userData.punta = new THREE.Vector3(0, 0, -0.04);
+      attaccaCoda(c, -H * 0.05);
       break;
     }
     case 'scoiattolo': {
-      orecchio(-0.22, 0.09, 0.22, p.corpo, 0.15, '#f2b9a0');
-      orecchio(0.22, 0.09, 0.22, p.corpo, 0.15, '#f2b9a0');
-      // da grande: i ciuffi in punta alle orecchie
-      if (a.fase !== 'cucciolo') for (const o of orecchieDi) {
-        const ciuffo = mesh(geo.cono(0.05, 0.14, 6), pelo(varia(p.corpo, 0, -0.08)), 0, 0.27, 0);
-        o.add(ciuffo);
+      // Scoiattolo rosso: orecchie con i ciuffi, pancia bianca, zampe dietro forti, e il codone a "S"
+      // che sale dietro la schiena (è la cosa che lo fa riconoscere da lontano).
+      for (const s of [-1, 1]) {
+        const o = orecchio(s * 0.22, 0.1, 0.24, p.corpo, 0.12, '#f2b9a0', 0.32, -0.08);
+        if (!piccolo) o.add(mesh(geo.cono(0.06, 0.18, 6), pelo(varia(p.corpo, 0, -0.06)), 0, 0.28, 0));
       }
-      // la coda enorme a "S" che sale dietro la schiena e si arriccia sopra la testa
-      const c = new THREE.Group();
-      c.position.set(0, 0.4, -0.3);
-      c.rotation.y = a.sesso === 'm' ? -0.5 : 0.5;
-      const sottile = a.fase === 'cucciolo' ? 0.75 : 1;
-      const linea = new THREE.CatmullRomCurve3([[0.02, -0.12], [0.3, -0.32], [0.62, -0.38], [0.92, -0.3], [1.1, -0.1], [1.12, 0.08]].map(([y, z]) => new THREE.Vector3(0, y, z)));
-      const raggi = [0.15, 0.2, 0.24, 0.26, 0.25, 0.23, 0.2, 0.16];
-      for (let k = 0; k < 14; k++) {
-        const u = k / 13;
-        const pt = linea.getPoint(u);
-        const r = raggi[Math.min(7, Math.floor(u * 7.99))];
-        const q = mesh(geo.palla(r * sottile), pelo(p.extra), pt.x, pt.y, pt.z);
-        q.scale.x = 0.8;
-        c.add(q);
-      }
-      corpo.add(c);
-      coda = c;
-      // guanciotte piene (le scorte!)
-      for (const x of [-1, 1]) {
-        const g = mesh(geo.palla(0.12), mat(p.pancia, { rim: 0.2 }), x * 0.2, -0.17, 0.27);
+      for (const s of [-1, 1]) {
+        const g = mesh(geo.palla(0.13), mat(p.pancia, { rim: 0.2 }), s * 0.17, -0.17, 0.25);
         g.userData.senzaContorno = true;
         testa.add(g);
       }
+      for (const z of zampe.slice(2)) z.children[0].scale.multiply(new THREE.Vector3(1.3, 1.1, 1.3));
+      const sottile = piccolo ? 0.75 : 1;
+      const c = codaLungo([[0.0, -0.02], [0.15, -0.2], [0.42, -0.3], [0.7, -0.26], [0.86, -0.1], [0.84, 0.04]], [0.14, 0.2, 0.25, 0.27, 0.26, 0.23, 0.18].map((x) => x * sottile), p.extra);
+      c.scale.x = 0.8; // un po' piatta, come una piuma
+      // il pelo lungo e morbido sui bordi
+      const rf = rng(hash(a.id + 'coda'));
+      const linea = new THREE.CatmullRomCurve3([[0.0, -0.02], [0.15, -0.2], [0.42, -0.3], [0.7, -0.26], [0.86, -0.1], [0.84, 0.04]].map(([y, z]) => new THREE.Vector3(0, y, z)));
+      for (let k = 2; k < 22; k++) {
+        const u = k / 22, pt = linea.getPoint(u), tg = linea.getTangent(u);
+        const fuori = new THREE.Vector3(0, -tg.z, tg.y).multiplyScalar(k % 2 ? 1 : -1);
+        const r = (0.09 + rf() * 0.05) * sottile;
+        pt.addScaledVector(fuori, 0.2 * sottile * (0.8 + rf() * 0.3));
+        const f = mesh(geo.palla(r, 8), pelo(varia(p.extra, 0, 0.03)), (rf() - 0.5) * 0.05, pt.y, pt.z);
+        f.scale.x = 0.7;
+        c.add(f);
+      }
+      c.rotation.y = a.sesso === 'm' ? -0.25 : 0.25;
+      attaccaCoda(c, H * 0.05, -L * 0.48);
       break;
     }
     case 'lepre': {
-      // orecchie: da cucciolo corte e tonde, da grande lunghissime con la punta scura
-      const piccola = a.fase === 'cucciolo';
-      const lunghe = piccola ? 0.18 : 0.42;
-      for (const x of [-0.13, 0.13]) {
+      // Lepre: orecchie lunghissime con la punta nera, occhioni ai lati, sedere alto con le zampe dietro grandi,
+      // codina bianca col sopra scuro. Da piccola (leprotto) le orecchie sono più corte.
+      const lunghe = piccolo ? 0.3 : 0.52;
+      for (const s of [-1, 1]) {
         const g = new THREE.Group();
-        g.position.set(x, 0.32, -0.04);
-        g.rotation.z = -x * 1.3;
+        g.position.set(s * 0.13, 0.3, -0.1);
+        g.rotation.set(-0.35, 0, -s * 0.22);
         const o = mesh(geo.capsula(0.085, lunghe), pelo(p.corpo), 0, lunghe / 2 + 0.06, 0);
-        o.scale.z = 0.65;
+        o.scale.set(1, 1, 0.5);
         g.add(o);
-        const i = mesh(geo.capsula(0.05, lunghe * 0.8), mat(p.extra, { rim: 0 }), 0, lunghe / 2 + 0.06, 0.04);
-        i.scale.z = 0.4;
+        const i = mesh(geo.capsula(0.05, lunghe * 0.8), mat(p.extra, { rim: 0 }), 0, lunghe / 2 + 0.06, 0.035);
+        i.scale.z = 0.35;
         i.userData.senzaContorno = true;
         g.add(i);
-        if (!piccola) {
-          const punta = mesh(geo.palla(0.075), mat('#2e2420'), 0, lunghe + 0.1, 0);
-          punta.scale.set(1.1, 1.2, 0.7);
+        if (!piccolo) {
+          const punta = mesh(geo.palla(0.08), mat('#2e2420'), 0, lunghe + 0.1, 0);
+          punta.scale.set(1.05, 1.3, 0.55);
           g.add(punta);
         }
         testa.add(g);
         orecchieDi.push(g);
       }
-      // dentini davanti
+      // labbro diviso e dentini
       for (const x of [-0.022, 0.022]) {
-        const d = mesh(geo.scatola(0.038, 0.05, 0.02), mat('#ffffff', { rim: 0 }), x, -0.27, 0.44);
+        const d = mesh(geo.scatola(0.036, 0.045, 0.02), mat('#ffffff', { rim: 0 }), x, F.muso.y - 0.12, davantiMuso - 0.05);
         d.rotation.x = -0.3;
         testa.add(d);
       }
-      // zampe di dietro grandi
-      for (const z of zampe.slice(2)) z.children[1].scale.set(1.15, 0.9, 1.9);
-      const c = mesh(geo.palla(0.13), mat('#ffffff'), 0, 0.42, -0.37);
-      corpo.add(c);
-      coda = c;
+      // zampe dietro: coscia grande e piede lungo appoggiato a terra
+      for (const z of zampe.slice(2)) {
+        z.children[0].scale.multiply(new THREE.Vector3(1.35, 1.15, 1.4));
+        const piede = z.children[2] as THREE.Mesh;
+        piede.scale.set(1.1, 0.55, 2.6);
+        piede.position.z += 0.04;
+      }
+      const c = new THREE.Group();
+      c.add(mesh(geo.palla(0.09, 10), mat('#ffffff'), 0, 0, -0.02));
+      c.add(mesh(geo.palla(0.06, 8), mat(varia(p.corpo, 0, -0.2)), 0, 0.04, -0.04));
+      c.userData.punta = new THREE.Vector3(0, 0, -0.08);
+      attaccaCoda(c, H * 0.2);
       break;
     }
-
     case 'cavallo':
     case 'asino': {
-      // Cavallino e asinello: muso lungo e chiaro, criniera, coda; l'asino con le orecchie lunghissime
+      // Cavallo: testa lunga con le narici, orecchie piccole e dritte, collo forte con la criniera che ricade,
+      // coda lunga fino ai garretti, zampe lunghe con gli zoccoli. Il baio ha criniera, coda e zampe nere.
+      // Asino: testa grossa, orecchie lunghissime, muso e anelli intorno agli occhi chiari, criniera corta e dritta,
+      // croce scura sulle spalle, coda sottile col ciuffo.
       const asino = a.specie === 'asino';
-      const piccolo = a.fase === 'cucciolo';
-      muso.scale.set(1.2, 0.95, 1.45);
-      naso.scale.set(0.9, 0.7, 0.8);
-      naso.material = mat(varia(p.muso, 0, -0.35), { rim: 0 });
-      // le narici
+      if (asino) for (const m of muso.children) if (m instanceof THREE.Mesh) m.material = mat(p.muso, { rim: 0.15 });
+      naso.visible = false;
       for (const s of [-1, 1]) {
-        const n = mesh(geo.palla(0.025, 8), mat('#2a1a14', { rim: 0 }), s * 0.06, -0.16, davantiMuso - 0.005);
+        const n = mesh(geo.palla(0.04, 8), mat('#2a1a14', { rim: 0 }), s * F.muso.punta * 0.55, F.muso.y + 0.03, davantiMuso - 0.04);
+        n.scale.set(0.8, 1.2, 0.5);
         n.userData.senzaContorno = true;
         testa.add(n);
       }
       if (asino) {
-        // l'asinello: occhi cerchiati di bianco e orecchie lunghe con la punta scura
-        for (const x of [-0.25, 0.25]) {
-          const o = orecchio(x, 0.1, piccolo ? 0.34 : 0.46, p.corpo, 0.32, '#f2e4dc');
-          const punta = mesh(geo.cono(0.07, 0.12, 8), mat(p.extra), 0, (piccolo ? 0.34 : 0.46) - 0.04, 0);
-          punta.scale.z = 0.55;
+        const lungO = piccolo ? 0.42 : 0.56;
+        for (const s of [-1, 1]) {
+          const o = orecchio(s * 0.2, 0.11, lungO, p.corpo, 0.3, '#f2e4dc', 0.3, -0.12);
+          const punta = mesh(geo.cono(0.08, 0.13, 8), mat(p.extra), 0, lungO - 0.05, 0);
+          punta.scale.z = 0.5;
           o.add(punta);
         }
-        for (const x of [-0.19, 0.19]) {
-          const anello = mesh(geo.palla(0.14), mat(p.muso, { rim: 0 }), x * 1.02, -0.02, 0.32);
+        for (const s of [-1, 1]) {
+          const anello = mesh(geo.palla(0.13), mat(p.muso, { rim: 0 }), s * 0.21, 0.04, 0.33);
           anello.scale.set(1, 1.1, 0.45);
+          anello.rotation.y = s * 0.7;
           anello.userData.senzaContorno = true;
           testa.add(anello);
         }
+        // la croce sulle spalle
+        const riga = rigaDorso(p.extra, 0.025);
+        riga.userData.senzaContorno = true;
+        busto.add(riga);
+        for (const s of [-1, 1]) {
+          const b = mesh(geo.capsula(0.022, 0.2), mat(p.extra, { rim: 0 }), s * 0.18, 0.2, -0.28);
+          b.rotation.y = s * 0.9;
+          b.userData.senzaContorno = true;
+          busto.add(b);
+        }
       } else {
-        for (const x of [-0.2, 0.2]) orecchio(x, 0.085, 0.22, p.corpo, 0.12, '#f0c8b8');
-        // la stellina bianca in fronte (palomino e grigio ce l'hanno più chiara)
-        const stella = mesh(geo.palla(0.07), mat('#fffaf0', { rim: 0 }), 0, 0.12, 0.43);
-        stella.scale.set(0.7, 1.4, 0.35);
-        stella.userData.senzaContorno = true;
-        testa.add(stella);
+        for (const s of [-1, 1]) orecchio(s * 0.17, 0.08, 0.24, p.corpo, 0.08, '#f0c8b8', 0.34, -0.12);
+        // la lista bianca giù per il muso
+        const lista = mesh(geo.capsula(0.045, lM * 0.75), mat('#fffaf0', { rim: 0 }), 0, F.muso.y + F.muso.r * 0.62, davFaccia + lM * 0.3);
+        lista.rotation.x = Math.PI / 2 - 0.08;
+        lista.scale.set(1, 1, 0.35);
+        lista.userData.senzaContorno = true;
+        testa.add(lista);
       }
-      // criniera: dal ciuffo sulla fronte giù lungo il collo
+      // criniera lungo il collo (sul lato di dietro) e ciuffo sulla fronte
       const crin = new THREE.Group();
-      for (let k = 0; k < 8; k++) {
-        const ang = -0.45 + k * 0.3;
-        const y = Math.cos(ang) * 0.47, z = -Math.sin(ang) * 0.47;
+      const qc = asino ? 9 : 8;
+      for (let k = 0; k < qc; k++) {
+        const u = k / (qc - 1);
+        const y = F.collo * (0.05 + u * 0.95);
         const c = asino
-          ? mesh(geo.cono(0.06, 0.16, 6), pelo(p.extra), 0, y + 0.03, z)
-          : mesh(geo.palla(0.1, 10), pelo(p.extra), (k % 2 ? 0.05 : -0.05), y + 0.02, z);
-        if (asino) c.rotation.x = -ang;
-        else c.scale.set(0.75, 1.15, 1.3);
+          ? mesh(geo.cono(0.05, 0.14, 6), pelo(p.extra), 0, y, -F.colloR * 0.85)
+          : mesh(geo.palla(0.08, 10), pelo(p.extra), (k % 2 ? 0.04 : -0.02) + 0.06, y, -F.colloR * 0.75);
+        if (asino) c.rotation.x = -1.2;
+        else c.scale.set(0.7, 1.4, 1.0);
         crin.add(c);
       }
       if (!asino) {
-        // il ciuffo che scende sulla fronte
-        const ciuffo = mesh(geo.palla(0.12, 10), pelo(p.extra), 0.06, 0.36, 0.25);
-        ciuffo.scale.set(1.1, 0.7, 0.8);
-        ciuffo.rotation.z = -0.4;
-        crin.add(ciuffo);
+        crin.clear();
+        const rc = F.colloR * 0.9;
+        const c = codaLungo([[F.collo * 1.05, -rc * 0.75], [F.collo * 0.6, -rc * 1.0], [F.collo * 0.1, -rc * 1.25], [-0.05, -rc * 1.3]], [0.06, 0.08, 0.09, 0.06], p.extra);
+        c.scale.set(piccolo ? 0.8 : 1.1, 1, 1);
+        c.position.x = 0.03;
+        crin.add(c);
       }
-      if (piccolo) crin.scale.setScalar(0.8);
-      testa.add(crin);
-      // coda: lunga e morbida (cavallo) o sottile col fiocco in fondo (asino)
-      const c = new THREE.Group();
-      c.position.set(0, 0.48, -0.32);
+      if (piccolo) crin.scale.set(1, 1, 0.7);
+      colloG.add(crin);
+      if (!asino) {
+        // il ciuffo che scende sulla fronte, tra le orecchie
+        const ciuffo = mesh(geo.palla(0.1, 10), pelo(p.extra), 0.02, 0.33, 0.12);
+        ciuffo.scale.set(0.9, 0.55, 1.3);
+        ciuffo.rotation.set(0.5, 0, -0.3);
+        testa.add(ciuffo);
+      }
       if (asino) {
-        const filo = mesh(geo.capsula(0.03, 0.22), pelo(p.corpo), 0, -0.1, -0.06);
-        filo.rotation.x = 0.5;
-        c.add(filo);
-        c.add(mesh(geo.palla(0.07, 8), pelo(p.extra), 0, -0.24, -0.13));
+        const c = codaLungo([[0, 0], [-0.15, -0.04], [-0.32, -0.06]], [0.03], p.corpo);
+        c.add(mesh(geo.palla(0.065, 8), pelo(p.extra), 0, -0.38, -0.06));
+        c.userData.punta = new THREE.Vector3(0, -0.38, -0.06);
+        attaccaCoda(c, H * 0.3);
       } else {
-        for (const [dx, rz, l] of [[-0.04, 0.15, 0.32], [0.04, -0.15, 0.34], [0, 0, 0.38]]) {
-          const ciocca = mesh(geo.capsula(0.07, l * (piccolo ? 0.7 : 1)), pelo(p.extra), dx, -0.12, -0.12);
-          ciocca.rotation.set(0.75, 0, rz);
-          c.add(ciocca);
-        }
+        const l = piccolo ? 0.6 : 1;
+        const c = codaLungo([[0, 0], [-0.05, -0.12], [-0.3 * l, -0.2], [-0.55 * l, -0.2]], [0.07, 0.09, 0.09, 0.08, 0.06], p.extra);
+        attaccaCoda(c, H * 0.32);
       }
-      corpo.add(c);
-      coda = c;
-      // zoccoli
-      for (const z of zampe) z.children[1].scale.set(0.95, 0.75, 1);
       break;
     }
     case 'mucca': {
-      // Mucchina: musone rosa largo, orecchie di lato, cornini, macchie
-      const piccola = a.fase === 'cucciolo';
-      muso.scale.set(1.6, 0.95, 1.0);
-      muso.position.y -= 0.02;
+      // Mucca: corpo grande e squadrato, musone largo e rosa con le narici, orecchie di lato, cornini,
+      // macchie grandi, coda sottile col fiocco, la mammella rosa (le femmine adulte).
+      for (const m of muso.children) if (m instanceof THREE.Mesh) m.material = mat(p.muso, { rim: 0.15 });
       naso.visible = false;
       for (const s of [-1, 1]) {
-        const n = mesh(geo.palla(0.03, 8), mat(varia(p.muso, 0, -0.35), { rim: 0 }), s * 0.08, -0.15, davantiMuso);
+        const n = mesh(geo.palla(0.045, 8), mat(varia(p.muso, 0, -0.35), { rim: 0 }), s * 0.12, F.muso.y + 0.04, davantiMuso - 0.04);
         n.scale.set(1, 1.3, 0.5);
         n.userData.senzaContorno = true;
         testa.add(n);
       }
-      for (const x of [-1, 1]) {
-        const g = new THREE.Group();
-        g.position.set(x * 0.42, 0.14, -0.02);
-        g.rotation.z = -x * 1.45;
-        const o = mesh(geo.palla(0.1), pelo(p.corpo), 0, 0.12, 0);
-        o.scale.set(0.8, 1.4, 0.4);
-        g.add(o);
-        const i = mesh(geo.palla(0.07), mat('#f4b0b8', { rim: 0 }), 0, 0.12, 0.03);
-        i.scale.set(0.7, 1.2, 0.3);
-        i.userData.senzaContorno = true;
-        g.add(i);
-        testa.add(g);
-        orecchieDi.push(g);
-        if (!piccola) {
-          const corno = mesh(geo.cono(0.045, a.sesso === 'm' ? 0.2 : 0.14, 8), mat('#f4ead2'), x * 0.24, 0.43, -0.04);
-          corno.rotation.z = -x * 0.7;
+      for (const s of [-1, 1]) {
+        orecchioFoglia(s, 0.26, 0.1, p.corpo, '#f4b0b8', 1.55, 0.12, -0.08, 0.38);
+        if (!piccolo) {
+          const corno = mesh(geo.cono(0.05, a.sesso === 'm' ? 0.24 : 0.16, 8), mat('#f4ead2'), s * 0.27, 0.36, -0.06);
+          corno.rotation.z = -s * 1.0;
           testa.add(corno);
         }
       }
-      // le macchie: sulla schiena, sui fianchi e una sulla testa
+      // ciuffo in fronte
+      const ciuffo = mesh(geo.palla(0.1, 8), pelo(p.corpo), 0, 0.4, 0.06);
+      ciuffo.scale.set(1.3, 0.5, 0.9);
+      testa.add(ciuffo);
       const r = rng(hash(a.id + 'macchie'));
-      const macchie: [THREE.Object3D, number, number][] = [[busto, 0.34, 5], [cranio, 0.46, 2]];
-      if (asp.manto % 4 < 2) for (const [dove, raggio, quante] of macchie) for (let k = 0; k < quante; k++) {
-        const th = r() * Math.PI * 2, y = dove === cranio ? 0.2 + r() * 0.5 : -0.2 + r() * 0.9;
-        if (dove === cranio && Math.cos(th) > 0.3) continue; // non sulla faccia
-        const rr = Math.sqrt(1 - y * y);
-        const m = mesh(geo.palla(0.1 + r() * 0.06, 10), mat(p.extra, { rim: 0 }), Math.sin(th) * rr * raggio, y * raggio, Math.cos(th) * rr * raggio * (dove === cranio ? -1 : 1));
-        m.scale.set(1, 1, 0.35);
-        m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), m.position.clone().normalize());
-        m.userData.senzaContorno = true;
-        dove.add(m);
+      if (asp.manto % 4 < 2) {
+        for (let k = 0; k < 6; k++) {
+          const d = new THREE.Vector3(r() * 2 - 1, r() * 1.6 - 0.8, -0.2 - r() * 0.8).normalize();
+          const m = mesh(geo.palla(0.13 + r() * 0.06, 10), mat(p.extra, { rim: 0 }), d.x * 0.335, d.y * 0.335, d.z * 0.335);
+          m.scale.set(1, 1, 0.3);
+          m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), d);
+          m.userData.senzaContorno = true;
+          busto.add(m);
+        }
+        for (let k = 0; k < 2; k++) {
+          const th = (r() < 0.5 ? -1 : 1) * (1.6 + r() * 0.9), y = 0.1 + r() * 0.4;
+          const d = new THREE.Vector3(Math.sin(th), y, Math.cos(th)).normalize();
+          const m = mesh(geo.palla(0.14, 10), mat(p.extra, { rim: 0 }), d.x * 0.45, d.y * 0.42, d.z * 0.44);
+          m.scale.set(1, 1, 0.3);
+          m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), d);
+          m.userData.senzaContorno = true;
+          testa.add(m);
+        }
       }
-      const c = new THREE.Group();
-      c.position.set(0, 0.5, -0.33);
-      const filo = mesh(geo.capsula(0.025, 0.26), pelo(p.corpo), 0, -0.12, -0.05);
-      filo.rotation.x = 0.35;
-      c.add(filo);
-      c.add(mesh(geo.palla(0.06, 8), pelo(p.extra === p.corpo ? p.zampe : p.extra), 0, -0.27, -0.1));
-      corpo.add(c);
-      coda = c;
-      for (const z of zampe) z.children[1].scale.set(0.95, 0.75, 1);
+      if (a.sesso === 'f' && !piccolo) {
+        const mam = mesh(geo.palla(0.1, 12), mat('#f4b8bc', { rim: 0.2 }), 0, -0.2, 0.3);
+        mam.userData.senzaContorno = true;
+        sulBusto(mam);
+      }
+      const c = codaLungo([[0, 0], [-0.15, -0.05], [-0.42, -0.06]], [0.03], p.corpo);
+      c.add(mesh(geo.palla(0.065, 8), pelo(p.extra === p.corpo ? p.zampe : p.extra), 0, -0.46, -0.06));
+      c.userData.punta = new THREE.Vector3(0, -0.46, -0.06);
+      attaccaCoda(c, H * 0.32);
       break;
     }
     case 'maiale': {
-      // Maialino: grugnetto a disco, orecchie a punta piegate in avanti, codina a ricciolo
-      muso.visible = false;
+      // Maiale: corpo lungo a botte, zampe corte, niente collo, grugno a disco con le narici,
+      // orecchie a punta piegate in avanti, codina a ricciolo.
+      for (const m of muso.children) if (m instanceof THREE.Mesh) m.material = mat(p.corpo, { rim: 0.2 });
       naso.visible = false;
-      const grugno = mesh(geo.cil(0.13, 0.14, 0.12, 16), mat(p.muso, { rim: 0.2 }), 0, -0.13, 0.43);
+      const grugno = mesh(geo.cil(F.muso.punta * 1.05, F.muso.punta * 1.05, 0.06, 18), mat(p.muso, { rim: 0.2 }), 0, F.muso.y + 0.02, davantiMuso - 0.08);
       grugno.rotation.x = Math.PI / 2;
       testa.add(grugno);
       for (const s of [-1, 1]) {
-        const n = mesh(geo.palla(0.03, 8), mat(varia(p.muso, 0, -0.3), { rim: 0 }), s * 0.045, -0.13, 0.49);
+        const n = mesh(geo.palla(0.035, 8), mat(varia(p.muso, 0, -0.3), { rim: 0 }), s * 0.06, F.muso.y + 0.02, davantiMuso - 0.045);
         n.scale.set(0.8, 1.3, 0.4);
         n.userData.senzaContorno = true;
         testa.add(n);
       }
-      bocca.position.set(0, -0.25, 0.4);
-      for (const x of [-0.25, 0.25]) {
-        const o = orecchio(x, 0.14, 0.22, p.corpo, 0.35, varia(p.muso, 0, 0.05));
-        o.rotation.x = 0.7; // piegate in avanti
+      for (const s of [-1, 1]) {
+        const o = orecchio(s * 0.26, 0.16, 0.26, p.corpo, 0.45, varia(p.muso, 0, 0.05), 0.28, -0.04);
+        o.rotation.x = 0.75;
       }
       if (asp.manto % 4 === 1) {
-        // pezzato: macchie scure
         const r = rng(hash(a.id + 'macchie'));
-        for (let k = 0; k < 4; k++) {
-          const th = r() * Math.PI * 2, y = -0.1 + r() * 0.8, rr = Math.sqrt(1 - y * y);
-          const m = mesh(geo.palla(0.09 + r() * 0.04, 10), mat(p.extra, { rim: 0 }), Math.sin(th) * rr * 0.34, y * 0.34, Math.cos(th) * rr * 0.34);
-          m.scale.set(1, 1, 0.35);
-          m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), m.position.clone().normalize());
+        for (let k = 0; k < 5; k++) {
+          const d = new THREE.Vector3(r() * 2 - 1, r() * 1.6 - 0.8, -0.1 - r() * 0.9).normalize();
+          const m = mesh(geo.palla(0.1 + r() * 0.04, 10), mat(p.extra, { rim: 0 }), d.x * 0.335, d.y * 0.335, d.z * 0.335);
+          m.scale.set(1, 1, 0.3);
+          m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), d);
           m.userData.senzaContorno = true;
           busto.add(m);
         }
       } else if (asp.manto % 4 === 2) {
-        // cinta: la fascia chiara intorno alle spalle
-        const fascia = mesh(new THREE.TorusGeometry(0.315, 0.07, 8, 24), mat(p.extra, { rim: 0.2 }), 0, 0.5, 0.06);
-        fascia.scale.set(1.05, 1.0, 1.0);
-        corpo.add(fascia);
+        // cinta: la fascia chiara intorno alle spalle (e le zampe davanti chiare)
+        const fascia = mesh(new THREE.TorusGeometry(0.33, 0.075, 8, 24), mat(p.extra, { rim: 0.2 }), 0, 0.16, 0);
+        fascia.rotation.x = Math.PI / 2;
+        fascia.userData.senzaContorno = true;
+        busto.add(fascia);
       }
       const c = new THREE.Group();
-      c.position.set(0, 0.5, -0.33);
-      const ricciolo = mesh(new THREE.TorusGeometry(0.06, 0.02, 6, 14, Math.PI * 1.7), mat(p.corpo), 0, 0, -0.05);
+      const ricciolo = mesh(new THREE.TorusGeometry(0.05, 0.018, 6, 14, Math.PI * 1.7), mat(p.corpo), 0, 0, -0.04);
       ricciolo.rotation.y = Math.PI / 2;
       c.add(ricciolo);
-      corpo.add(c);
-      coda = c;
-      for (const z of zampe) z.children[1].scale.set(0.9, 0.75, 1);
+      c.userData.punta = new THREE.Vector3(0, 0.05, -0.04);
+      attaccaCoda(c, H * 0.2);
       break;
     }
     case 'uccellino':
     case 'papera': {
-      // Uccellino e paperella: becco al posto del muso, ali al posto delle zampe davanti, zampette sottili
-      const papera = a.specie === 'papera';
-      const piccolo = a.fase === 'cucciolo';
-      // da piccola la paperella è un pulcino giallo
-      const corpoC = papera && piccolo ? '#ffe270' : p.corpo;
-      const panciaC = papera && piccolo ? '#fff2b0' : p.pancia;
-      busto.material = pelo(corpoC);
-      pancia.material = mat(panciaC, { rim: 0.2 });
-      muso.visible = false;
-      naso.visible = false;
-      bocca.visible = false;
-      const testaC = papera ? (piccolo ? '#ffe270' : a.sesso === 'm' || asp.manto % 4 !== 1 ? p.extra : p.corpo) : p.corpo;
-      cranio.material = pelo(testaC);
-      if (!papera) {
-        // faccina e petto colorati (il pettirosso arancione, la cinciallegra le guance bianche)
-        const faccia = mesh(geo.palla(0.32, 20), mat(p.muso, { rim: 0.15 }), 0, -0.17, 0.2);
-        faccia.scale.set(1.05, 0.7, 0.85);
-        faccia.userData.senzaContorno = true;
-        testa.add(faccia);
-        // il cappuccio
-        const capp = mesh(geo.palla(0.47, 20), pelo(p.extra), 0, 0.06, -0.03);
-        capp.scale.set(1.02, 0.85, 1.0);
-        testa.add(capp);
-        const becco = mesh(geo.cono(0.095, 0.22, 10), mat(asp.manto % 4 === 3 ? '#f2a020' : '#e8b040', { rim: 0.2 }), 0, -0.1, 0.52);
-        becco.rotation.x = Math.PI / 2;
-        testa.add(becco);
-        // il ciuffetto in testa
-        for (const [x, rz] of [[-0.03, 0.3], [0.03, -0.2]]) {
-          const c = mesh(geo.cono(0.045, 0.14, 6), pelo(p.extra), x, 0.48, 0.02);
-          c.rotation.set(-0.5, 0, rz);
-          testa.add(c);
-        }
-      } else {
-        // il becco largo e piatto
-        const becco = mesh(geo.palla(0.15, 14), mat(piccolo ? '#f6b040' : p.muso, { rim: 0.2 }), 0, -0.15, 0.45);
-        becco.scale.set(1.05, 0.38, 1.15);
-        testa.add(becco);
-        if (!piccolo && asp.manto % 4 === 1 && a.sesso === 'm') {
-          // il collarino bianco del germano
-          const coll = mesh(new THREE.TorusGeometry(0.25, 0.035, 6, 20), mat('#ffffff', { rim: 0 }), 0, -0.4, 0.02);
-          coll.rotation.x = Math.PI / 2;
-          testa.add(coll);
-        }
-      }
-      // ali: al posto delle zampe davanti, sui fianchi
-      const alaC = papera ? varia(corpoC, 0, -0.05) : p.extra;
-      for (const [i, s] of [[0, -1], [1, 1]] as const) {
-        const z = zampe[i];
-        for (const ch of z.children) ch.visible = false;
-        z.position.set(s * 0.3, 0.46, -0.02);
-        const ala = mesh(geo.palla(0.2, 12), pelo(alaC), 0, -0.04, -0.04);
-        ala.scale.set(0.35, 0.85, 1.05);
-        ala.rotation.x = 0.3;
-        z.add(ala);
-      }
-      // zampette sottili arancioni (palmate per la paperella)
-      for (const [i, s] of [[2, -1], [3, 1]] as const) {
-        const z = zampe[i];
-        for (const ch of z.children) ch.visible = false;
-        z.position.set(s * 0.12, 0.26, 0.02);
-        const colZ = papera ? p.zampe : '#e8a040';
-        z.add(mesh(geo.cil(0.025, 0.025, 0.2, 6), mat(colZ), 0, -0.1, 0));
-        const piede = mesh(geo.palla(0.08, 10), mat(colZ), 0, -0.19, 0.05);
-        piede.scale.set(papera ? 1.2 : 0.8, 0.3, papera ? 1.4 : 1.1);
-        z.add(piede);
-      }
-      // la coda: un ventaglio di penne (alzata nella paperella)
-      const c = new THREE.Group();
-      c.position.set(0, 0.42, -0.3);
-      for (const [rz, dx] of [[0.35, -0.06], [0, 0], [-0.35, 0.06]]) {
-        const penna = mesh(geo.palla(0.09, 8), pelo(papera ? corpoC : p.extra), dx, 0.02, -0.12);
-        penna.scale.set(0.6, 0.3, 1.6);
-        penna.rotation.set(papera ? -0.8 : -0.3, rz, 0);
-        c.add(penna);
-      }
-      corpo.add(c);
-      coda = c;
+      creaUccello();
       break;
     }
   }
 
-  // maschi: ciuffo di pelo in testa (e bozzetti delle corna per i daini piccoli)
-  if (a.sesso === 'm' && !['riccio', 'cavallo', 'asino', 'uccellino', 'papera'].includes(a.specie)) {
-    for (const [x, rz] of [[-0.06, 0.4], [0.02, 0], [0.09, -0.4]]) {
-      const ciuffo = mesh(geo.cono(0.05, 0.16, 6), pelo(p.corpo), x, 0.46, 0.06);
-      ciuffo.rotation.z = rz;
-      testa.add(ciuffo);
+  /** Uccellino (pettirosso, cinciallegra, passero, merlo) e papera: corpo a goccia, ali chiuse sui fianchi, becco, zampette sottili. */
+  function creaUccello() {
+    const papera = a.specie === 'papera';
+    const corpoC = papera && piccolo ? '#ffe270' : p.corpo;
+    const panciaC = papera && piccolo ? '#fff2b0' : p.pancia;
+    // per gli uccelli il busto sta dritto come prima (pancia davanti), solo un po' inclinato
+    tronco.rotation.x = 0;
+    tronco.userData.inclina = 0;
+    tronco.position.set(0, 0, 0);
+    busto.material = pelo(corpoC);
+    pancia.material = mat(panciaC, { rim: 0.2 });
+    pancia.userData.senzaContorno = false;
+    if (papera) {
+      // la papera: corpo orizzontale a barchetta, collo dritto, testa tonda, becco piatto
+      busto.rotation.x = Math.PI / 2 - 0.12;
+      busto.scale.set(0.46 / 0.68, 0.8 / 0.68 * kCorpo, 0.44 / 0.68);
+      busto.position.set(0, 0.36, 0);
+      pancia.position.set(0, 0.0, 0.12);
+      colloG.position.set(0, 0.52, 0.22);
+      colloG.rotation.x = -0.1;
+      colloG.clear();
+      colloG.add(mesh(geo.capsula(0.1, 0.2), pelo(corpoC), 0, 0.1, 0));
+      colloG.add(perno);
+      perno.position.set(0, 0.22, 0);
+      perno.rotation.x = 0.1;
+      perno.userData.base = 0.1;
+      testa.position.set(0, 0.2, 0);
+    } else {
+      // l'uccellino: una pallina a goccia un po' inclinata, la testa attaccata al corpo
+      busto.rotation.x = 0.45;
+      busto.scale.set(0.44 / 0.68, 0.5 / 0.68 * kCorpo, 0.46 / 0.68);
+      busto.position.set(0, 0.38, 0);
+      pancia.position.set(0, -0.02, 0.12);
+      colloG.position.set(0, 0.56, 0.08);
+      colloG.rotation.x = 0;
+      perno.position.set(0, 0.06, 0);
+      perno.rotation.x = 0;
+      perno.userData.base = 0;
+      testa.position.set(0, 0, 0);
     }
-    if (a.specie === 'daino' && a.fase === 'cucciolo') for (const x of [-0.13, 0.13]) testa.add(mesh(geo.palla(0.05), mat('#8a5a36'), x, 0.42, -0.04));
+    muso.visible = false;
+    naso.visible = false;
+    bocca.visible = false;
+    const testaC = papera ? (piccolo ? '#ffe270' : a.sesso === 'm' || asp.manto % 4 !== 1 ? p.extra : p.corpo) : p.corpo;
+    cranio.material = pelo(testaC);
+    if (!papera) {
+      const faccia = mesh(geo.palla(0.36, 20), mat(p.muso, { rim: 0.15 }), 0, -0.14, 0.14);
+      faccia.scale.set(1.05, 0.8, 0.85);
+      faccia.userData.senzaContorno = true;
+      testa.add(faccia);
+      const capp = mesh(geo.palla(0.47, 20), pelo(p.extra), 0, 0.07, -0.03);
+      capp.scale.set(1.02, 0.82, 1.0);
+      testa.add(capp);
+      const becco = mesh(geo.cono(0.07, 0.24, 10), mat(asp.manto % 4 === 3 ? '#f2a020' : '#4a3a2e', { rim: 0.2 }), 0, -0.04, 0.54);
+      becco.rotation.x = Math.PI / 2;
+      testa.add(becco);
+      // il petto colorato (rosso del pettirosso, giallo della cinciallegra) sul davanti del corpo
+      pancia.material = mat(p.pancia, { rim: 0.2 });
+    } else {
+      const becco = mesh(geo.palla(0.15, 14), mat(piccolo ? '#f6b040' : p.muso, { rim: 0.2 }), 0, -0.12, 0.47);
+      becco.scale.set(1.0, 0.36, 1.35);
+      testa.add(becco);
+      if (!piccolo && asp.manto % 4 === 1 && a.sesso === 'm') {
+        const coll = mesh(new THREE.TorusGeometry(0.11, 0.025, 6, 20), mat('#ffffff', { rim: 0 }), 0, 0.02, 0);
+        coll.rotation.x = Math.PI / 2;
+        colloG.add(coll);
+      }
+    }
+    // le ali chiuse sui fianchi (fanno da "braccia" per gli attrezzi)
+    const alaC = papera ? varia(corpoC, 0, -0.06) : p.extra;
+    for (const s of [-1, 1]) {
+      const spalla = new THREE.Group();
+      spalla.position.set(s * (papera ? 0.21 : 0.2), papera ? 0.44 : 0.48, papera ? 0.06 : 0.02);
+      tronco.add(spalla);
+      spalle.push(spalla);
+      const z = new THREE.Group();
+      const ala = mesh(geo.palla(0.2, 12), pelo(alaC), 0, -0.1, -0.08);
+      ala.scale.set(0.3, papera ? 0.55 : 0.8, papera ? 1.35 : 1.0);
+      ala.rotation.x = papera ? -0.1 : 0.4;
+      z.add(ala);
+      z.userData.lunghezza = 0.25;
+      spalla.add(z);
+      zampe.push(z);
+    }
+    // zampette sottili (palmate per la papera)
+    for (const s of [-1, 1]) {
+      const z = new THREE.Group();
+      z.position.set(s * 0.1, 0.22, 0.0);
+      const colZ = papera ? p.zampe : '#c89a6a';
+      z.add(mesh(geo.cil(0.02, 0.02, 0.2, 6), mat(colZ), 0, -0.11, 0));
+      const piede = mesh(geo.palla(0.07, 10), mat(colZ), 0, -0.2, 0.04);
+      piede.scale.set(papera ? 1.3 : 0.8, 0.25, papera ? 1.5 : 1.2);
+      z.add(piede);
+      z.userData.lunghezza = 0.22;
+      corpo.add(z);
+      zampe.push(z);
+    }
+    // la coda: un ventaglio di penne (alzata nella papera)
+    const c = new THREE.Group();
+    for (const [rz, dx] of [[0.3, -0.05], [0, 0], [-0.3, 0.05]]) {
+      const penna = mesh(geo.palla(0.08, 8), pelo(papera ? corpoC : p.extra), dx, 0.02, -0.12);
+      penna.scale.set(0.6, 0.28, 1.8);
+      penna.rotation.set(papera ? -0.7 : 0.5, rz, 0);
+      c.add(penna);
+    }
+    c.userData.punta = new THREE.Vector3(0, papera ? 0.12 : -0.08, -0.26);
+    c.position.set(0, papera ? 0.42 : 0.3, papera ? -0.34 : -0.2);
+    corpo.add(c);
+    coda = c;
   }
+
   // orecchie più piccole o più grandi
-  for (const o of orecchieDi) o.scale.setScalar(0.78 + asp.orecchie * 0.5);
+  for (const o of orecchieDi) o.scale.multiplyScalar(0.85 + asp.orecchie * 0.3);
 
   // ---- segno particolare: unico nel villaggio ----
+  const codaM = coda as THREE.Object3D | null;
   const collo = (oggetto: THREE.Object3D) => {
     oggetto.position.y -= 0.42;
     testa.add(oggetto);
@@ -896,10 +1123,14 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       punta.rotation.z = Math.PI;
       cuore.add(punta);
       cuore.scale.z = 0.4;
-      cuore.position.set(t.lato * 0.31, 0.47, 0.02);
-      cuore.rotation.y = t.lato * Math.PI / 2;
       cuore.traverse((c) => (c.userData.senzaContorno = true));
-      corpo.add(cuore);
+      // sul fianco, senza farsi stirare dal busto
+      const fianco = new THREE.Group();
+      fianco.add(cuore);
+      fianco.position.set(t.lato * 0.335, uccello ? 0.05 : 0, uccello ? 0 : -0.1);
+      cuore.rotation.y = t.lato * Math.PI / 2;
+      if (!uccello) cuore.rotation.x = -Math.PI / 2;
+      sulBusto(fianco, uccello ? 1 : 0.9);
       break;
     }
     case 'lentiggini':
@@ -916,8 +1147,8 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       testa.add(stella);
       break;
     }
-    case 'coda extra folta':
-      if (coda) coda.scale.setScalar(1.55);
+    case 'codaM extra folta':
+      if (codaM) codaM.scale.setScalar(1.55);
       break;
     case 'fiocco rosso': {
       const f = new THREE.Group();
@@ -973,8 +1204,11 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       testa.add(camp);
       break;
     }
-    case 'punta della coda scura':
-      if (coda) coda.add(mesh(geo.palla(0.1), mat('#2e1c12'), 0, 0.2, -0.52));
+    case 'punta della codaM scura':
+      if (codaM) {
+        const pt = (codaM.userData.punta as THREE.Vector3 | undefined) ?? new THREE.Vector3();
+        codaM.add(mesh(geo.palla(0.085), mat('#2e1c12'), pt.x, pt.y, pt.z));
+      }
       break;
     case 'nasino a cuore': {
       naso.visible = false;
@@ -1019,9 +1253,9 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       break;
     }
     case 'baffi lunghi': {
-      const davanti = muso.position.z + 0.17 * muso.scale.z;
+      const davanti = davantiMuso;
       for (const s of [-1, 1]) for (let k = 0; k < 3; k++) {
-        const b = mesh(geo.capsula(0.006, 0.2), mat('#3a2418', { rim: 0 }), s * 0.2, -0.16 + (k - 1) * 0.03, davanti - 0.08);
+        const b = mesh(geo.capsula(0.006, 0.2), mat('#3a2418', { rim: 0 }), s * (F.muso.punta + 0.1), naso.position.y - 0.04 + (k - 1) * 0.03, davanti - 0.06);
         b.rotation.z = s * (Math.PI / 2 + (k - 1) * 0.18);
         b.userData.senzaContorno = true;
         testa.add(b);
@@ -1029,7 +1263,7 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       break;
     }
     case 'dentino sporgente': {
-      const d = mesh(geo.scatola(0.045, 0.055, 0.02), mat('#ffffff', { rim: 0 }), t.lato * 0.025, -0.25 - (a.specie === 'volpe' ? 0.02 : 0), muso.position.z + 0.17 * muso.scale.z - 0.03);
+      const d = mesh(geo.scatola(0.045, 0.055, 0.02), mat('#ffffff', { rim: 0 }), t.lato * 0.025, bocca.position.y - 0.05, davantiMuso - F.muso.punta * 0.4);
       d.rotation.x = -0.3;
       testa.add(d);
       break;
@@ -1061,22 +1295,23 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
         cinghia.rotation.set(0, Math.PI / 2, -Math.PI / 2);
         z.add(cinghia);
       }
-      z.position.set(0, -0.68, -0.38);
-      testa.add(z);
-      // le bretelle si vedono anche da davanti
-      for (const x of [-0.15, 0.15]) {
-        const b = mesh(geo.scatola(0.045, 0.2, 0.03), mat('#7a5232'), x, -0.58, 0.37);
-        b.rotation.x = -0.35;
-        testa.add(b);
+      if (uccello) {
+        z.position.set(0, -0.02, -0.33);
+        sulBusto(z, 0.9);
+      } else {
+        // sulla schiena: il "sopra" dello zaino guarda verso la testa
+        z.position.set(0, 0.05, -0.33);
+        sulBusto(z, 1.05);
       }
       break;
     }
-    case 'nastro sulla coda': {
+    case 'nastro sulla codaM': {
       const f = fiocco('#4a8ad8');
-      if (coda) {
-        f.scale.setScalar(1.3);
-        f.position.set(0, 0.12, -0.3);
-        coda.add(f);
+      if (codaM) {
+        const pt = (codaM.userData.punta as THREE.Vector3 | undefined) ?? new THREE.Vector3();
+        f.scale.setScalar(1.1);
+        f.position.copy(pt).multiplyScalar(0.6);
+        codaM.add(f);
       } else {
         f.position.set(t.lato * 0.24, 0.36, 0.12);
         testa.add(f);
@@ -1090,7 +1325,7 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
     }
     case 'pancia a pois':
       for (const [x, y] of [[-0.09, 0.08], [0.08, 0.12], [0.0, -0.02], [-0.07, -0.12], [0.1, -0.08]]) {
-        const d = mesh(geo.palla(0.035, 8), mat(varia(p.pancia, 0, -0.14), { rim: 0 }), x, y, 0.225);
+        const d = mesh(geo.palla(0.035, 8), mat(varia(p.pancia, 0, -0.14), { rim: 0 }), x, y, 0.18);
         d.scale.z = 0.4;
         d.userData.senzaContorno = true;
         pancia.add(d);
@@ -1151,14 +1386,9 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
   gruppo.userData.divisa = divisa;
 
   contorno(corpo);
-  gruppo.userData.taglia = t.taglia;
-  const m: ModelloAnimale = { gruppo, corpo, busto, pancia, testa, zampe, coda, occhi, accessorio: null, mestiere: null };
-  // posizioni "a quattro zampe" da cui partire per la posa in piedi
-  busto.userData.base = { y: busto.position.y, sy: busto.scale.y };
-  pancia.userData.base = { y: pancia.position.y, sy: pancia.scale.y, z: pancia.position.z };
-  testa.userData.base = { y: testa.position.y, z: testa.position.z };
-  zampe.forEach((z) => (z.userData.base = z.position.clone()));
-  if (coda) coda.userData.base = coda.position.clone();
+  gruppo.userData.taglia = t.taglia * F.taglia;
+  const m: ModelloAnimale = { gruppo, corpo, busto, pancia, testa, zampe, coda: coda as THREE.Object3D | null, occhi, accessorio: null, mestiere: null,
+    ossa: { tronco, spalle, perno, alza: F.alza } };
   posa(m, 0);
   aggiornaMestiere(m, a.mestiere);
   gruppo.userData.id = a.id;
@@ -1196,32 +1426,24 @@ function vesti(a: Animale, at: Omit<Attacchi, 'testaVera'>, divisa: boolean) {
 }
 
 /**
- * Posa tra "a quattro zampe" (e = 0, cucciolo) e "in piedi su due zampe" (e = 1, adulto):
- * il corpo si allunga in verticale, le zampe davanti diventano braccia ai lati, quelle dietro vanno sotto.
+ * Posa tra "a quattro zampe" (e = 0, come un animale vero) e "in piedi sulle zampe dietro" (e = 1, per lavorare):
+ * il tronco gira sulle anche, le zampe davanti diventano braccia che pendono giù, la testa resta dritta.
  */
 export function posa(m: ModelloAnimale, e: number) {
-  const b = m.busto.userData.base, p = m.pancia.userData.base, t = m.testa.userData.base;
-  m.busto.position.y = b.y + e * 0.16;
-  m.busto.scale.y = b.sy * (1 + e * 0.38);
-  m.busto.position.z = -e * 0.02;
-  m.pancia.position.y = p.y + e * 0.16;
-  m.pancia.position.z = p.z + e * 0.06;
-  m.pancia.scale.y = p.sy * (1 + e * 0.4);
-  m.testa.position.y = t.y + e * 0.3;
-  m.testa.position.z = t.z - e * 0.04;
-  m.zampe.forEach((z, i) => {
-    const base = z.userData.base as THREE.Vector3;
-    const davanti = i < 2;
-    const lato = Math.sign(base.x);
-    const inPiedi = davanti ? new THREE.Vector3(lato * 0.3, 0.62, 0.06) : new THREE.Vector3(lato * 0.13, base.y, 0.0);
-    z.position.lerpVectors(base, inPiedi, e);
-    // le braccia si aprono un po' di lato
-    z.rotation.z = davanti ? -lato * 0.35 * e : 0;
+  const { tronco, spalle, perno, alza } = m.ossa;
+  const a = e * alza;
+  tronco.rotation.x = (tronco.userData.inclina as number) * (1 - e) - a;
+  spalle.forEach((s) => {
+    s.rotation.x = a;
+    s.rotation.z = -Math.sign(s.position.x) * 0.25 * e;
   });
-  if (m.coda) {
-    const c = m.coda.userData.base as THREE.Vector3;
-    m.coda.position.set(c.x, c.y - e * 0.1, c.z + e * 0.08);
-  }
+  perno.rotation.x = (perno.userData.base as number) + a;
+}
+
+/** Quanto oscilla una zampa camminando: le zampe lunghe (cavallo, daino) fanno passi più stretti, se no sembrano forbici. */
+export function ampiezzaPasso(m: ModelloAnimale): number {
+  const l = (m.zampe[2]?.userData.lunghezza as number | undefined) ?? 0.25;
+  return THREE.MathUtils.clamp(0.3 / l, 0.32, 1);
 }
 
 /**
@@ -1236,7 +1458,9 @@ export function aggiornaMestiere(m: ModelloAnimale, mestiere: string | null) {
   const id = defMestiere(mestiere)?.inMano;
   if (!id) return;
   const g = contorno(creaAttrezzoInMano(id));
-  g.position.set(0, -0.12, 0.02);
+  // in fondo alla zampa davanti (la "mano")
+  const lung = (m.zampe[0].userData.lunghezza as number | undefined) ?? 0.2;
+  g.position.set(0, -lung * 0.85, 0.02);
   m.zampe[0].add(g);
   // si tiene in mano solo per lavorare (il nome "grembiule" è rimasto da quando era un grembiule)
   g.userData.grembiule = true;
