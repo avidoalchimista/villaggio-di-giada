@@ -29,6 +29,21 @@ export function mat(colore: string, extra: Parameters<typeof materiale>[0] = {})
   return m;
 }
 
+/**
+ * Le finestre (vetro azzurro con luce calda dentro): di sera si accendono, di giorno riflettono il cielo.
+ * notte: 0 = pieno giorno, 1 = notte fonda.
+ */
+export function accendiFinestre(notte: number) {
+  for (const [k, m] of cache) {
+    if (!k.startsWith('#9fd3f0') || !k.includes('#ffd27a')) continue;
+    m.userData.base ??= m.emissiveIntensity;
+    const sera = Math.max(0, Math.min(1, (notte - 0.25) / 0.5));
+    m.emissiveIntensity = m.userData.base + sera * 1.6;
+    m.color.set('#9fd3f0').lerp(FINESTRA_ACCESA, sera * 0.8);
+  }
+}
+const FINESTRA_ACCESA = new THREE.Color('#ffe0a0');
+
 /** Pelo dipinto: il colore base con sfumature più chiare e più scure. */
 const cachePelo = new Map<string, THREE.MeshToonMaterial>();
 function pelo(colore: string) {

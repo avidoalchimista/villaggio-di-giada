@@ -86,7 +86,7 @@ void main() {
     vec3 bianco = mix(vec3(1.0, 0.99, 0.96), uSoleCol, 0.25);
     vec3 pancia = mix(uOrizzonte, uZenit, 0.35) * 0.95;
     vec3 colNuvola = mix(bianco, pancia, ombra * 0.55);
-    colNuvola = mix(colNuvola, colNuvola * vec3(0.42, 0.45, 0.62), uNotte * 0.85);
+    colNuvola = mix(colNuvola, uZenit * 1.6 + vec3(0.03, 0.03, 0.05), uNotte);
     colNuvola = mix(colNuvola, vec3(0.55, 0.58, 0.63) * (1.0 - uNotte * 0.6), uNuvoleScure);
     col = mix(col, colNuvola, nuvola * 0.92);
   }
