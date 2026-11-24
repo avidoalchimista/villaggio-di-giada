@@ -1,5 +1,7 @@
 // La radura del villaggio in 3D. Gli animali girano liberi, dormono, festeggiano.
 // Il villaggio si allarga quando arrivano nuovi abitanti e nascono nuovi mestieri.
+import { RisoluzioneAdattiva, preparaAnisotropia } from './qualita';
+import { Cielo } from './cielo';
 import * as THREE from 'three';
 import { hash } from '../lib/caso';
 import { COLORE_VIRTU } from '../lib/etichette';
@@ -15,9 +17,9 @@ import {
   creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, ampiezzaPasso, creaCastagno, creaCastagna, creaCanna,
   animaLaghetto, puntoLago, fuoriDalLago, SAGOMA_CASA, creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
-  creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto,
+  creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto, accendiFinestre,
 } from './modelli';
-import { CURVA, materiale, materialeTerreno, spriteTesto } from './ps1';
+import { CURVA, NEVE, materiale, materialeTerreno, spriteTesto } from './ps1';
 import type { Meteo } from '../lib/meteo';
 import { cappellinoDiFesta, Festa, POSTO_TORTA } from './festa';
 import { Pescata } from './pesca3d';
@@ -226,6 +228,8 @@ export function postiCase(n: number, raggio: number): [number, number][] {
 
 export class Scena {
   private renderer: THREE.WebGLRenderer;
+  private qualita: RisoluzioneAdattiva;
+  private cielo = new Cielo();
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
   private sole = new THREE.DirectionalLight('#fff1d6', 2.2);
@@ -265,6 +269,8 @@ export class Scena {
   private conRichiesta: string | null = null;
   private precipitazioni!: THREE.Points;
   private meteo: Meteo = 'sole';
+  private neve = 0; // quanta neve si è posata (0-1)
+  private meteoDato = false;
   private fulmine = 0;
   private pale: THREE.Group | null = null;
   private raggio = 0;
@@ -338,13 +344,15 @@ export class Scena {
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // risoluzione che si adatta: nitida quando si può, mai a scatti
+    this.qualita = new RisoluzioneAdattiva(this.renderer);
+    preparaAnisotropia(this.renderer);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     // niente tone mapping: così nebbia e cielo hanno esattamente lo stesso colore (prima gli alberi lontani sembravano fantasmi)
     this.renderer.toneMapping = THREE.NoToneMapping;
 
     this.scene.fog = new THREE.Fog('#a9cfe4', 60, 80);
-    this.scene.add(this.ambiente, this.sole);
+    this.scene.add(this.ambiente, this.sole, this.cielo.mesh);
     this.sole.position.set(6, 12, 8);
 
     this.costruisciFissi();
@@ -483,6 +491,9 @@ export class Scena {
 
   /** Cambia il tempo che fa: lo chiama la schermata ogni volta che serve. */
   impostaMeteo(m: Meteo) {
+    // entrando nel villaggio mentre nevica, la neve c'è già; poi si posa e si scioglie piano
+    if (!this.meteoDato) this.neve = m === 'neve' ? 1 : 0;
+    this.meteoDato = true;
     if (m === this.meteo) return;
     this.meteo = m;
     const p = this.precipitazioni.material as THREE.PointsMaterial;
@@ -1953,19 +1964,24 @@ export class Scena {
     (this.scene.fog as THREE.Fog).color = cielo;
     // la nebbia non copre mai il villaggio: sta solo oltre il bosco, al confine (vedi orizzonte());
     // col tempo brutto arriva un po' più vicina, ma le case si vedono sempre
+    this.cielo.aggiorna(h, cielo, giorno, Math.max(0, tramonto), coperto, this.meteo === 'pioggia' || this.meteo === 'temporale');
     this.nebbiaMeteo = this.meteo === 'nebbia' ? 0.8 : this.meteo === 'pioggia' || this.meteo === 'temporale' || this.meteo === 'neve' ? 0.92 : 1;
     this.sole.intensity *= 1 - coperto * 0.7;
     this.ambiente.intensity *= 1 - coperto * 0.15;
     const notte = 1 - giorno;
     this.buio = notte;
     for (const l of this.lanterne) (l.material as THREE.MeshToonMaterial).emissiveIntensity = 0.25 + notte * 2.2;
+    accendiFinestre(notte);
     (this.lucciole.material as THREE.PointsMaterial).opacity = Math.max(0, notte - 0.3);
   }
 
   private ciclo = () => {
     this.raf = requestAnimationFrame(this.ciclo);
-    const dt = Math.min(0.05, this.orologio.getDelta());
+    const dtVero = this.orologio.getDelta();
+    this.qualita.passo(dtVero);
+    const dt = Math.min(0.05, dtVero);
     const t = this.orologio.elapsedTime;
+    this.cielo.passo(t);
 
     // telecamera da avventura: guarda un punto della radura che si sposta col dito, bassa (circa 35°)
     this.raggioMostrato += (this.raggio - this.raggioMostrato) * Math.min(1, dt * 1.5);
@@ -2031,6 +2047,7 @@ export class Scena {
     this.camera.position.copy(this.posCam);
     this.camera.lookAt(this.guardaCam);
     this.orizzonte();
+    this.cielo.inquadra(this.camera, CURVA.valore);
     if (cin) this.liberaVista(cin.oggetto);
     else if (this.nascostiCine.size) this.rimettiNascosti();
 
@@ -2175,7 +2192,10 @@ export class Scena {
       return true;
     });
 
+    this.neve += ((this.meteo === 'neve' ? 1 : 0) - this.neve) * Math.min(1, dt * (this.meteo === 'neve' ? 0.05 : 0.02));
+    NEVE.valore = this.neve < 0.01 ? 0 : this.neve;
     this.renderer.render(this.scene, this.camera);
+    NEVE.valore = 0;
   };
 
   private muovi(ab: Abitante, dt: number, t: number) {

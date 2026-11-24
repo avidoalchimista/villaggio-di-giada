@@ -29,6 +29,21 @@ export function mat(colore: string, extra: Parameters<typeof materiale>[0] = {})
   return m;
 }
 
+/**
+ * Le finestre (vetro azzurro con luce calda dentro): di sera si accendono, di giorno riflettono il cielo.
+ * notte: 0 = pieno giorno, 1 = notte fonda.
+ */
+export function accendiFinestre(notte: number) {
+  for (const [k, m] of cache) {
+    if (!k.startsWith('#9fd3f0') || !k.includes('#ffd27a')) continue;
+    m.userData.base ??= m.emissiveIntensity;
+    const sera = Math.max(0, Math.min(1, (notte - 0.25) / 0.5));
+    m.emissiveIntensity = m.userData.base + sera * 1.6;
+    m.color.set('#9fd3f0').lerp(FINESTRA_ACCESA, sera * 0.8);
+  }
+}
+const FINESTRA_ACCESA = new THREE.Color('#ffe0a0');
+
 /** Pelo dipinto: il colore base con sfumature più chiare e più scure. */
 const cachePelo = new Map<string, THREE.MeshToonMaterial>();
 function pelo(colore: string) {
@@ -76,6 +91,44 @@ export function mesh(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z
   const o = new THREE.Mesh(g, m);
   o.position.set(x, y, z);
   return o;
+}
+
+/**
+ * Unisce i pezzi fermi di un modello che hanno lo stesso materiale (le palle della chioma, i petali,
+ * i fili d'erba...): si vedono identici, ma il telefono li disegna in un colpo solo invece che uno per uno.
+ * Va chiamato prima del contorno. I pezzi con un nome o con figli restano come sono.
+ */
+export function unisciPezzi<T extends THREE.Object3D>(g: T): T {
+  const gruppi = new Map<string, { m: THREE.Material; senza: boolean; pezzi: THREE.Mesh[] }>();
+  for (const c of g.children) {
+    if (!(c instanceof THREE.Mesh) || c.children.length || c.name || Array.isArray(c.material)) continue;
+    if (Object.keys(c.userData).some((k) => k !== 'senzaContorno')) continue; // pezzi che si muovono o servono a qualcosa
+    if (c.material instanceof THREE.MeshBasicMaterial) continue; // ombre e simili
+    const senza = !!c.userData.senzaContorno;
+    const k = c.material.uuid + (senza ? ':s' : '');
+    let v = gruppi.get(k);
+    if (!v) gruppi.set(k, (v = { m: c.material, senza, pezzi: [] }));
+    v.pezzi.push(c);
+  }
+  for (const { m, senza, pezzi } of gruppi.values()) {
+    if (pezzi.length < 2) continue;
+    const indicizzate = pezzi.every((c) => c.geometry.index);
+    const geos = pezzi.map((c) => {
+      c.updateMatrix();
+      const gg = indicizzate ? c.geometry.clone() : c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
+      return gg.applyMatrix4(c.matrix);
+    });
+    const nomi = Object.keys(geos[0].attributes);
+    if (!geos.every((gg) => Object.keys(gg.attributes).length === nomi.length && nomi.every((n) => gg.attributes[n]))) continue;
+    const unita = mergeGeometries(geos, false);
+    geos.forEach((gg) => gg.dispose());
+    if (!unita) continue;
+    for (const c of pezzi) g.remove(c);
+    const u = new THREE.Mesh(unita, m);
+    if (senza) u.userData.senzaContorno = true;
+    g.add(u);
+  }
+  return g;
 }
 
 // ---------- animali ----------
@@ -1585,6 +1638,7 @@ export function creaAlbero(scala = 1, tinta = 0, conContorno = true): THREE.Grou
   // chioma a nuvola: tante palle morbide
   for (const [x, y, z, r] of [[0, 1.55, 0, 0.8], [0.45, 1.35, 0.1, 0.55], [-0.45, 1.4, -0.05, 0.58], [0.1, 2.05, -0.1, 0.6], [-0.15, 1.35, 0.42, 0.5]])
     g.add(mesh(geo.palla(r, 12), chioma(tinta), x, y, z));
+  unisciPezzi(g);
   g.add(ombra(0.9));
   g.scale.setScalar(scala);
   return conContorno ? contorno(g) : g;
@@ -1594,6 +1648,7 @@ export function creaPino(scala = 1, conContorno = true): THREE.Group {
   const g = new THREE.Group();
   g.add(mesh(geo.cil(0.12, 0.16, 0.6, 8), corteccia(), 0, 0.3, 0));
   for (const [y, r, h] of [[0.9, 0.85, 1.1], [1.5, 0.65, 0.95], [2.0, 0.42, 0.8]]) g.add(mesh(geo.cono(r, h, 10), mat('#3d7550', { rim: 0.2 }), 0, y, 0));
+  unisciPezzi(g);
   g.add(ombra(0.8));
   g.scale.setScalar(scala);
   return conContorno ? contorno(g) : g;
@@ -1608,7 +1663,7 @@ export function creaFiore(colore: string): THREE.Group {
     g.add(p);
   }
   g.add(mesh(geo.palla(0.04, 8), mat('#ffd34d', { rim: 0 }), 0, 0.29, 0));
-  return g;
+  return unisciPezzi(g);
 }
 
 // ---------- castagno e castagne ----------
@@ -1655,6 +1710,7 @@ export function creaCespuglio(scala = 1, tinta = 0): THREE.Group {
     bacca.userData.senzaContorno = true;
     g.add(bacca);
   }
+  unisciPezzi(g);
   g.add(ombra(0.6));
   g.scale.setScalar(scala);
   return g;
@@ -1671,6 +1727,7 @@ export function creaFungo(scala = 1): THREE.Group {
     p.userData.senzaContorno = true;
     g.add(p);
   }
+  unisciPezzi(g);
   g.scale.setScalar(scala);
   return g;
 }
@@ -1701,6 +1758,7 @@ export function creaCiuffo(scala = 1): THREE.Group {
     filo.rotation.set(Math.sin(i) * 0.3, 0, Math.cos(i * 1.7) * 0.3);
     g.add(filo);
   }
+  unisciPezzi(g);
   g.scale.setScalar(scala);
   return g;
 }

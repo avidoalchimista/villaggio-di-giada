@@ -820,7 +820,8 @@
 
 <style>
   .gioco { user-select: none; -webkit-user-select: none; position: fixed; inset: 0; max-width: 560px; margin: 0 auto; overflow: hidden; background: #bfe3f2; }
-  .mondo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  /* il villaggio riempie tutto lo schermo (anche sul computer largo); bottoni e fumetti restano nella colonna al centro */
+  .mondo { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
   .sotto-acquario { position: absolute; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 5; }
   .errore { position: absolute; top: 40%; left: 16px; right: 16px; text-align: center; background: var(--panna); padding: 16px; border-radius: 18px; }
   .hud-alto { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; pointer-events: none; }

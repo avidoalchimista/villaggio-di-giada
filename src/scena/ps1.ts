@@ -5,8 +5,11 @@
 // - mondo curvo: il terreno scende con la distanza, così si vedono prato e cielo insieme
 // - contorni scuri morbidi (guscio rovesciato) per l'effetto illustrazione
 import * as THREE from 'three';
+import { ANISOTROPIA } from './qualita';
 
 export const CURVA = { valore: 0.0042 };
+/** Quanta neve c'è sul villaggio (0-1): la scena la mette solo mentre disegna il villaggio, così dentro casa non nevica. */
+export const NEVE = { valore: 0 };
 
 let gradiente: THREE.DataTexture | null = null;
 function gradientMap(): THREE.DataTexture {
@@ -44,8 +47,20 @@ export function materiale(opz: OpzMateriale = {}): THREE.MeshToonMaterial {
   m.onBeforeCompile = (shader) => {
     applicaCurva(shader);
     shader.uniforms.uRim = { value: rim };
+    shader.uniforms.uNeve = { get value() { return NEVE.valore; } } as THREE.IUniform;
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uRim;')
+      .replace('#include <common>', '#include <common>\nuniform float uRim;\nuniform float uNeve;')
+      // la neve si posa su quello che guarda in su (tetti, chiome, sassi); non sull'acqua né sulle luci
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        if (uNeve > 0.001) {
+          vec3 nMondo = inverseTransformDirection(normal, viewMatrix);
+          float caldo = max(max(emissive.r, emissive.g), emissive.b);
+          float coperta = uNeve * smoothstep(0.68, 0.8, nMondo.y) * (1.0 - smoothstep(0.02, 0.12, caldo));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 0.98), coperta);
+        }`,
+      )
       // il bordo di luce va aggiunto PRIMA della nebbia, altrimenti gli alberi lontani sembrano fantasmi
       .replace(
         '#include <fog_fragment>',
@@ -92,7 +107,7 @@ export function texture(lato: number, disegna: (c: CanvasRenderingContext2D, lat
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(ripeti, ripeti);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = Math.min(4, ANISOTROPIA.valore);
   return t;
 }
 
@@ -206,7 +221,7 @@ function texDaFunzione(lato: number, f: (x: number, y: number, i: number) => [nu
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.generateMipmaps = true;
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
+  t.anisotropy = ANISOTROPIA.valore;
   t.needsUpdate = true;
   return t;
 }
@@ -280,6 +295,7 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
   const uniform = {
     tErba: { value: erba }, tTerra: { value: terra }, tMacchie: { value: macchie },
     uConsumato: { value: 2.2 }, // raggio della zona calpestata al centro
+    uNeve: { get value() { return NEVE.valore; } },
     uSentiero: { value: 0 }, // 1 quando c'è il sentiero di base (anello + viale)
     // sentiero disegnato da Giada: una maschera 128x128 (celle da mezzo metro), un canale per materiale
     tSentiero: { value: mascheraSentiero() },
@@ -298,7 +314,7 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
         '#include <common>',
         `#include <common>
         uniform sampler2D tErba; uniform sampler2D tTerra; uniform sampler2D tMacchie;
-        uniform float uConsumato; uniform float uSentiero;
+        uniform float uConsumato; uniform float uSentiero; uniform float uNeve;
         uniform sampler2D tSentiero; uniform sampler2D tSassi; uniform sampler2D tMattoni;
         varying vec2 vMondo; varying float vAlt;`,
       )
@@ -339,6 +355,13 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
         vec3 fango = mix(terraCol * 1.05, vec3(0.86, 0.78, 0.58), 0.35) * mix(1.0, 0.75, smoothstep(-0.12, -0.5, vAlt));
         suolo = mix(suolo, fango, buca);
         suolo *= 1.0 + clamp(vAlt, 0.0, 2.0) * 0.08;
+        // neve: prima a chiazze, poi copre tutto (sulle buche d'acqua resta meno)
+        if (uNeve > 0.001) {
+          float chiazzaNeve = texture2D(tMacchie, vMondo * 0.09 + 0.3).r;
+          float cop = smoothstep(0.0, 0.25, uNeve * 1.25 - (1.0 - chiazzaNeve) * 0.9) * (1.0 - buca * 0.6);
+          vec3 neveCol = vec3(0.86, 0.9, 0.96) * (0.93 + rumore * 0.1);
+          suolo = mix(suolo, neveCol, cop);
+        }
         diffuseColor.rgb *= suolo;
         `,
       );
