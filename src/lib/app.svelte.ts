@@ -13,6 +13,7 @@ import { doveSiamo } from './telefono';
 import { prendiPesce } from './pesca';
 import { compraPesce, mettiInVasca, riempiAllInizio } from './acquario';
 import { trovaSentiero } from './biomi';
+import { fai as faiEscursione, type Giornata } from './escursioni';
 import { migliora, ritiraCassa } from './migliorie';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
@@ -171,6 +172,21 @@ export async function costruisciQui(id: string): Promise<Evento | null> {
   if (ev && id === 'acquario') riempiAllInizio(app.stato, dataDiOggi());
   if (ev) await salvaStato();
   return ev;
+}
+
+/** Giada è tornata da un'escursione con il suo animale del cuore. */
+export async function escursioneFatta(voce: string, luogo: string, animale: string, giornata: Giornata) {
+  if (!app.stato) return null;
+  const e = faiEscursione(app.stato, voce, luogo, animale, giornata, dataDiOggi());
+  if (e) await salvaStato();
+  return e;
+}
+
+/** Sceglie l'animale del cuore (quello che parte in escursione). */
+export async function scegliCompagno(id: string) {
+  if (!app.stato) return;
+  app.stato.compagno = id;
+  await salvaStato();
 }
 
 /** Compra un pesce da un villaggio lontano per l'acquario. */
