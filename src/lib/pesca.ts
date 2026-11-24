@@ -12,7 +12,7 @@ export interface DefPesce {
   colore: string; // corpo
   pancia: string;
   pinne: string;
-  forma: 'lungo' | 'tondo' | 'normale' | 'serpente' | 'cosa';
+  forma: 'lungo' | 'tondo' | 'normale' | 'serpente' | 'cosa' | 'disco' | 'cavalluccio' | 'medusa' | 'stella' | 'gambero' | 'tartaruga'; // (gli ultimi solo nell'acquario)
   cm: [number, number]; // da … a
   raro: number; // 1 comune … 5 rarissimo
   quando?: Momento[]; // se c'è solo in certi momenti

@@ -598,7 +598,7 @@ export function testoRichiesta(s: StatoGioco, r: Richiesta): string {
 }
 
 /** Eventi che contano davvero per vedere come si sviluppa il villaggio (niente castagne giornaliere). */
-const EVENTI_IMPORTANTI: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita', 'castoro'];
+const EVENTI_IMPORTANTI: Evento['tipo'][] = ['uovo', 'schiusa', 'crescita', 'mestiere', 'edificio', 'storia', 'abilita', 'castoro', 'sentiero'];
 
 /**
  * Solo per la modalità prova: fa passare `giorni` giorni dopo `da` come se Giada scrivesse
