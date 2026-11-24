@@ -17,6 +17,7 @@ import {
 } from './modelli';
 import { CURVA, materiale, materialeTerreno, spriteTesto } from './ps1';
 import type { Meteo } from '../lib/meteo';
+import { cappellinoDiFesta, Festa, POSTO_TORTA } from './festa';
 
 export type Bersaglio =
   | { tipo: 'animale'; id: string }
@@ -239,6 +240,9 @@ export class Scena {
   } | null = null;
   private stelline: { o: THREE.Sprite; vita: number }[] = [];
   velocita = 1; // solo per le prove: accelera la schiusa
+  // la festa di compleanno di Giada (vedi festa.ts): addobbi, torta, cappellini, fuochi
+  private festa: Festa | null = null;
+  private buio = 0;
 
   // ---------- arredo ----------
   private castagno!: THREE.Group;
@@ -970,6 +974,110 @@ export class Scena {
     return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
   }
 
+  // ---------- festa di compleanno ----------
+
+  /** Addobba il villaggio per il compleanno di Giada (o toglie gli addobbi). */
+  impostaFesta(on: boolean, candeleSpente = false) {
+    if (on && !this.festa) {
+      this.festa = new Festa(this.scene, this.raggio || 12);
+      if (candeleSpente) this.festa.spegni();
+    }
+    if (!on && this.festa) {
+      this.festa.distruggi();
+      this.festa = null;
+      for (const ab of this.abitanti.values()) {
+        ab.m.testa.getObjectByName('cappellinoFesta')?.removeFromParent();
+        ab.m.testa.userData.festa = false;
+      }
+    }
+  }
+
+  /** Tutti gli animali svegli vanno intorno alla tavola (o tornano alle loro cose). */
+  radunaFesta(on: boolean) {
+    if (!this.festa) return;
+    this.festa.raduno = on;
+    if (on) {
+      const ids = [...this.abitanti.values()].filter((ab) => !ab.dati.addormentato).map((ab) => ab.dati.id);
+      this.festa.sistemaInvitati(ids);
+      for (const ab of this.abitanti.values()) {
+        if (ab.attivita) this.fineAttivita(ab);
+        if (ab.amico) { const b = this.abitanti.get(ab.amico); if (b) b.amico = null; ab.amico = null; }
+        ab.pausa = Math.random() * 0.5;
+      }
+    } else for (const ab of this.abitanti.values()) ab.pausa = Math.random() * 2;
+  }
+
+  /** Giada soffia sulle candeline: si spengono, partono i fuochi, tutti saltano. */
+  soffiaCandeline() {
+    if (!this.festa) return;
+    this.festa.soffia();
+    this.coriandoli(POSTO_TORTA.clone().setY(1.6), ['#ff6b8a', '#ffd166', '#7ccf6a', '#8fd3ff', '#c39bff', '#ffffff']);
+    this.coriandoli(POSTO_TORTA.clone().setY(1.2), ['#ff6b8a', '#ffd166', '#ffffff']);
+    this.festeggia();
+    this.vibra([30, 60, 30]);
+  }
+
+  /** Primo piano sulla tavola della festa: da lontano (tutto il villaggio in festa), da vicino (la torta) o verso il cielo (i fuochi). */
+  inquadraFesta(vicino: boolean | 'cielo') {
+    const p = POSTO_TORTA.clone();
+    for (const ab of this.abitanti.values()) if (ab.pausa > 100) ab.pausa = 0; // chi era in primo piano torna al suo posto
+    this.cine = vicino === 'cielo'
+      ? { segui: () => p, dist: 9.5, alt: 1.8, guardaY: 4.2, angolo: 0 } // dal basso, per vedere i fuochi
+      : vicino
+      ? { segui: () => p, dist: 3.4, alt: 1.6, guardaY: 1.1, angolo: 0 }
+      : { segui: () => p, dist: 8.5, alt: 3.6, guardaY: 1.2, angolo: 0 };
+  }
+
+  private mettiCappellino(ab: Abitante) {
+    const testa = ab.m.testa;
+    testa.userData.festa = true;
+    if (ab.dati.fase === 'uovo') return;
+    // in cima alla testa (sopra un eventuale cappello che ha già)
+    testa.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(testa);
+    const cima = new THREE.Vector3((box.min.x + box.max.x) / 2, box.max.y - (box.max.y - box.min.y) * 0.08, (box.min.z + box.max.z) / 2);
+    testa.worldToLocal(cima);
+    const c = cappellinoDiFesta(hash(ab.dati.id));
+    c.position.copy(cima);
+    c.raycast = () => {};
+    c.traverse((o) => (o.raycast = () => {}));
+    testa.add(c);
+  }
+
+  /** Alla festa: va al suo posto intorno alla tavola; arrivato guarda la torta e, dopo le candeline, balla. */
+  private alPostoDiFesta(ab: Abitante, dt: number, t: number): boolean {
+    const posto = this.festa?.postoDi(ab.dati.id);
+    if (!posto) return false;
+    const g = ab.m.gruppo;
+    if (ab.amico) ab.amico = null;
+    if (ab.attivita) this.fineAttivita(ab);
+    if (g.position.distanceTo(posto) > 0.2) {
+      if (ab.meta.distanceTo(posto) > 0.01) ab.meta.copy(posto);
+      ab.pausa = Math.min(ab.pausa, 0);
+      return false; // ci va con il passo di sempre
+    }
+    const verso = Math.atan2(POSTO_TORTA.x - g.position.x, POSTO_TORTA.z - g.position.z);
+    const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
+    g.rotation.y += diff * Math.min(1, dt * 5);
+    ab.m.zampe.forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, 0, dt * 6)));
+    if (this.festa!.balla) {
+      // si balla: saltelli a ritmo, braccia in su, note musicali
+      const k = t * 5 + hash(ab.dati.id);
+      ab.m.corpo.position.y = Math.abs(Math.sin(k)) * 0.14;
+      ab.m.corpo.rotation.z = Math.sin(k * 0.5) * 0.12;
+      if (ab.eretto > 0.5) ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -2.2 + Math.sin(k + i * Math.PI) * 0.5));
+      ab.prossimoBalloon -= dt;
+      if (ab.prossimoBalloon <= 0) {
+        ab.prossimoBalloon = 1.4 + Math.random() * 2;
+        this.fumetto(ab, ['♪', '♫', '♥', '♪'][Math.floor(Math.random() * 4)]);
+      }
+    } else {
+      ab.m.corpo.position.y = Math.sin(t * 2.2 + g.position.x) * 0.012;
+      ab.m.testa.rotation.x = Math.sin(t * 1.5 + g.position.z) * 0.06;
+    }
+    return true;
+  }
+
   // ---------- effetti ----------
 
   festeggia() {
@@ -1371,6 +1479,7 @@ export class Scena {
     this.sole.intensity *= 1 - coperto * 0.7;
     this.ambiente.intensity *= 1 - coperto * 0.15;
     const notte = 1 - giorno;
+    this.buio = notte;
     for (const l of this.lanterne) (l.material as THREE.MeshToonMaterial).emissiveIntensity = 0.25 + notte * 2.2;
     (this.lucciole.material as THREE.PointsMaterial).opacity = Math.max(0, notte - 0.3);
   }
@@ -1449,6 +1558,10 @@ export class Scena {
     if (this.fiamma) {
       this.fiamma.scale.set(1 + Math.sin(t * 13) * 0.08, 1 + Math.sin(t * 9.3) * 0.15, 1 + Math.cos(t * 11) * 0.08);
       (this.fiamma.material as THREE.MeshToonMaterial).emissiveIntensity = 1.4 + Math.sin(t * 17) * 0.3;
+    }
+    if (this.festa) {
+      this.festa.aggiorna(dt, t, this.buio);
+      for (const ab of this.abitanti.values()) if (!ab.m.testa.userData.festa) this.mettiCappellino(ab);
     }
     const lago = this.strutture.get('laghetto');
     if (lago) animaLaghetto(lago, t);
@@ -1544,6 +1657,7 @@ export class Scena {
     if (!!ab.m.gruppo.userData.divisa !== this.vuoleDivisa(ab)) this.rifaiSeServe(ab);
     // ---- la giornata: di notte ognuno torna a casa a dormire (una carezza lo sveglia un po') ----
     ab.sveglio = Math.max(0, ab.sveglio - dt);
+    if (this.festa?.raduno) ab.sveglio = Math.max(ab.sveglio, 2); // alla festa non si dorme
     if (this.momento() === 'notte' && ab.sveglio <= 0) {
       const casa = this.casa(ab);
       if (g.position.distanceTo(casa) < 0.25) {
@@ -1581,6 +1695,9 @@ export class Scena {
     const erettoVoluto = inSella || (alLavoro && !cammina) ? 1 : 0;
     ab.eretto += (erettoVoluto - ab.eretto) * Math.min(1, dt * 3);
     posa(ab.m, ab.eretto);
+
+    // ---- festa di compleanno: tutti intorno alla tavola (tranne chi è in primo piano) ----
+    if (this.festa?.raduno && ab.pausa < 100 && this.alPostoDiFesta(ab, dt, t)) return;
 
     // ---- incontri tra abitanti ----
     if (ab.amico) {
@@ -2419,6 +2536,7 @@ export class Scena {
 
   distruggi() {
     cancelAnimationFrame(this.raf);
+    this.festa?.distruggi();
     this.resizeObs.disconnect();
     this.renderer.dispose();
   }
