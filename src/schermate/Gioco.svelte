@@ -62,11 +62,10 @@
     const m = scena?.momento() ?? 'lavoro';
     dialogo = null;
     pesca = m === 'mattina' || m === 'sera' || m === 'notte' ? m : 'giorno';
-    scena?.sospendi(true);
   }
   function smettiDiPescare() {
     pesca = null;
-    scena?.sospendi(false);
+    scena?.finePesca();
   }
   let tempo = $state<Meteo>('sole');
   // il compleanno di Giada: il villaggio è addobbato (e, se la festa non c'è ancora stata, la si fa appena entra)
@@ -556,7 +555,7 @@
     <Casa abitanti={casa.abitanti} proprietario={casa.proprietario} momento={() => scena?.momento() ?? 'lavoro'} onchiudi={esci} />
   {/if}
   {#if pesca}
-    <Pesca momento={pesca} onchiudi={smettiDiPescare} />
+    <Pesca {scena} momento={pesca} onchiudi={smettiDiPescare} />
   {/if}
   {#if erroreGrafica}
     <div class="errore">Questo telefono non riesce a disegnare il bosco in 3D.</div>
