@@ -104,14 +104,35 @@ describe('crescita', () => {
     }
   });
 
-  it('mai più di sette abitanti', () => {
+  it('ogni virtù ha due specie: il secondo uovo della stessa virtù è di una specie nuova', () => {
+    const s = partita();
+    let d = INIZIO;
+    for (let i = 0; i < 60; i++) {
+      applicaVoce(s, voce(d, { coraggio: 3 }));
+      d = aggiungiGiorni(d, 1);
+    }
+    const specie = s.animali.filter((a) => a.specie === 'tasso' || a.specie === 'cavallo').map((a) => a.specie);
+    expect(specie.slice(0, 2).sort()).toEqual(['cavallo', 'tasso']);
+  });
+
+  it('un villaggio pieno ha tante specie diverse', () => {
+    const s = partita();
+    let d = INIZIO;
+    for (let i = 0; i < 400; i++) {
+      applicaVoce(s, voce(d, { coraggio: 3, curiosita: 3, bellezza: 3, gentilezza: 3, prudenza: 3, equita: 3 }));
+      d = aggiungiGiorni(d, 1);
+    }
+    expect(new Set(s.animali.map((a) => a.specie)).size).toBeGreaterThanOrEqual(10);
+  });
+
+  it('mai più di dodici abitanti', () => {
     const s = partita();
     let d = INIZIO;
     for (let i = 0; i < 400; i++) {
       applicaVoce(s, voce(d, { coraggio: 3, curiosita: 3, bellezza: 3, gentilezza: 3 }));
       d = aggiungiGiorni(d, 1);
     }
-    expect(s.animali.length).toBe(7);
+    expect(s.animali.length).toBe(12);
   });
 });
 

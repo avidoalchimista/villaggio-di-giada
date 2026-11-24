@@ -2,6 +2,7 @@
   // Schermata principale: la radura in 3D. Si tocca un animale, il corvo, il quaderno, le uova, le castagne.
   import { onDestroy, onMount } from 'svelte';
   import Casa from '../componenti/Casa.svelte';
+  import Pesca from '../componenti/Pesca.svelte';
   import Dialogo from '../componenti/Dialogo.svelte';
   import { fraseCarattere } from '../lib/carattere';
   import MenuCostruisci from '../componenti/MenuCostruisci.svelte';
@@ -52,6 +53,18 @@
   }
   function esci() {
     casa = null;
+    scena?.sospendi(false);
+  }
+  // pescare al laghetto
+  let pesca = $state<'mattina' | 'giorno' | 'sera' | 'notte' | null>(null);
+  function vaiAPescare() {
+    const m = scena?.momento() ?? 'lavoro';
+    dialogo = null;
+    pesca = m === 'mattina' || m === 'sera' || m === 'notte' ? m : 'giorno';
+    scena?.sospendi(true);
+  }
+  function smettiDiPescare() {
+    pesca = null;
     scena?.sospendi(false);
   }
   let tempo = $state<Meteo>('sole');
@@ -415,9 +428,10 @@
   }
 
   async function tocco(b: Bersaglio) {
-    if (chiediNome || insegnaA || sp || fs) return;
+    if (chiediNome || insegnaA || sp || fs || pesca) return;
     const n = s.numeroVoci + Math.floor(Date.now() / 1000);
     if (b.tipo === 'quaderno') return vai('diario');
+    if (b.tipo === 'laghetto') return vaiAPescare();
     if (b.tipo === 'aiuola') {
       aiuolaDaAprire = b.id;
       arreda = true;
@@ -528,6 +542,9 @@
   <canvas bind:this={canvas} class="mondo"></canvas>
   {#if casa}
     <Casa abitanti={casa.abitanti} proprietario={casa.proprietario} momento={() => scena?.momento() ?? 'lavoro'} onchiudi={esci} />
+  {/if}
+  {#if pesca}
+    <Pesca momento={pesca} onchiudi={smettiDiPescare} />
   {/if}
   {#if erroreGrafica}
     <div class="errore">Questo telefono non riesce a disegnare il bosco in 3D.</div>

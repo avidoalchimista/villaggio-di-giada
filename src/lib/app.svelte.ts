@@ -10,6 +10,7 @@ import {
 import { GUIDA, type PaginaGuida } from '../dati/guida';
 import { festeggia as festeggiaCompleanno } from './festa';
 import { doveSiamo } from './telefono';
+import { prendiPesce } from './pesca';
 import { migliora, ritiraCassa } from './migliorie';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
@@ -208,6 +209,14 @@ export async function raccogliQui(): Promise<number> {
   const n = raccogliCastagne(app.stato);
   if (n) await salvaStato();
   return n;
+}
+
+/** Giada ha preso un pesce al laghetto. */
+export async function pescaQui(id: string, cm: number) {
+  if (!app.stato) return null;
+  const r = prendiPesce(app.stato, id, cm, dataDiOggi());
+  await salvaStato();
+  return r;
 }
 
 export async function insegnaQui(animale: string, abilita: string): Promise<Evento | null> {

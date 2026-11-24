@@ -24,7 +24,11 @@ export function virtuDi(f: Forza): Virtu {
   throw new Error('forza sconosciuta: ' + f);
 }
 
-export const SPECIE = ['volpe', 'daino', 'tasso', 'riccio', 'scoiattolo', 'lepre'] as const;
+export const SPECIE = [
+  'volpe', 'daino', 'tasso', 'riccio', 'scoiattolo', 'lepre',
+  // la fattoria e gli uccelli (2026-11-23)
+  'cavallo', 'asino', 'mucca', 'maiale', 'uccellino', 'papera',
+] as const;
 export type Specie = (typeof SPECIE)[number];
 
 export const FASI = ['uovo', 'cucciolo', 'giovane', 'adulto', 'maestro'] as const;
@@ -139,6 +143,13 @@ export interface StatoGioco {
   arredo?: Arredo; // come Giada ha sistemato il villaggio (vedi arredo.ts)
   sorprese: Evento[]; // eventi importanti non ancora mostrati in primo piano
   compleanni?: string[]; // giorni in cui il villaggio ha festeggiato il compleanno di Giada (vedi festa.ts)
+  pesca?: Pescato; // i pesci presi da Giada al laghetto (vedi pesca.ts)
+}
+
+export interface Pescato {
+  presi: Record<string, { n: number; record: number }>; // per ogni pesce: quanti e il più grande (cm)
+  giorno: string; // ultimo giorno in cui ha pescato
+  oggi: number; // pesci presi quel giorno (le ghiande arrivano solo per i primi)
 }
 
 export function zeriVirtu(): Record<Virtu, number> {

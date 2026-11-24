@@ -72,7 +72,7 @@ celle.forEach((c, i) => {
 if (modo === 'case') {
   // le case dei mestieri, viste da davanti e un po' dall'alto
   const da = +(q.get('da') ?? 0), quanti = +(q.get('n') ?? 6), colonne = +(q.get('c') ?? 3);
-  const specie = ['volpe', 'daino', 'tasso', 'riccio', 'scoiattolo', 'lepre'];
+  const specie = q.get('s')?.split(',') ?? ['volpe', 'daino', 'tasso', 'riccio', 'scoiattolo', 'lepre'];
   // modo=case&livelli=1: ogni riga è una casa, da sinistra a destra i 4 livelli di miglioria (vedi lib/migliorie.ts)
   const livelli = q.has('livelli');
   const quali = livelli
@@ -80,7 +80,7 @@ if (modo === 'case') {
     : MESTIERI.slice(da, da + quanti).map((m) => ({ m, l: +(q.get('livello') ?? 1) }));
   quali.forEach(({ m, l }, i) => {
     const k = livelli ? Math.floor(i / 4) : i;
-    const casa = creaCasaAnimale(specie[(k + da) % 6] as any, EMOZIONI[(k + da) % 8], 'adulto', m.id, l);
+    const casa = creaCasaAnimale(specie[(k + da) % specie.length] as any, EMOZIONI[(k + da) % 8], 'adulto', q.get('senza') ? null : m.id, l);
     const col = i % colonne, row = Math.floor(i / colonne);
     const passo = +(q.get('passo') ?? 6.6);
     casa.position.set((col - (colonne - 1) / 2) * passo, 0, row * 6.2);
