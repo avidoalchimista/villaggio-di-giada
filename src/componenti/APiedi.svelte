@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icona from './Icona.svelte';
   // Passeggiare nel villaggio con gli occhi di Giada (prima persona).
   // Al computer: W A S D o le frecce per camminare, trascinare col mouse per guardarsi intorno, Maiusc per correre.
   // Al telefono: la levetta a sinistra per camminare, un dito sul prato per guardarsi intorno.
@@ -67,7 +68,7 @@
 </script>
 
 <button class={['interruttore', attivo && 'acceso']} onclick={cambia} aria-label={attivo ? 'Torna alla vista dall\'alto' : 'Cammina nel villaggio'}>
-  <span class="icona">{attivo ? '🦅' : '👣'}</span>
+  <Icona nome={attivo ? 'vola' : 'piedi'} taglia={30} />
   <span class="dida">{attivo ? 'Dall\'alto' : 'A piedi'}</span>
 </button>
 
@@ -95,7 +96,6 @@
     text-shadow: none;
   }
   .interruttore.acceso { background: #2f5d8a; color: #fff; }
-  .icona { font-size: 1.45rem; line-height: 1; }
   .dida { font-size: 0.58rem; font-weight: 900; letter-spacing: 0.02em; margin-top: 1px; }
   .levetta {
     position: absolute; left: 18px; top: calc(46% - 20px); z-index: 4; width: 120px; height: 120px; border-radius: 50%;

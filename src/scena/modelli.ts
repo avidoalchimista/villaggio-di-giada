@@ -1657,7 +1657,9 @@ function chioma(i: number) {
   }
   return cacheChioma.get(k)!;
 }
-export const corteccia = () => mat('#ffffff', { map: texture(64, macchie(['#8a5a36', '#6d4428', '#a06a40'], 1, 11)) });
+// (una sola per tutti: prima ogni albero si dipingeva la sua, uguale, e il telefono le teneva tutte in memoria)
+let _corteccia: THREE.MeshToonMaterial | null = null;
+export const corteccia = () => (_corteccia ??= mat('#ffffff', { map: texture(64, macchie(['#8a5a36', '#6d4428', '#a06a40'], 1, 11)) }));
 
 export function creaAlbero(scala = 1, tinta = 0, conContorno = true): THREE.Group {
   const g = new THREE.Group();

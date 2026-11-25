@@ -12,6 +12,7 @@
   import GuidaIcona from './componenti/GuidaIcona.svelte';
   import ComeSiGioca from './componenti/ComeSiGioca.svelte';
   import { doveSiamo } from './lib/telefono';
+  import Icona, { type NomeIcona } from './componenti/Icona.svelte';
 
   // promemoria piccolo finché il villaggio è aperto nel browser invece che dall'icona
   const dove = doveSiamo();
@@ -29,12 +30,12 @@
   // pallino sulla Storia quando c'è un capitolo ancora da leggere
   let storiaNuova = $derived(!!app.stato?.capitoli.some((id) => STORIA.some((c) => c.id === id) && !app.capitoliLetti.includes(id)));
 
-  const voci: { s: Schermata; nome: string; icona: string }[] = [
-    { s: 'villaggio', nome: 'Villaggio', icona: 'M4 20 L4 11 L12 4 L20 11 L20 20 Z M10 20 L10 14 L14 14 L14 20' },
-    { s: 'diario', nome: 'Diario', icona: 'M6 3 L18 3 L18 21 L6 21 Z M9 8 L15 8 M9 12 L15 12 M9 16 L13 16' },
-    { s: 'storia', nome: 'Storia', icona: 'M3 6 Q8 3 12 6 Q16 3 21 6 L21 19 Q16 16 12 19 Q8 16 3 19 Z M12 6 L12 19' },
-    { s: 'statistiche', nome: 'Percorso', icona: 'M4 20 L4 4 M4 20 L20 20 M7 16 L11 11 L14 13 L19 7' },
-    { s: 'impostazioni', nome: 'Altro', icona: 'M12 8 A4 4 0 1 1 11.99 8 M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12' },
+  const voci: { s: Schermata; nome: string; icona: NomeIcona }[] = [
+    { s: 'villaggio', nome: 'Villaggio', icona: 'villaggio' },
+    { s: 'diario', nome: 'Diario', icona: 'diario' },
+    { s: 'storia', nome: 'Storia', icona: 'storia' },
+    { s: 'statistiche', nome: 'Percorso', icona: 'percorso' },
+    { s: 'impostazioni', nome: 'Altro', icona: 'altro' },
   ];
 </script>
 
@@ -48,8 +49,9 @@
     <GuidaIcona onfatto={chiudiGuidaIcona} />
   </div>
 {:else}
-  {#if app.schermata === 'villaggio'}<Gioco />
-  {:else if app.schermata === 'diario'}<Diario />
+  <!-- il villaggio resta sempre pronto sotto le altre pagine: tornandoci non si ricostruisce da capo -->
+  {#if app.stato}<Gioco attivo={app.schermata === 'villaggio'} />{/if}
+  {#if app.schermata === 'diario'}<Diario />
   {:else if app.schermata === 'animale'}<Animale />
   {:else if app.schermata === 'storia'}<Storia />
   {:else if app.schermata === 'statistiche'}<Statistiche />
@@ -71,7 +73,7 @@
     {#each voci as v}
       <button class:attivo={app.schermata === v.s || (v.s === 'villaggio' && app.schermata === 'animale')} onclick={() => vai(v.s)}>
         {#if v.s === 'storia' && storiaNuova}<span class="avviso" aria-label="capitolo nuovo"></span>{/if}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d={v.icona} /></svg>
+        <Icona nome={v.icona} taglia={28} />
         {v.nome}
       </button>
     {/each}

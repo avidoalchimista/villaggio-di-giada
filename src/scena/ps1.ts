@@ -80,10 +80,11 @@ export function materiale(opz: OpzMateriale = {}): THREE.MeshToonMaterial {
       );
   };
   m.customProgramCacheKey = () => 'toon-rim-' + rim;
+  m.userData.rim = rim; // (serve per unire i pezzi a lotti: vedi lotti.ts)
   return m;
 }
 
-const matContorno = new THREE.MeshBasicMaterial({ color: '#3b2616', side: THREE.BackSide });
+export const matContorno = new THREE.MeshBasicMaterial({ color: '#3b2616', side: THREE.BackSide });
 matContorno.onBeforeCompile = (shader) => {
   shader.uniforms.uCurva = { get value() { return CURVA.valore; } } as THREE.IUniform;
   shader.vertexShader = shader.vertexShader

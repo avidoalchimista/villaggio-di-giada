@@ -2,6 +2,7 @@
   // Schermata principale: la radura in 3D. Si tocca un animale, il corvo, il quaderno, le uova, le castagne.
   import { onDestroy, onMount, untrack } from 'svelte';
   import APiedi from '../componenti/APiedi.svelte';
+  import Icona from '../componenti/Icona.svelte';
   import { chiSei, consiglio, daChePagina, DOMANDE, emozioniCheporto, paginaDi, type Battuta, type Domanda } from '../lib/chiacchiere';
   import { carattereDi, nomeCarattere } from '../lib/carattere';
   import Casa from '../componenti/Casa.svelte';
@@ -38,14 +39,16 @@
   } from '../lib/gioco';
   import { meteo as calcolaMeteo, NOME_METEO, type Meteo } from '../lib/meteo';
   import type { Animale, Evento } from '../lib/tipi';
-  import { Scena, type Bersaglio } from '../scena/scena';
+  import { Scena, type Bersaglio, type DoveNovita } from '../scena/scena';
 
+  // il villaggio resta montato anche quando si guarda un'altra pagina (diario, storia...): lì è solo fermo e nascosto
+  let { attivo = true }: { attivo?: boolean } = $props();
   let canvas: HTMLCanvasElement;
   let scena = $state.raw<Scena | null>(null);
   let s = $derived(app.stato!);
 
-  type Dialogo = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' | 'casa' | 'escursione'; chiave?: string };
-  let dialogo = $state<Dialogo | null>(null);
+  type DialogoAperto = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' | 'casa' | 'escursione'; chiave?: string };
+  let dialogo = $state<DialogoAperto | null>(null);
   let chiediNome = $state<Animale | null>(null);
   let insegnaA = $state<Animale | null>(null);
   let nome = $state('');
@@ -161,6 +164,93 @@
       faccia = id && scena?.parlaCon(id) ? id : null;
     });
   });
+  // ---------- le novità del giorno ----------
+  // Giada ne vedrà poche alla volta: ognuna ha la sua stellina nel villaggio e sta nell'elenco «Novità»
+  // finché non va a vederla (toccandola nell'elenco o toccando la cosa nuova).
+  type Novita = { chiave: string; icona: string; testo: string; dove: DoveNovita | null };
+  const ICONA_NOVITA: Partial<Record<Evento['tipo'], string>> = {
+    uovo: '🥚', schiusa: '🐣', crescita: '🌱', mestiere: '🧰', edificio: '🏛️', storia: '📜', abilita: '⭐', casa: '🏡', castoro: '🦫', sentiero: '🧭', costruzione: '🔨',
+  };
+  let viste = $state<string[]>([]);
+  let novitaAperta = $state(false);
+  leggiMeta<string[]>('novitaViste', []).then((v) => (viste = v));
+  function doveDi(e: Evento): DoveNovita | null {
+    if (e.tipo === 'storia') return { tipo: 'corvo' };
+    if (e.tipo === 'castoro') return { tipo: 'castoro' };
+    if (e.tipo === 'sentiero') return e.luogo ? { tipo: 'sentiero', id: e.luogo } : null;
+    // (alcune novità non dicono di chi sono: si riconosce dal nome con cui comincia la frase)
+    const t = e.testo.toLowerCase();
+    const a = e.animale ? s.animali.find((x) => x.id === e.animale) : s.animali.find((x) => x.fase !== 'uovo' && t.startsWith(nomeAnimale(x).toLowerCase()));
+    if (!a) return null;
+    if (e.tipo === 'edificio') { const ed = s.edifici.find((x) => x.gestore === a.id); return ed ? { tipo: 'edificio', id: ed.tipo } : { tipo: 'animale', id: a.id }; }
+    if (e.tipo === 'casa' || e.tipo === 'costruzione') return { tipo: 'casa', id: a.id };
+    if (e.tipo === 'uovo') return { tipo: 'uovo', id: a.id };
+    return { tipo: 'animale', id: a.id };
+  }
+  let novita = $derived.by((): Novita[] => {
+    const oggi = dataDiOggi();
+    const fuori = new Set(viste);
+    const l: Novita[] = [];
+    for (let i = s.eventi.length - 1; i >= 0 && l.length < 6; i--) {
+      const e = s.eventi[i];
+      if (giorniTra(e.data, oggi) > 1) break; // oggi e ieri
+      const icona = ICONA_NOVITA[e.tipo];
+      const chiave = `${e.data}|${e.tipo}|${e.testo}`;
+      if (!icona || fuori.has(chiave)) continue;
+      l.push({ chiave, icona, testo: e.testo, dove: doveDi(e) });
+    }
+    return l;
+  });
+  async function segnaVista(...chiavi: string[]) {
+    const oggi = dataDiOggi();
+    viste = [...viste.filter((k) => giorniTra(k.slice(0, 10), oggi) <= 3), ...chiavi];
+    await scriviMeta('novitaViste', $state.snapshot(viste));
+  }
+  const stessoPosto = (d: DoveNovita, b: Bersaglio) =>
+    (b.tipo === 'corvo' && d.tipo === 'corvo') || (b.tipo === 'castoro' && d.tipo === 'castoro')
+    || ((b.tipo === 'animale' || b.tipo === 'uovo') && (d.tipo === 'animale' || d.tipo === 'uovo') && d.id === b.id)
+    || (b.tipo === 'bottega' && d.tipo === 'casa' && d.id === b.id)
+    || (b.tipo === 'edificio' && d.tipo === 'edificio' && d.id === b.tipo_edificio)
+    || (b.tipo === 'sentiero' && d.tipo === 'sentiero' && d.id === b.id);
+  function apriNovita(n: Novita) {
+    novitaAperta = false;
+    dialogo = null;
+    if (n.dove && scena?.vaiANovita(n.dove)) inPrimoPiano = 'novita';
+    dialogo = { righe: [{ chi: `${n.icona} Novità`, voce: 'narratore', testo: n.testo }] };
+    segnaVista(n.chiave);
+  }
+  // le stelline nel villaggio (non durante gli spettacoli)
+  $effect(() => {
+    const l = sp || fs || casa || !attivo ? [] : novita.filter((n) => n.dove).map((n) => ({ chiave: n.chiave, dove: n.dove! }));
+    untrack(() => scena?.mostraNovita(l));
+  });
+
+  // ---------- chi parla si vede da vicino (il corvo, il castoro, un animale) ----------
+  let inPrimoPiano: string | null = null;
+  function inquadraChiParla(r: RigaDialogo) {
+    if (!scena || sp || fs || faccia || arreda || casa || pesca || acquario || museo || funghi || luogo || gita || aPiedi) return;
+    if (!dialogo || dialogo.tipo === 'casa' || dialogo.tipo === 'animale') return; // (per la casa nuova si guarda il posto)
+    let chi: string | null = null;
+    if (r.voce === 'corvo') chi = 'corvo';
+    else if (r.chi === 'Castoro') chi = 'castoro';
+    else if (r.voce === 'animale') {
+      const a = s.animali.find((x) => x.fase !== 'uovo' && chiDice(x) === r.chi);
+      if (a) chi = 'a:' + a.id;
+    }
+    if (!chi || chi === inPrimoPiano) return;
+    const ok = chi === 'corvo' ? scena.inquadraCorvo() : chi === 'castoro' ? scena.inquadraCastoro() : scena.inquadra({ tipo: 'animale', id: chi.slice(2) });
+    if (ok) inPrimoPiano = chi;
+  }
+  // finito il fumetto si torna alla vista di sempre
+  $effect(() => {
+    const aperto = !!dialogo && dialogo.tipo !== 'animale';
+    untrack(() => {
+      if (aperto || !inPrimoPiano) return;
+      inPrimoPiano = null;
+      if (!dialogo && !sp && !fs) scena?.fineCinema();
+    });
+  });
+
   function rispondi(a: Animale, battute: Battuta[]) {
     dialogo = {
       righe: battute.map((b) => (b.chi === 'corvo' ? { chi: 'Corvo', voce: 'corvo' as const, testo: b.testo } : { chi: chiDice(a), voce: 'animale' as const, testo: b.testo })),
@@ -193,7 +283,7 @@
   // ---------- primo piano: schiusa e sorprese "mentre eri via" ----------
   type Spettacolo = { passi: Evento[]; i: number; titolo: string; testo: string; pronto: boolean; nome: Animale | null };
   let sp = $state<Spettacolo | null>(null);
-  let poi: Dialogo | null = null; // il dialogo da mostrare quando lo spettacolo è finito
+  let poi: DialogoAperto | null = null; // il dialogo da mostrare quando lo spettacolo è finito
   let dopoDialogo: (() => void) | null = null; // cosa fare quando si chiude il dialogo
   const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const nat = (a: Animale) => `nat${a.sesso === 'f' ? 'a' : 'o'}`;
@@ -337,10 +427,13 @@
   let fs = $state<{ passo: PassoFesta | null; pronto: boolean } | null>(null);
   let avantiFesta: (() => void) | null = null;
   /** Mostra un passo dello spettacolo e aspetta che Giada tocchi il bottone. */
+  let giro = 0; // cambia uscendo dal villaggio: la festa lasciata a metà non va avanti da sola
   function passoFesta(p: PassoFesta, attesa = 900): Promise<void> {
+    const g = giro;
     return new Promise((ok) => {
       fs = { passo: null, pronto: false };
       setTimeout(() => {
+        if (g !== giro) return;
         if (!fs) return ok();
         fs = { passo: p, pronto: true };
         avantiFesta = ok;
@@ -424,6 +517,13 @@
     }
     scena.onTocco = tocco;
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).scena = scena;
+    if (!attivo) scena.sospendi(true);
+  });
+
+  /** Si entra nel villaggio (la prima volta, o tornando dal diario o da un'altra pagina). */
+  function entraNelVillaggio() {
+    if (!scena) return;
+    scena.sospendi(false);
     // chi è nato senza che Giada l'abbia visto resta uovo finché non guarda la schiusa
     const sorprese = sorpreseDaMostrare();
     scena.trattieni(sorprese.filter((e) => e.tipo === 'schiusa').map((e) => e.animale!));
@@ -446,9 +546,27 @@
     setTimeout(controllaRientri, 2500);
 
     // il giorno del compleanno, prima di tutto la festa; poi il resto
-    if (fareFesta) festaDiCompleanno().then(() => accogli(sorprese));
+    const g = giro;
+    if (fareFesta) festaDiCompleanno().then(() => g === giro && accogli(sorprese));
     else accogli(sorprese);
-  });
+  }
+
+  /** Si va su un'altra pagina: il villaggio si ferma e tutto quello che era aperto si chiude (come prima, quando si smontava). */
+  function esciDalVillaggio() {
+    giro += 1;
+    clearInterval(timerMeteo);
+    clearInterval(timerFunghi);
+    sp = null; fs = null; poi = null; dopoDialogo = null; avantiFesta = null;
+    dialogo = null; chiediNome = null; insegnaA = null; menu = false; arreda = false; aiuolaDaAprire = null; casaNuova = null;
+    casa = null; pesca = null; acquario = false; museo = false; funghi = false; luogo = null; gita = null; quadroAperto = null;
+    faccia = null; consiglioAperto = false; aPiedi = false; inPrimoPiano = null; novitaAperta = false;
+    rientriDaDire = [];
+    giaChiesto.clear();
+    if (!scena) return;
+    scena.fineCinema();
+    scena.esciAPiedi();
+    scena.sospendi(true);
+  }
 
   /** Cosa succede appena si entra (quello che si vede in primo piano non si ripete nel fumetto). */
   function accogli(sorprese: Evento[]) {
@@ -456,7 +574,7 @@
     const giaInPrimoPiano = new Set(sorprese.map((e) => e.testo));
     const daDiario = app.codaDialoghi.length > 0;
     const conforto = daDiario ? null : serveConforto();
-    let primo: Dialogo | null = null;
+    let primo: DialogoAperto | null = null;
     if (daDiario) {
       primo = { righe: app.codaDialoghi.filter((r) => !giaInPrimoPiano.has(r.testo)) };
       app.codaDialoghi = [];
@@ -515,10 +633,22 @@
     scena?.distruggi();
   });
 
-  // tiene la scena allineata allo stato del gioco
+  // tiene la scena allineata allo stato del gioco (solo mentre si guarda il villaggio: tornando, prima si
+  // trattengono nell'uovo i nati da far vedere, poi si aggiorna)
+  let dentro = false;
   $effect(() => {
     const snap = JSON.stringify(app.stato);
-    if (scena && snap) scena.aggiorna(JSON.parse(snap));
+    const on = attivo;
+    const sc = scena;
+    untrack(() => {
+      if (!sc || !snap) return;
+      if (!on) {
+        if (dentro) { dentro = false; esciDalVillaggio(); }
+        return;
+      }
+      if (!dentro) { dentro = true; entraNelVillaggio(); }
+      else sc.aggiorna(JSON.parse(snap));
+    });
   });
 
   // chi si costruisce la casa chiede a Giada dove metterla (quando non sta succedendo altro)
@@ -562,6 +692,10 @@
 
   async function tocco(b: Bersaglio) {
     if (chiediNome || insegnaA || sp || fs || pesca || acquario || museo || funghi || luogo || gita) return;
+    // andare a vedere una cosa nuova la toglie dalle novità
+    const vista = novita.filter((n) => n.dove && stessoPosto(n.dove, b)).map((n) => n.chiave);
+    if (vista.length) segnaVista(...vista);
+    novitaAperta = false;
     const n = s.numeroVoci + Math.floor(Date.now() / 1000);
     if (b.tipo === 'quaderno') return vai('diario');
     if (b.tipo === 'laghetto') return vaiAPescare();
@@ -698,8 +832,9 @@
   let dataTesto = $derived(new Date(dataDiOggi() + 'T12:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }));
 </script>
 
-<div class="gioco">
+<div class="gioco" style:display={attivo ? null : 'none'}>
   <canvas bind:this={canvas} class="mondo"></canvas>
+  {#if attivo}
   {#if casa}
     <Casa abitanti={casa.abitanti} proprietario={casa.proprietario} momento={() => scena?.momento() ?? 'lavoro'} onchiudi={esci} />
   {/if}
@@ -795,6 +930,11 @@
     <div class="destra">
       <div class="pillola data">{inFesta ? '🎂' : NOME_METEO[tempo].icona} {dataTesto}</div>
       <div class="pillola castagne">🌰 {s.ghiande ?? 0}</div>
+      {#if novita.length && !menu && !arreda}
+        <button class="pillola novita" class:aperta={novitaAperta} onclick={() => { dialogo = null; novitaAperta = !novitaAperta; }}>
+          <span class="stella"><Icona nome="stella" taglia={18} /></span> {novita.length === 1 ? '1 novità' : `${novita.length} novità`}
+        </button>
+      {/if}
     </div>
   </header>
   {/if}
@@ -825,7 +965,7 @@
       </div>
     {:else if dialogo}
       {#key giroDialogo}
-      <Dialogo righe={dialogo.righe} onfine={chiudiDialogo} onriga={(r) => r.voce === 'corvo' && scena?.faiParlareCorvo(Math.min(4, r.testo.length / 28))}>
+      <Dialogo righe={dialogo.righe} onfine={chiudiDialogo} onriga={(r) => { if (r.voce === 'corvo') scena?.faiParlareCorvo(Math.min(4, r.testo.length / 28)); inquadraChiParla(r); }}>
         {#snippet azioni()}
           {#if dialogo?.tipo === 'animale' && dialogo.animale && consiglioAperto}
             <textarea class="racconto" bind:value={testoConsiglio} rows="3" maxlength="500" placeholder="Scrivi qui cosa ti passa per la testa… (se vuoi)"></textarea>
@@ -862,6 +1002,19 @@
         {/snippet}
       </Dialogo>
       {/key}
+    {:else if novitaAperta && novita.length}
+      <div class="finestra-gioco">
+        <div class="testata">★ OGGI NEL VILLAGGIO</div>
+        <ul>
+          {#each novita as n (n.chiave)}
+            <li><button class="voce novita-voce" onclick={() => apriNovita(n)}><span class="icona-novita">{n.icona}</span><span class="testo-novita">{n.testo}</span><span class="vai">{n.dove ? 'Guarda ›' : 'Leggi ›'}</span></button></li>
+          {/each}
+        </ul>
+        <div class="riga-novita">
+          <button class="tondo grigio" onclick={() => (novitaAperta = false)}>Chiudi</button>
+          {#if novita.length > 1}<button class="tondo grigio" onclick={() => { segnaVista(...novita.map((n) => n.chiave)); novitaAperta = false; }}>Le ho viste</button>{/if}
+        </div>
+      </div>
     {:else if menu}
       <MenuCostruisci
         onchiudi={() => (menu = false)}
@@ -874,20 +1027,31 @@
     {:else if !acquario && !museo && !funghi && !luogo && !gita}
       <div class={['azioni-basso', gitaPossibile && 'affollate']}>
         <button class="bottone-diario" onclick={() => vai('diario')}>
-          <span class="icona">📖</span> Scrivi nel diario
+          <Icona nome="diario" taglia={30} /> Scrivi nel diario
         </button>
-        <button class="bottone-costruisci" onclick={() => (menu = true)} aria-label="Costruisci">
-          🔨<span class="punto" class:visibile={puoCostruire}></span>
+        <button class="tasto" onclick={() => { novitaAperta = false; menu = true; }}>
+          <span class="tondino costruisci"><Icona nome="costruisci" taglia={30} /><span class="punto" class:visibile={puoCostruire}></span></span>
+          <span class="etichetta">Costruisci</span>
         </button>
-        <button class="bottone-costruisci arreda" onclick={() => (arreda = true)} aria-label="Arreda">🪴</button>
-        <button class="bottone-costruisci funghi" onclick={() => { dialogo = null; funghi = true; }} aria-label="Funghi">🍄{#if nelBosco}<span class="fuori">{nelBosco}</span>{/if}<span class="punto" class:visibile={haFunghi && !nelBosco}></span></button>
+        <button class="tasto" onclick={() => { novitaAperta = false; arreda = true; }}>
+          <span class="tondino arreda"><Icona nome="arreda" taglia={30} /></span>
+          <span class="etichetta">Arreda</span>
+        </button>
+        <button class="tasto" onclick={() => { dialogo = null; novitaAperta = false; funghi = true; }}>
+          <span class="tondino funghi"><Icona nome="funghi" taglia={30} />{#if nelBosco}<span class="fuori">{nelBosco}</span>{/if}<span class="punto" class:visibile={haFunghi && !nelBosco}></span></span>
+          <span class="etichetta">Funghi</span>
+        </button>
         {#if gitaPossibile}
-          <button class="bottone-costruisci gita" onclick={apriGita} aria-label="Escursione">🎒<span class="punto visibile"></span></button>
+          <button class="tasto" onclick={apriGita}>
+            <span class="tondino gita"><Icona nome="gita" taglia={30} /><span class="punto visibile"></span></span>
+            <span class="etichetta">Gita</span>
+          </button>
         {/if}
       </div>
       <p class="suggerimento">{aPiedi ? 'Tocca chi vuoi per parlarci · trascina per guardarti intorno' : 'Tocca chi vuoi · 1 dito muove · 2 dita zoom e giro'}</p>
     {/if}
   </div>
+  {/if}
   {/if}
 </div>
 
@@ -911,22 +1075,49 @@
   .sotto { position: absolute; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); }
   .destra { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .castagne { color: #7a4a1a; }
-  .sesso { display: block; font-size: 0.85rem; color: var(--testo-tenue); }
-  .azioni-basso { display: flex; gap: 8px; align-items: center; }
-  .azioni-basso.affollate .bottone-costruisci { width: 52px; height: 52px; font-size: 1.35rem; }
-  .azioni-basso.affollate .bottone-diario { font-size: 1.02rem; padding: 12px 8px; }
-  .bottone-costruisci {
-    position: relative; width: 62px; height: 62px; flex: none; border-radius: 50%; padding: 0; font-size: 1.6rem;
-    background: var(--notte-blu); border: 4px solid var(--legno); box-shadow: 0 6px 0 var(--legno-scuro);
+  .novita {
+    pointer-events: auto; background: #fff4c2; border-color: #c8902a; color: #7a4a1a; text-shadow: none; padding: 5px 13px;
+    animation: cade 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both, chiama 2.2s ease-in-out 0.6s infinite;
   }
-  .punto { position: absolute; top: -2px; right: -2px; width: 18px; height: 18px; border-radius: 50%; background: #ffd166; border: 3px solid var(--legno); transform: scale(0); transition: transform 0.2s; }
+  .novita.aperta { animation: none; background: #ffe08a; }
+  .novita { display: flex; align-items: center; gap: 5px; }
+  .novita .stella { display: inline-block; animation: gira 4s linear infinite; }
+  @keyframes chiama { 0%, 70%, 100% { transform: none; } 78% { transform: scale(1.1) rotate(-3deg); } 86% { transform: scale(1.06) rotate(3deg); } }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  .novita-voce { align-items: center; gap: 10px; text-align: left; }
+  .icona-novita { font-size: 1.4rem; flex: none; }
+  .testo-novita { flex: 1; font-size: 0.92rem; line-height: 1.25; }
+  .vai { flex: none; color: #ffe08a; font-weight: 800; font-size: 0.85rem; }
+  .riga-novita { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
+  .sesso { display: block; font-size: 0.85rem; color: var(--testo-tenue); }
+  .azioni-basso { display: flex; gap: 6px; align-items: flex-end; }
+  /* i tasti: un tondino colorato con l'icona e la scritta sotto (si capisce subito cosa fanno) */
+  .tasto { flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0; background: none; border: none; box-shadow: none; text-shadow: none; width: 60px; }
+  .tondino {
+    position: relative; width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: var(--panna); border: 3px solid var(--legno); box-shadow: 0 4px 0 var(--legno-scuro);
+    transition: transform 0.12s;
+  }
+  .tasto:active .tondino { transform: translateY(3px); box-shadow: 0 1px 0 var(--legno-scuro); }
+  .tondino.costruisci { background: #dce6f6; }
+  .tondino.arreda { background: #dff0d2; }
+  .tondino.funghi { background: #fbe0d8; }
+  .tondino.gita { background: #fbe9c6; }
+  .etichetta {
+    font-size: 0.64rem; font-weight: 900; color: #fff; white-space: nowrap;
+    background: rgba(59, 38, 22, 0.72); border-radius: 999px; padding: 1px 5px;
+  }
+  .azioni-basso.affollate .tasto { width: 54px; }
+  .azioni-basso.affollate .tondino { width: 46px; height: 46px; }
+  .azioni-basso.affollate .bottone-diario { font-size: 0.98rem; padding: 12px 6px; }
+  .punto { position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; background: #ffd166; border: 3px solid var(--legno); transform: scale(0); transition: transform 0.2s; }
   .punto.visibile { transform: scale(1); animation: respira 1.2s infinite; }
   .bottone-diario {
-    flex: 1; font-size: 1.2rem; padding: 14px; border-radius: 999px;
+    flex: 1; min-width: 0; font-size: 1.12rem; padding: 13px 8px; border-radius: 999px; align-self: center; margin-bottom: 18px;
+    display: flex; align-items: center; justify-content: center; gap: 6px; line-height: 1.1;
     background: var(--brace); border: 4px solid var(--legno); box-shadow: 0 6px 0 var(--legno-scuro);
     animation: respira 2.4s ease-in-out infinite;
   }
-  .bottone-diario .icona { font-size: 1.3rem; }
   @keyframes respira { 50% { transform: scale(1.03); } }
   .suggerimento { text-align: center; color: #fff; font-weight: 700; font-size: 0.8rem; margin-top: 10px; text-shadow: 0 1px 2px #0008; }
   .nome-box { animation: entra 0.28s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
@@ -951,9 +1142,6 @@
   .giorni { color: #ffe08a; }
   .vuoto, .aiuto { font-size: 0.85rem; color: #c4cff0; margin: 8px 2px; }
   .chiudi { align-self: center; }
-  .arreda { background: #3f7a4a; }
-  .gita { background: #c8842a; }
-  .funghi { background: #a8483a; }
   .fuori { position: absolute; bottom: -4px; right: -4px; min-width: 20px; height: 20px; border-radius: 999px; background: #3f7a4a; color: #fff; font-size: 0.72rem; font-weight: 900; display: flex; align-items: center; justify-content: center; border: 2px solid var(--legno); }
   /* faccia a faccia con un animale */
   .primo-piano { position: fixed; inset: 0; pointer-events: none; }

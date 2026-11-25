@@ -20,6 +20,7 @@ import {
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto, accendiFinestre,
 } from './modelli';
 import { CURVA, GUSCI, NEVE, materiale, materialeTerreno, spriteTesto } from './ps1';
+import { Lotti, STRATO_LOTTI } from './lotti';
 import type { Meteo } from '../lib/meteo';
 import { cappellinoDiFesta, Festa, POSTO_TORTA } from './festa';
 import { Pescata } from './pesca3d';
@@ -32,6 +33,11 @@ import { SentieriInScena, sulSentiero } from './sentieri3d';
 import { BIOMA, biomiScoperti, type DefBioma } from '../lib/biomi';
 import { Taglio, type CosaTagliata } from './taglio';
 import { improntaDi, piuViciniCapsule, postoNelMondo, puntiCapsula, raggioDi, rettangoloAlSuolo, sovrapposte, spintaFuori, type Capsula, type Impronta } from './spazio';
+
+/** Dove sta una novità del giorno (vedi mostraNovita). */
+export type DoveNovita =
+  | { tipo: 'animale' | 'uovo' | 'casa' | 'edificio' | 'sentiero'; id: string }
+  | { tipo: 'corvo' | 'castoro' };
 
 export type Bersaglio =
   | { tipo: 'animale'; id: string }
@@ -240,6 +246,8 @@ export class Scena {
   private edifici = new Map<string, THREE.Group>();
   private botteghe = new Map<string, THREE.Group>();
   private bosco = new THREE.Group();
+  /** Le cose ferme disegnate a lotti (vedi lotti.ts): molto meno lavoro per il telefono. */
+  private lotti = new Lotti();
   private giaAggiornataSentieri = false;
   private castoro = new CastoroInScena();
   private acquario: AcquarioInScena | null = null;
@@ -374,6 +382,7 @@ export class Scena {
     this.allarga(5.5);
     this.scene.add(this.selvatici);
     this.scene.add(this.fantasmi);
+    this.scene.add(this.lotti.gruppo);
 
     this.resizeObs = new ResizeObserver(() => this.ridimensiona());
     this.resizeObs.observe(canvas);
@@ -1690,6 +1699,7 @@ export class Scena {
     const r = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
+    ray.layers.enable(STRATO_LOTTI);
     ray.setFromCamera(ndc, this.camera);
     const piano = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const p = new THREE.Vector3();
@@ -1750,6 +1760,7 @@ export class Scena {
     const r = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
+    ray.layers.enable(STRATO_LOTTI);
     ray.setFromCamera(ndc, this.camera);
     const lista = [...cose];
     const hit = ray.intersectObjects(lista.map(([, o]) => o), true)[0];
@@ -2003,6 +2014,7 @@ export class Scena {
     const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     // il mondo è curvato nello shader: per il tocco basta un raggio un po' più generoso
     const ray = new THREE.Raycaster();
+    ray.layers.enable(STRATO_LOTTI);
     ray.setFromCamera(ndc, this.camera);
     const candidati: THREE.Object3D[] = [
       this.corvo.gruppo, this.quaderno, this.castagne, this.nido, ...(this.grande ? [this.grande] : []), ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
@@ -2042,6 +2054,40 @@ export class Scena {
    * I contorni scuri delle cose lontane sono più sottili di un puntino: non si vedono, ma costano.
    * Quelli lontani si spengono (vanno su un altro "strato" che la telecamera non guarda) e si riaccendono avvicinandosi.
    */
+  /** Quali cose ferme si disegnano insieme: il bosco e le cose piccole a spicchi, le case ognuna per sé. */
+  private composizioneLotti() {
+    const l = new Map<string, THREE.Object3D[]>();
+    const metti = (k: string, o: THREE.Object3D) => { const v = l.get(k); if (v) v.push(o); else l.set(k, [o]); };
+    const spicchio = (o: THREE.Object3D) => {
+      const a = Math.atan2(o.position.z, o.position.x);
+      return Math.floor(((a + Math.PI) / (Math.PI * 2)) * 12) % 12 + (Math.hypot(o.position.x, o.position.z) > this.raggio + 2.5 ? 12 : 0);
+    };
+    const fuori = new Set<THREE.Object3D>(this.tagli.map((t) => t.bersaglio));
+    const r = this.castoro.alberoRosicchiato;
+    if (r) fuori.add(r);
+    for (const o of this.bosco.children) if (!fuori.has(o)) metti('b' + spicchio(o), o);
+    for (const o of this.selvatici.children) if (!fuori.has(o)) metti('s' + spicchio(o), o);
+    for (const [k, o] of this.oggetti) if (!fuori.has(o)) metti('o' + spicchio(o), o), void k;
+    for (const [k, o] of this.botteghe) metti('c:' + k, o);
+    for (const [k, o] of this.edifici) metti('e:' + k, o);
+    for (const [k, o] of this.strutture) metti('t:' + k, o);
+    for (const [k, o] of this.aiuole) metti('a' + spicchio(o), o), void k;
+    metti('fissi', this.nido);
+    if (this.grande) metti('fissi', this.grande);
+    return l;
+  }
+
+  /** Gli animali (e il corvo, il castoro): i pezzi fermi di ogni parte del corpo si uniscono lì (vedi lotti.ts). */
+  private lottiDentro() {
+    const l = new Map<string, [THREE.Object3D, THREE.Object3D[]]>();
+    for (const r of this.radiciDentro()) this.lotti.lottiDentro(r, l);
+    return l;
+  }
+
+  private radiciDentro() {
+    return [...[...this.abitanti.values()].map((ab) => ab.m.gruppo), this.corvo.gruppo, this.castoro.gruppo];
+  }
+
   private contorniLontani() {
     const h = this.canvas.clientHeight * this.renderer.getPixelRatio();
     const pxPerMetro = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
@@ -2063,6 +2109,14 @@ export class Scena {
       }
       GUSCI[j++] = g;
       g.userData.attesa = 0;
+      if (g.userData.inLotto) continue; // lo disegna il suo lotto (vedi lotti.ts)
+      const lotto = g.userData.lotto as { centro: THREE.Vector3; raggio: number; spazio: THREE.Object3D | null } | undefined;
+      if (lotto) {
+        const c = lotto.spazio ? this.tmpV.copy(lotto.centro).applyMatrix4(lotto.spazio.matrixWorld) : lotto.centro;
+        const sc = lotto.spazio ? Math.hypot(lotto.spazio.matrixWorld.elements[0], lotto.spazio.matrixWorld.elements[1], lotto.spazio.matrixWorld.elements[2]) : 1;
+        g.layers.set(Math.max(0, c.distanceTo(cam) - lotto.raggio * sc) < limite * Math.max(0.3, sc) ? 0 : 1);
+        continue;
+      }
       const d = g.getWorldPosition(this.tmpV).distanceTo(cam);
       const sc = g.parent ? Math.abs(g.parent.matrixWorld.elements[0]) + Math.abs(g.parent.matrixWorld.elements[1]) + Math.abs(g.parent.matrixWorld.elements[2]) : 1;
       g.layers.set(d < limite * Math.max(0.3, sc) ? 0 : 1);
@@ -2298,10 +2352,14 @@ export class Scena {
       this.ambiente.intensity = lampo ? 3 : this.ambiente.intensity;
       if (this.fulmine <= 0) this.luceDelGiorno();
     }
-    const vento = this.meteo === 'vento' ? 1 : this.meteo === 'temporale' || this.meteo === 'pioggia' ? 0.5 : 0.12;
+    // gli alberi ondeggiano quando c'è vento; con l'aria ferma stanno fermi (e si disegnano a lotti, molto più leggeri)
+    const vento = this.meteo === 'vento' ? 1 : this.meteo === 'temporale' ? 0.6 : 0;
+    const rosicchiato = this.castoro.alberoRosicchiato;
     for (let i = 0; i < this.bosco.children.length; i += 1) {
       const o = this.bosco.children[i];
-      o.rotation.z = Math.sin(t * 1.6 + i * 0.7) * 0.035 * vento;
+      if (o === rosicchiato) continue;
+      if (vento) o.rotation.z = Math.sin(t * 1.6 + i * 0.7) * 0.035 * vento;
+      else if (o.rotation.z !== 0) o.rotation.z = 0;
     }
 
     // il "!" sopra chi ha una richiesta
@@ -2321,6 +2379,7 @@ export class Scena {
       this.anelloSel.scale.setScalar(grande * (1 + Math.sin(t * 5) * 0.06));
     }
     this.aggiornaSchiusa(dt, t);
+    this.animaNovita(t);
     this.castoro.anima(t, dt, this.momento() === 'notte');
     this.acquario?.anima(t, dt);
     this.museo?.anima(t);
@@ -2359,6 +2418,11 @@ export class Scena {
     });
 
     if (++this.contaFotogrammi % 12 === 0) this.contorniLontani();
+    // a lotti solo con la vista di sempre: nei primi piani le cose davanti si tolgono di mezzo una per una
+    this.lotti.attivo = !cin && !vento;
+    if (this.contaFotogrammi % 30 === 1) this.lotti.imposta(this.composizioneLotti(), this.lottiDentro());
+    for (const r of this.radiciDentro()) if (r.visible) this.lotti.osserva(r);
+    this.lotti.passo();
     this.neve += ((this.meteo === 'neve' ? 1 : 0) - this.neve) * Math.min(1, dt * (this.meteo === 'neve' ? 0.05 : 0.02));
     NEVE.valore = this.neve < 0.01 ? 0 : this.neve;
     this.renderer.render(this.scene, this.camera);
@@ -3697,6 +3761,82 @@ export class Scena {
     return true;
   }
 
+  // ---------- le novità del giorno: una stella che brilla sopra ognuna, finché Giada non va a vederla ----------
+  private novita = new Map<string, { dove: DoveNovita; stella: THREE.Sprite; fase: number }>();
+
+  private oggettoNovita(d: DoveNovita): THREE.Object3D | null {
+    if (d.tipo === 'corvo') return this.corvo.gruppo;
+    if (d.tipo === 'castoro') return this.castoro.gruppo.visible ? this.castoro.animale : null;
+    if (d.tipo === 'animale') { const ab = this.abitanti.get(d.id); return ab && ab.m.gruppo.visible && !this.trattenuti.has(d.id) ? ab.m.gruppo : (this.uova.get(d.id) ?? null); }
+    if (d.tipo === 'uovo') return this.uova.get(d.id) ?? this.abitanti.get(d.id)?.m.gruppo ?? null;
+    if (d.tipo === 'casa') return this.botteghe.get(d.id) ?? null;
+    if (d.tipo === 'edificio') return this.edifici.get(d.id) ?? null;
+    return this.sentieri.portale((d as { id: string }).id) ?? null;
+  }
+
+  /** Le novità da far notare: ognuna ha la sua stellina che sale e scende sopra la cosa nuova. */
+  mostraNovita(lista: { chiave: string; dove: DoveNovita }[]) {
+    const tenute = new Set(lista.map((n) => n.chiave));
+    for (const [k, n] of this.novita) if (!tenute.has(k)) { this.scene.remove(n.stella); n.stella.material.map?.dispose(); n.stella.material.dispose(); this.novita.delete(k); }
+    lista.forEach((n, i) => {
+      if (this.novita.has(n.chiave)) return;
+      const stella = spriteTesto('★', '#ffe066', 96);
+      stella.scale.setScalar(0.8);
+      stella.renderOrder = 5;
+      this.scene.add(stella);
+      this.novita.set(n.chiave, { dove: n.dove, stella, fase: i * 1.3 });
+    });
+  }
+
+  private animaNovita(t: number) {
+    for (const n of this.novita.values()) {
+      const o = this.oggettoNovita(n.dove);
+      n.stella.visible = !!o && !this.cine && !this.aPiedi;
+      if (!o || !n.stella.visible) continue;
+      o.getWorldPosition(n.stella.position);
+      // sopra la testa (o il tetto): l'altezza vera della cosa, misurata una volta ogni tanto
+      if (!o.userData.altezzaNovita || Math.floor(t) % 3 === 0) {
+        const b = new THREE.Box3().setFromObject(o);
+        o.userData.altezzaNovita = Math.max(0.5, b.max.y - n.stella.position.y);
+      }
+      n.stella.position.y += (o.userData.altezzaNovita as number) + 0.45 + Math.abs(Math.sin(t * 2.2 + n.fase)) * 0.35;
+      const p = 1 + Math.sin(t * 4 + n.fase) * 0.12;
+      n.stella.scale.setScalar(0.8 * p);
+      n.stella.material.rotation = Math.sin(t * 1.5 + n.fase) * 0.25;
+      if (Math.random() < 0.04) this.stellina(n.stella.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, -0.2, (Math.random() - 0.5) * 0.6)));
+    }
+  }
+
+  /** La telecamera va a guardare la novità. */
+  vaiANovita(d: DoveNovita): boolean {
+    if (d.tipo === 'corvo') return this.inquadraCorvo();
+    if (d.tipo === 'castoro') return this.inquadraCastoro();
+    if (d.tipo === 'sentiero') return this.inquadraSentiero(d.id);
+    if (d.tipo === 'animale') return this.abitanti.has(d.id) && !this.trattenuti.has(d.id) ? this.inquadra({ tipo: 'animale', id: d.id }) : this.inquadra({ tipo: 'uovo', id: d.id });
+    if (d.tipo === 'uovo') return this.uova.has(d.id) ? this.inquadra({ tipo: 'uovo', id: d.id }) : this.inquadra({ tipo: 'animale', id: d.id });
+    return this.inquadra({ tipo: d.tipo as 'casa' | 'edificio', id: (d as { id: string }).id });
+  }
+
+  /** Il castoro in primo piano, quando parla. */
+  inquadraCastoro(): boolean {
+    if (!this.castoro.gruppo.visible || this.pescata || this.gita) return false;
+    const o = this.castoro.animale;
+    const pos = new THREE.Vector3();
+    const p = o.getWorldPosition(new THREE.Vector3());
+    // un po' di lato, dalla parte della radura: si vede lui e l'albero che rosicchia
+    const ang = Math.atan2(-p.x, -p.z) + 0.75;
+    this.cine = { segui: () => o.getWorldPosition(pos).setY(0), dist: 3.3, alt: 1.5, guardaY: 0.3, angolo: ang, oggetto: o };
+    return true;
+  }
+
+  /** Il corvo in primo piano quando parla: tutto intero, cappello compreso, sopra il fumetto. */
+  inquadraCorvo(): boolean {
+    if (!this.inquadra({ tipo: 'corvo' })) return false;
+    const c = this.cine!;
+    c.dist = 4.6; c.alt = 2.1; c.guardaY = 1.25;
+    return true;
+  }
+
   /**
    * Faccia a faccia con un animale, per chiacchierare: la telecamera scende all'altezza dei suoi occhi,
    * vicina, e lui si gira a guardarti. Finisce con fineCinema().
@@ -3757,7 +3897,7 @@ export class Scena {
     const lung2 = dx * dx + dz * dz || 1;
     const ora = new Set<THREE.Object3D>();
     const prova = (o: THREE.Object3D) => {
-      if (o === bersaglio || o === this.bosco || o === this.selvatici || o === this.prato) return;
+      if (o === bersaglio || o === this.bosco || o === this.selvatici || o === this.prato || o === this.lotti.gruppo) return;
       if (this.pescata && (o === this.strutture.get('laghetto') || o === this.strutture.get('ponticello'))) return;
       if (o instanceof THREE.Light || o instanceof THREE.Points || o instanceof THREE.Sprite) return;
       if (!o.visible && !this.nascostiCine.has(o)) return;
@@ -4085,6 +4225,7 @@ export class Scena {
     window.removeEventListener('keyup', this.suTasto);
     window.removeEventListener('blur', this.lasciaTasti);
     for (const t of this.tagli) t.smonta();
+    this.lotti.distruggi();
     this.festa?.distruggi();
     this.resizeObs.disconnect();
     this.renderer.dispose();
