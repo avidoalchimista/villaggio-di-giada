@@ -82,6 +82,9 @@ matContorno.onBeforeCompile = (shader) => {
     .replace('#include <project_vertex>', '#include <project_vertex>\n' + CURVA_GLSL);
 };
 
+/** Tutti i contorni creati: la scena spegne quelli così lontani da essere più sottili di un puntino. */
+export const GUSCI: THREE.Mesh[] = [];
+
 /** Aggiunge un contorno scuro a tutte le mesh del gruppo (guscio rovesciato, come nei cartoni). */
 export function contorno<T extends THREE.Object3D>(o: T): T {
   const mesh: THREE.Mesh[] = [];
@@ -93,6 +96,7 @@ export function contorno<T extends THREE.Object3D>(o: T): T {
     guscio.userData.senzaContorno = true;
     guscio.raycast = () => {};
     m.add(guscio);
+    GUSCI.push(guscio);
   }
   return o;
 }

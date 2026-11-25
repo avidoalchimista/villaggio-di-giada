@@ -98,10 +98,11 @@ export function mesh(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z
  * i fili d'erba...): si vedono identici, ma il telefono li disegna in un colpo solo invece che uno per uno.
  * Va chiamato prima del contorno. I pezzi con un nome o con figli restano come sono.
  */
-export function unisciPezzi<T extends THREE.Object3D>(g: T): T {
+export function unisciPezzi<T extends THREE.Object3D>(g: T, esclusi?: Set<THREE.Object3D>): T {
   const gruppi = new Map<string, { m: THREE.Material; senza: boolean; pezzi: THREE.Mesh[] }>();
   for (const c of g.children) {
     if (!(c instanceof THREE.Mesh) || c.children.length || c.name || Array.isArray(c.material)) continue;
+    if (esclusi?.has(c) || !c.visible) continue;
     if (Object.keys(c.userData).some((k) => k !== 'senzaContorno')) continue; // pezzi che si muovono o servono a qualcosa
     if (c.material instanceof THREE.MeshBasicMaterial) continue; // ombre e simili
     const senza = !!c.userData.senzaContorno;
@@ -116,7 +117,22 @@ export function unisciPezzi<T extends THREE.Object3D>(g: T): T {
     const geos = pezzi.map((c) => {
       c.updateMatrix();
       const gg = indicizzate ? c.geometry.clone() : c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
-      return gg.applyMatrix4(c.matrix);
+      gg.applyMatrix4(c.matrix);
+      // un pezzo specchiato (scala negativa) va rigirato, altrimenti si vedrebbe "da dentro"
+      if (c.matrix.determinant() < 0) {
+        if (gg.index) {
+          const a = gg.index.array;
+          for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; }
+        } else {
+          for (const nome of Object.keys(gg.attributes)) {
+            const at = gg.attributes[nome], n = at.itemSize, arr = at.array;
+            for (let i = 0; i < at.count; i += 3) for (let j = 0; j < n; j++) {
+              const t = arr[(i + 1) * n + j]; arr[(i + 1) * n + j] = arr[(i + 2) * n + j]; arr[(i + 2) * n + j] = t;
+            }
+          }
+        }
+      }
+      return gg;
     });
     const nomi = Object.keys(geos[0].attributes);
     if (!geos.every((gg) => Object.keys(gg.attributes).length === nomi.length && nomi.every((n) => gg.attributes[n]))) continue;
@@ -129,6 +145,14 @@ export function unisciPezzi<T extends THREE.Object3D>(g: T): T {
     g.add(u);
   }
   return g;
+}
+
+/** Come unisciPezzi, ma in tutto il modello, ramo per ramo (lascia stare i pezzi in `esclusi`, che si muovono). */
+export function unisciTutto<T extends THREE.Object3D>(radice: T, esclusi = new Set<THREE.Object3D>()): T {
+  const nodi: THREE.Object3D[] = [];
+  radice.traverse((o) => { if (o.children.length > 1) nodi.push(o); });
+  for (const n of nodi) unisciPezzi(n, esclusi);
+  return radice;
 }
 
 // ---------- animali ----------
@@ -1439,6 +1463,9 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
   vesti(a, { testa, busto, pancia, corpo, collo, fiore, fiocco }, divisa);
   gruppo.userData.divisa = divisa;
 
+  // i pezzi fermi con lo stesso colore (macchie, bottoni, vestiti, orecchie...) diventano uno solo:
+  // l'animale è identico ma il telefono fa molta meno fatica. Restano separati quelli che si muovono.
+  unisciTutto(corpo, new Set<THREE.Object3D>([busto, pancia, ...occhi, ...zampe, ...(coda ? [coda as THREE.Object3D] : [])]));
   contorno(corpo);
   gruppo.userData.taglia = t.taglia * F.taglia;
   const m: ModelloAnimale = { gruppo, corpo, busto, pancia, testa, zampe, coda: coda as THREE.Object3D | null, occhi, accessorio: null, mestiere: null,
