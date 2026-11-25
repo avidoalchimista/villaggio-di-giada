@@ -23,6 +23,15 @@ function gradientMap(): THREE.DataTexture {
   return gradiente;
 }
 
+// colori un po' più pieni e caldi, come un libro illustrato (prima della nebbia: l'orizzonte resta uguale al cielo)
+const COLORI_GLSL = `
+vec3 COLORI_VIVI(vec3 c) {
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, 1.14);
+  return max(c * vec3(1.025, 1.0, 0.965), 0.0);
+}
+`;
+
 const CURVA_GLSL = `
   vec4 mvCurva = modelViewMatrix * vec4(transformed, 1.0);
   mvCurva.y -= mvCurva.z * mvCurva.z * uCurva;
@@ -49,7 +58,7 @@ export function materiale(opz: OpzMateriale = {}): THREE.MeshToonMaterial {
     shader.uniforms.uRim = { value: rim };
     shader.uniforms.uNeve = { get value() { return NEVE.valore; } } as THREE.IUniform;
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uRim;\nuniform float uNeve;')
+      .replace('#include <common>', '#include <common>\nuniform float uRim;\nuniform float uNeve;\n' + COLORI_GLSL)
       // la neve si posa su quello che guarda in su (tetti, chiome, sassi); non sull'acqua né sulle luci
       .replace(
         '#include <normal_fragment_maps>',
@@ -66,6 +75,7 @@ export function materiale(opz: OpzMateriale = {}): THREE.MeshToonMaterial {
         '#include <fog_fragment>',
         `float bordo = smoothstep(0.55, 1.0, 1.0 - abs(dot(normalize(-vViewPosition), normal)));
         gl_FragColor.rgb += vec3(1.0, 0.9, 0.7) * bordo * uRim;
+        gl_FragColor.rgb = COLORI_VIVI(gl_FragColor.rgb);
         #include <fog_fragment>`,
       );
   };
@@ -368,7 +378,9 @@ export function materialeTerreno(): THREE.MeshLambertMaterial {
         }
         diffuseColor.rgb *= suolo;
         `,
-      );
+      )
+      .replace('#include <fog_fragment>', 'gl_FragColor.rgb = COLORI_VIVI(gl_FragColor.rgb);\n#include <fog_fragment>')
+      .replace('#include <common>', '#include <common>\n' + COLORI_GLSL);
   };
   m.customProgramCacheKey = () => 'terreno';
   return m;
