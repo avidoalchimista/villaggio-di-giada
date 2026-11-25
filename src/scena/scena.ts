@@ -1,6 +1,6 @@
 // La radura del villaggio in 3D. Gli animali girano liberi, dormono, festeggiano.
 // Il villaggio si allarga quando arrivano nuovi abitanti e nascono nuovi mestieri.
-import { RisoluzioneAdattiva, preparaAnisotropia } from './qualita';
+import { RisoluzioneAdattiva, colDito, preparaAnisotropia } from './qualita';
 import { Cielo } from './cielo';
 import * as THREE from 'three';
 import { hash } from '../lib/caso';
@@ -239,6 +239,8 @@ export class Scena {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
   private sole = new THREE.DirectionalLight('#fff1d6', 2.2);
+  private direzioneSole = new THREE.Vector3(6, 12, 8).normalize();
+  private vAvanti = new THREE.Vector3();
   private ambiente = new THREE.HemisphereLight('#bfe0ff', '#c9a27a', 1.25);
   private orologio = new THREE.Clock();
   private abitanti = new Map<string, Abitante>();
@@ -370,8 +372,19 @@ export class Scena {
     this.renderer.toneMapping = THREE.NoToneMapping;
 
     this.scene.fog = new THREE.Fog('#a9cfe4', 60, 80);
-    this.scene.add(this.ambiente, this.sole, this.cielo.mesh);
+    this.scene.add(this.ambiente, this.sole, this.sole.target, this.cielo.mesh);
     this.sole.position.set(6, 12, 8);
+    // ombre vere: il sole (o la luna) proietta l'ombra di case, alberi e animali sul prato e sulle cose.
+    // La "fotografia" delle ombre copre solo il pezzo di villaggio che si guarda, e segue la telecamera.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.sole.castShadow = true;
+    this.sole.shadow.mapSize.setScalar(colDito ? 1024 : 2048);
+    this.sole.shadow.bias = -0.0006;
+    this.sole.shadow.normalBias = 0.035;
+    this.sole.shadow.camera.near = 1;
+    this.sole.shadow.camera.far = 80;
 
     this.costruisciFissi();
     this.scene.add(this.bosco);
@@ -2084,6 +2097,46 @@ export class Scena {
     return l;
   }
 
+  /** Le cose del villaggio fanno ombra e la ricevono (i contorni scuri, le ombre tonde e le cose trasparenti no). */
+  private segnaOmbre() {
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || m.userData.ombraFatta) return;
+      m.updateWorldMatrix(true, false);
+      if (m.matrixWorld.getMaxScaleOnAxis() < 0.05) return; // sta ancora spuntando: si guarda dopo
+      m.userData.ombraFatta = true;
+      const mat = m.material as THREE.Material;
+      if (Array.isArray(mat)) return;
+      if (m === this.prato || m === this.terreno) { m.receiveShadow = true; return; }
+      if (!(mat as THREE.MeshToonMaterial).isMeshToonMaterial || mat.transparent) return;
+      m.receiveShadow = true;
+      // i pezzetti piccoli (occhi, fiorellini, sassolini) non fanno ombra: costerebbero tanto e non si vedrebbero
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      m.castShadow = m.geometry.boundingSphere!.radius * m.matrixWorld.getMaxScaleOnAxis() >= 0.16;
+    });
+  }
+
+  /** Il sole segue quello che si guarda: l'ombra è nitida dove serve, e non costa per il resto del mondo. */
+  private seguiSole(cin: unknown) {
+    const ombra = this.sole.shadow.camera;
+    const meta = cin || this.aPiedi ? this.guardaCam : this.centro;
+    const mezzo = THREE.MathUtils.clamp(cin ? 10 : this.aPiedi ? 16 : 12 * this.zoom + 6, 10, 32);
+    if (ombra.right !== mezzo) {
+      ombra.left = ombra.bottom = -mezzo;
+      ombra.right = ombra.top = mezzo;
+      ombra.updateProjectionMatrix();
+    }
+    // (spostato a passi grandi come un puntino dell'ombra: così i bordi non tremolano muovendo la vista)
+    const passo = (mezzo * 2) / this.sole.shadow.mapSize.x;
+    // il riquadro delle ombre sta un po' più in là del punto guardato: copre quello che si vede davanti
+    const avanti = this.vAvanti.set(meta.x - this.camera.position.x, 0, meta.z - this.camera.position.z);
+    if (avanti.lengthSq() > 0.01) avanti.normalize().multiplyScalar(mezzo * 0.5);
+    else avanti.set(0, 0, 0);
+    const x = Math.round((meta.x + avanti.x) / passo) * passo, z = Math.round((meta.z + avanti.z) / passo) * passo;
+    this.sole.target.position.set(x, 0, z);
+    this.sole.position.set(x, 0, z).addScaledVector(this.direzioneSole, 40);
+  }
+
   private radiciDentro() {
     return [...[...this.abitanti.values()].map((ab) => ab.m.gruppo), this.corvo.gruppo, this.castoro.gruppo];
   }
@@ -2164,9 +2217,13 @@ export class Scena {
     const cielo = new THREE.Color('#1f2a5c').lerp(new THREE.Color('#a9cfe4'), giorno).lerp(new THREE.Color('#ffc09a'), Math.max(0, tramonto) * 0.55);
     this.scene.background = cielo;
     (this.scene.fog as THREE.Fog).color = cielo;
-    this.sole.intensity = 0.45 + giorno * 1.6;
+    // il sole sorge a est, è alto a mezzogiorno e tramonta a ovest (di notte la luna, più alta e fioca)
+    const arco = THREE.MathUtils.clamp((h - 6) / 14, 0, 1);
+    const alto = giorno > 0.05 ? 0.3 + Math.sin(arco * Math.PI) * 0.6 : 1.1;
+    this.direzioneSole.set(Math.cos(arco * Math.PI) * 1.1, alto, 0.25).normalize();
+    this.sole.intensity = 0.45 + giorno * 2.05;
     this.sole.color.set(tramonto > 0.2 ? '#ffc08a' : '#fff1d6');
-    this.ambiente.intensity = 0.7 + giorno * 0.65;
+    this.ambiente.intensity = 0.68 + giorno * 0.37;
     this.ambiente.color.set(giorno > 0.3 ? '#bfe0ff' : '#7c88d8'); // notte: ombre blu-violette
     // il tempo che fa: cielo grigio, meno sole, nebbia più vicina
     const coperto = ({ sole: 0, nuvole: 0.45, pioggia: 0.65, temporale: 0.85, neve: 0.5, nebbia: 0.45, vento: 0.15 } as const)[this.meteo];
@@ -2418,6 +2475,10 @@ export class Scena {
     });
 
     if (++this.contaFotogrammi % 12 === 0) this.contorniLontani();
+    if (this.contaFotogrammi % 60 === 2) this.segnaOmbre();
+    this.seguiSole(cin);
+    // le ombre si ridisegnano un fotogramma sì e uno no (uno su tre se il telefono fatica): non si nota e costa la metà
+    this.renderer.shadowMap.needsUpdate = this.contaFotogrammi % (this.qualita.scala <= this.qualita.min ? 3 : 2) === 0;
     // a lotti solo con la vista di sempre: nei primi piani le cose davanti si tolgono di mezzo una per una
     this.lotti.attivo = !cin && !vento;
     if (this.contaFotogrammi % 30 === 1) this.lotti.imposta(this.composizioneLotti(), this.lottiDentro());

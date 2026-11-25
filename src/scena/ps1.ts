@@ -433,8 +433,8 @@ let texOmbra: THREE.CanvasTexture | null = null;
 export function ombra(raggio: number): THREE.Mesh {
   texOmbra ??= texture(64, (c, l) => {
     const g = c.createRadialGradient(l / 2, l / 2, 0, l / 2, l / 2, l / 2);
-    g.addColorStop(0, 'rgba(30,24,50,0.58)');
-    g.addColorStop(0.55, 'rgba(30,24,50,0.32)');
+    g.addColorStop(0, 'rgba(30,24,50,0.42)');
+    g.addColorStop(0.55, 'rgba(30,24,50,0.2)');
     g.addColorStop(1, 'rgba(40,30,60,0)');
     c.fillStyle = g;
     c.fillRect(0, 0, l, l);
