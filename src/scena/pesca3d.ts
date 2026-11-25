@@ -124,9 +124,8 @@ export class Pescata {
     contorno(this.canna);
     m.gruppo.add(this.canna);
     // la "mano": in fondo alla zampa davanti
-    const lung = (m.zampe[0]?.userData.lunghezza as number | undefined) ?? 0.25;
-    this.mano.position.set(0, -lung * 0.9, 0.03);
-    m.zampe[0]?.add(this.mano);
+    this.mano.position.set(0, 0.02, 0.03);
+    m.mani[0]?.add(this.mano);
 
     // il galleggiante rosso e bianco
     const sopra = mesh(new THREE.SphereGeometry(0.055, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat('#e8443a', { rim: 0.4 }));
