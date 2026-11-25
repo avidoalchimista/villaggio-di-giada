@@ -54,7 +54,13 @@ interface Ospite {
   turno: number;
   ammicca: number;
   chiave: string; // il punto della stanza dove sta andando
+  sedile: number; // se si siede: quanto è alto il posto (0 = per terra)
+  inPiedi: boolean; // a tavola senza sedia: mangia in piedi
+  giro: { b: Mobile; s: number } | null; // il mobile che sta aggirando, e da che parte
 }
+
+/** Un mobile visto dall'alto (con un po' di margine): chi cammina ci gira intorno. */
+interface Mobile { x0: number; x1: number; z0: number; z1: number }
 
 export interface StatoOspite {
   id: string;
@@ -108,6 +114,7 @@ export class Interno {
     const chi = proprietario ?? abitanti[0];
     if (tipo === 'casa' && chi) this.arredaCasa(chi);
     else this.arredaTana(abitanti);
+    this.trovaMobili();
     for (const a of abitanti) this.aggiungiOspite(a);
     this.luci();
 
@@ -116,6 +123,47 @@ export class Interno {
     this.ridimensiona();
     this.collegaInput();
     this.ciclo();
+  }
+
+  // ---------- i mobili come ostacoli ----------
+
+  private mobili: Mobile[] = [];
+  private conSedie = false;
+  /** Tutto quello che sta per terra ed è alto abbastanza da sbatterci contro (non i tappeti, i quadri, le mensole). */
+  private trovaMobili() {
+    const scatola = new THREE.Box3();
+    for (const c of this.scene.children) {
+      if ((c as THREE.Light).isLight) continue;
+      scatola.setFromObject(c);
+      if (scatola.isEmpty()) continue;
+      const lx = scatola.max.x - scatola.min.x, lz = scatola.max.z - scatola.min.z;
+      if (scatola.max.y < 0.22 || scatola.min.y > 0.6 || lx > LX * 1.5 || lz > LZ * 1.5) continue;
+      // (attaccati al muro e sottili: quadri, tende)
+      if (Math.min(lx, lz) < 0.12) continue;
+      const m = 0.16;
+      this.mobili.push({ x0: scatola.min.x - m, x1: scatola.max.x + m, z0: scatola.min.z - m, z1: scatola.max.z + m });
+    }
+  }
+
+  /** Chi cammina non passa dentro i mobili: scivola lungo il bordo dalla parte più corta verso dove sta andando. */
+  private scansa(o: Ospite, p: THREE.Vector3, meta: THREE.Vector3, dt: number) {
+    let toccato = false;
+    for (const b of this.mobili) {
+      // il mobile dove sta andando (il letto, la sedia) non conta
+      if (meta.x > b.x0 - 0.12 && meta.x < b.x1 + 0.12 && meta.z > b.z0 - 0.12 && meta.z < b.z1 + 0.12) continue;
+      if (p.x <= b.x0 || p.x >= b.x1 || p.z <= b.z0 || p.z >= b.z1) continue;
+      toccato = true;
+      const dx0 = p.x - b.x0, dx1 = b.x1 - p.x, dz0 = p.z - b.z0, dz1 = b.z1 - p.z;
+      const min = Math.min(dx0, dx1, dz0, dz1);
+      const latoX = min === dx0 || min === dx1;
+      if (o.giro?.b !== b) {
+        const [q, m0, a0, a1] = latoX ? [p.z, meta.z, b.z0, b.z1] : [p.x, meta.x, b.x0, b.x1];
+        o.giro = { b, s: Math.abs(q - a0) + Math.abs(m0 - a0) < Math.abs(q - a1) + Math.abs(m0 - a1) ? -1 : 1 };
+      }
+      if (latoX) { p.x = min === dx0 ? b.x0 : b.x1; p.z += o.giro.s * dt * 1.0; }
+      else { p.z = min === dz0 ? b.z0 : b.z1; p.x += o.giro.s * dt * 1.0; }
+    }
+    if (!toccato) o.giro = null;
   }
 
   // ---------- la stanza ----------
@@ -375,6 +423,7 @@ export class Interno {
       g.add(mesh(geo.cil(0.12, 0.08, 0.08, 12), mat('#fffaf0'), px, h + 0.08, pz));
       g.add(mesh(geo.cil(0.1, 0.1, 0.02, 12), mat('#e8b04e'), px, h + 0.11, pz));
     }
+    this.conSedie = !basso;
     if (!basso) for (const a of [0.6, 2.6]) {
       const sedia = new THREE.Group();
       sedia.add(mesh(geo.scatola(0.44, 0.06, 0.44), legno, 0, 0.42, 0));
@@ -712,7 +761,7 @@ export class Interno {
     this.scene.add(m.gruppo);
     const o: Ospite = {
       dati: a, m, att: cosaFaInCasa(a, this.momentoAttuale), meta: new THREE.Vector3(), guarda: 0, tappa: null,
-      passo: Math.random() * 6, eretto: a.fase === 'cucciolo' ? 0 : 1, fumetto: 1 + Math.random() * 2, z: [], salto: 0, turno: 0, ammicca: Math.random() * 3, chiave: '',
+      passo: Math.random() * 6, eretto: a.fase === 'cucciolo' ? 0 : 1, fumetto: 1 + Math.random() * 2, z: [], salto: 0, turno: 0, ammicca: Math.random() * 3, chiave: '', sedile: 0, inPiedi: false, giro: null,
     };
     this.ospiti.push(o);
     this.destinazione(o, true);
@@ -730,10 +779,16 @@ export class Interno {
     // chi va nello stesso punto si mette accanto, non addosso
     const qui = this.ospiti.filter((b) => b.chiave === o.chiave).indexOf(o);
     let dx = 0, dz = 0, vv = verso;
+    o.sedile = 0; o.inPiedi = false;
     if (p === 'tavolo') {
-      // intorno al tavolo, ognuno dal suo lato
-      const ang = [0.6, 2.6, 1.6, -0.6, 3.6][Math.max(0, qui) % 5];
-      dx = Math.cos(ang) * 0.95; dz = Math.sin(ang) * 0.95;
+      // intorno al tavolo, ognuno dal suo lato: i primi due sulle sedie, gli altri in piedi un passo più in là
+      const k = Math.max(0, qui) % 5;
+      const ang = [0.6, 2.6, 1.6, -0.6, 3.6][k];
+      const suSedia = this.conSedie && k < 2;
+      o.sedile = suSedia ? 0.45 : 0;
+      o.inPiedi = this.conSedie && !suSedia;
+      const r = o.inPiedi ? 1.12 : suSedia ? 0.98 : 1.05;
+      dx = Math.cos(ang) * r; dz = Math.sin(ang) * r;
       vv = Math.atan2(-dx, -dz);
     } else if (chiave === 'tappeto' && qui > 0) {
       // sul tappeto si gioca in cerchio
@@ -976,6 +1031,7 @@ export class Interno {
       m.corpo.rotation.x = 0;
       dir.normalize();
       g.position.addScaledVector(dir, Math.min(dist, 1.0 * dt));
+      this.scansa(o, g.position, meta, dt);
       dentroStanza(g.position);
       const verso = Math.atan2(dir.x, dir.z);
       g.rotation.y += Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y)) * Math.min(1, dt * 7);
@@ -1017,7 +1073,20 @@ export class Interno {
       m.corpo.scale.set(1, 1, 1);
     }
     m.testa.rotation.set(0, 0, 0);
-    const seduto = () => (m.corpo.position.y = lerp(m.corpo.position.y, seduta(m).giu));
+    const gambe = m.zampe.slice(2);
+    const siSiede = ['mangia', 'legge', 'scrive', 'maglia', 'beve', 'seduto'].includes(o.att.gesto) || !['dorme', 'cucina', 'guarda', 'osserva', 'balla', 'canta', 'ginnastica', 'salta', 'stiracchia', 'spolvera', 'annaffia', 'lavora'].includes(o.att.gesto);
+    // chi non è seduto ha le gambe dritte sotto di sé
+    if ((!siSiede || o.inPiedi) && o.att.gesto !== 'balla') {
+      gambe.forEach((z) => (z.rotation.x = lerp(z.rotation.x, 0)));
+      if (o.att.gesto !== 'dorme' && o.att.gesto !== 'ginnastica' && o.att.gesto !== 'salta') m.corpo.position.y = lerp(m.corpo.position.y, 0);
+    }
+    /** Seduto: per terra, o sulla sedia se ce n'è una (le gambe in avanti, sotto il tavolo). */
+    const seduto = () => {
+      if (o.inPiedi) return;
+      const s = seduta(m);
+      m.corpo.position.y = lerp(m.corpo.position.y, s.giu + o.sedile / m.gruppo.scale.y);
+      if (m.bipede) gambe.forEach((z) => (z.rotation.x = lerp(z.rotation.x, s.gambe)));
+    };
     switch (o.att.gesto) {
       case 'dorme': {
         if (!o.z.length) this.zeta(o, true);

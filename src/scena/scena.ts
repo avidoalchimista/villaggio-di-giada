@@ -32,7 +32,7 @@ import { ritrovamentoDelGiorno } from '../lib/museo';
 import { SentieriInScena, sulSentiero } from './sentieri3d';
 import { BIOMA, biomiScoperti, type DefBioma } from '../lib/biomi';
 import { Taglio, type CosaTagliata } from './taglio';
-import { improntaDi, piuViciniCapsule, postoNelMondo, puntiCapsula, raggioDi, rettangoloAlSuolo, sovrapposte, spintaFuori, type Capsula, type Impronta } from './spazio';
+import { improntaDi, piuViciniCapsule, postoNelMondo, puntiCapsula, raggioDi, rettangoloAlSuolo, sovrapposte, spintaFuori, trovaStrada, type Capsula, type Impronta } from './spazio';
 
 /** Dove sta una novità del giorno (vedi mostraNovita). */
 export type DoveNovita =
@@ -160,6 +160,15 @@ interface Abitante {
   distPrima: number;
   vel: number; // velocità di adesso (parte piano, accelera, rallenta arrivando)
   usa?: THREE.Object3D | null; // la costruzione che sta usando (altalena, giostra...): quando arriva la fa muovere
+  percorso?: THREE.Vector3[]; // le tappe per girare intorno a case e cose quando la strada dritta è chiusa
+  percorsoPer?: THREE.Vector3; // la meta per cui è stato pensato il percorso
+  prossimaStrada?: number; // secondi prima di poter ripensare la strada
+  notteFermo?: number; // di notte: quante volte è rimasto bloccato tornando a casa
+  dormeQui?: { qui: THREE.Vector3; casa: THREE.Vector3 }; // non è riuscito ad arrivare alla porta: dorme qui vicino
+  saluto?: number; // secondi in cui saluta con la zampa chi gli passa accanto
+  salutoA?: string;
+  prossimoSaluto?: number;
+  modoIncontro?: number; // come passano il tempo due amici: 0 chiacchiere, 1 ridono, 2 ballano, 3 un abbraccio
 }
 
 /** Grandezza della radura: cresce con gli abitanti, i mestieri e le costruzioni. */
@@ -1269,14 +1278,39 @@ export class Scena {
   private casa(ab: Abitante): THREE.Vector3 {
     const b = this.botteghe.get(ab.dati.id);
     // davanti alla porta (le case sono grandi e Giada può averle girate)
-    if (b) return new THREE.Vector3(Math.sin(b.rotation.y), 0, Math.cos(b.rotation.y)).multiplyScalar(Math.max(2.2, ((b.userData.ingombroCasa as number) ?? 1.5) + 0.55)).add(b.position).setY(0);
+    if (b) {
+      // (il punto si ricalcola solo quando la casa si muove o cambiano le cose intorno)
+      const porta = b.userData.porta as { x: number; z: number; r: number; v: number; p: THREE.Vector3 } | undefined;
+      if (porta && porta.x === b.position.x && porta.z === b.position.z && porta.r === b.rotation.y && porta.v === this.ostacoliVer) return porta.p.clone();
+      const dx = Math.sin(b.rotation.y), dz = Math.cos(b.rotation.y);
+      let d = Math.max(2.2, ((b.userData.ingombroCasa as number) ?? 1.5) + 0.55);
+      const p = new THREE.Vector3();
+      // un passo più in là finché il posto è libero: la casa con il giardinetto e gli ampliamenti è più larga della porta,
+      // e chi torna a dormire deve poterci arrivare davvero (se no resta a spingere contro il muro)
+      for (let k = 0; k < 14; k++, d += 0.3) {
+        p.set(b.position.x + dx * d, 0, b.position.z + dz * d);
+        const occupato = this.ostacoli.some((o) => {
+          const ro = raggioDi(o) + 0.45;
+          return Math.abs(o.x - p.x) < ro && Math.abs(o.z - p.z) < ro && !!spintaFuori(p.x, p.z, 0.45, o);
+        });
+        if (!occupato) break;
+      }
+      b.userData.porta = { x: b.position.x, z: b.position.z, r: b.rotation.y, v: this.ostacoliVer, p: p.clone() };
+      return p;
+    }
     // senza casa: intorno al nido, fuori dal bordo di paglia (e dalla staccionata, se c'è), ognuno al suo posto
     const senza = [...this.abitanti.values()].filter((b) => !this.botteghe.has(b.dati.id)).map((b) => b.dati.id).sort();
     const i = Math.max(0, senza.indexOf(ab.dati.id));
     const r0 = (this.strutture.has('staccionata') ? 1.6 : 1.0 * this.nido.scale.x) + 0.55;
     const giro = Math.floor(i / 9), r = r0 + giro * 0.9;
     const ang = (i % 9) * ((Math.PI * 2) / 9) + giro * 0.35 + 2.2; // il primo dalla parte opposta al grande albero
-    return new THREE.Vector3(this.nido.position.x + Math.cos(ang) * r, 0, this.nido.position.z + Math.sin(ang) * r);
+    const p = new THREE.Vector3();
+    // (un passo più in fuori finché il posto è libero davvero: il palo del corvo, il quaderno, il bordo del nido)
+    for (let k = 0, rr = r; k < 10; k++, rr += 0.3) {
+      p.set(this.nido.position.x + Math.cos(ang) * rr, 0, this.nido.position.z + Math.sin(ang) * rr);
+      if (!this.ostacoli.some((o) => { const ro = raggioDi(o) + 0.45; return Math.abs(o.x - p.x) < ro && Math.abs(o.z - p.z) < ro && !!spintaFuori(p.x, p.z, 0.45, o); })) break;
+    }
+    return p;
   }
 
   private fineAttivita(ab: Abitante) {
@@ -2358,8 +2392,10 @@ export class Scena {
     this.corvo.testa.rotation.y = Math.sin(t * 0.6) * 0.5 + (parla ? Math.sin(t * 12) * 0.08 : 0);
     this.corvo.testa.rotation.x = parla ? Math.sin(t * 14) * 0.12 : 0;
     const battito = parla ? Math.sin(t * 16) * 0.6 : Math.sin(t * 9) * 0.5 * (Math.sin(t * 0.5) > 0.95 ? 1 : 0);
-    this.corvo.ali[0].rotation.z = battito;
-    this.corvo.ali[1].rotation.z = -battito;
+    this.corvo.ali[0].rotation.z = -Math.abs(battito);
+    this.corvo.ali[1].rotation.z = Math.abs(battito);
+    espressione(this.corvo.m, parla ? 'gioia' : 'neutro');
+    rifinisci(this.corvo.m, dt, t);
 
     // costruzioni nuove che spuntano con un rimbalzo
     for (const g of this.strutture.values()) {
@@ -2527,9 +2563,56 @@ export class Scena {
     else if (ab.attivita?.id === 'riposino') e = 'sonno';
     else if (ab.dati.umore < 30) e = 'tristezza';
     else if (ab.attivita || ab.dati.umore > 65) e = 'fiducia';
+    this.saluta(ab, dt, t);
+    if ((ab.saluto ?? 0) > 0 && e !== 'sonno') e = 'gioia';
     espressione(m, e);
     if (ab.incontro > 0 && Math.sin(t * 1.7 + ab.passo * 0.3) > 0) parla(m, 0.15);
     rifinisci(m, dt, t);
+  }
+
+  /**
+   * Incrociandosi ci si saluta: chi passa accanto a un altro (sveglio e non indaffarato) gira la testa verso di lui
+   * e alza la zampa; l'altro ricambia. Ognuno saluta ogni tanto, non a ogni passo.
+   */
+  private saluta(ab: Abitante, dt: number, t: number) {
+    const g = ab.m.gruppo;
+    ab.prossimoSaluto = Math.max(0, (ab.prossimoSaluto ?? 2 + Math.random() * 6) - dt);
+    const libero = (x: Abitante) => !x.dati.addormentato && !x.z.length && !x.amico && x.salto <= 0 && x.m.gruppo.visible && !this.trattenuti.has(x.dati.id)
+      && this.faccia !== x.dati.id && this.pescata?.id !== x.dati.id && !(x.attivita && x.meta.distanceTo(x.m.gruppo.position) < 0.3 && x.attivita.id !== 'guarda');
+    if ((ab.saluto ?? 0) <= 0 && ab.prossimoSaluto <= 0 && this.momento() !== 'notte' && !this.festa?.raduno && libero(ab) && ab.meta.distanceTo(g.position) > 0.6) {
+      for (const b of this.abitanti.values()) {
+        if (b === ab || (b.saluto ?? 0) > 0 || !libero(b)) continue;
+        const q = b.m.gruppo.position, d = Math.hypot(q.x - g.position.x, q.z - g.position.z);
+        if (d > 1.9 || d < 0.5) continue;
+        // solo chi ce l'ha più o meno davanti
+        const verso = Math.atan2(q.x - g.position.x, q.z - g.position.z);
+        if (Math.abs(Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y))) > 1.5) continue;
+        ab.saluto = 1.5; ab.salutoA = b.dati.id; ab.prossimoSaluto = 9 + Math.random() * 10;
+        b.saluto = 1.7; b.salutoA = ab.dati.id; b.prossimoSaluto = Math.max(b.prossimoSaluto ?? 0, 7 + Math.random() * 8);
+        if (Math.random() < 0.5) this.fumetto(ab, ['♥', '☺', '!', '♪'][Math.floor(Math.random() * 4)]);
+        break;
+      }
+    }
+    if ((ab.saluto ?? 0) <= 0) return;
+    ab.saluto! -= dt;
+    const b = this.abitanti.get(ab.salutoA ?? '');
+    if (!b || !libero(ab) || ab.saluto! <= 0) { ab.saluto = 0; if (ab.m.bipede) ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.z = 0)); return; }
+    const k = Math.min(1, ab.saluto! * 3, (1.7 - ab.saluto!) * 5);
+    const q = b.m.gruppo.position;
+    const verso = Math.atan2(q.x - g.position.x, q.z - g.position.z);
+    const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
+    ab.m.testa.rotation.y = THREE.MathUtils.clamp(diff, -1.1, 1.1) * k;
+    if (ab.m.bipede) {
+      // la zampa dalla parte dell'altro, su e che fa ciao
+      const quale = diff > 0 ? 1 : 0, z = ab.m.zampe[quale], lato = quale ? 1 : -1;
+      ab.m.zampe[1 - quale].rotation.z = 0;
+      z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, -2.5, k);
+      z.rotation.z = lato * (0.35 + Math.sin(t * 13) * 0.28) * k;
+    } else {
+      // i cuccioli: un saltello di contentezza e la coda che va
+      ab.m.corpo.position.y += Math.abs(Math.sin(t * 9)) * 0.05 * k;
+      if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(t * 16) * 0.6 * k;
+    }
   }
   /** L'animale con cui Giada sta parlando faccia a faccia (il suo viso si vede bene: sorride, parla). */
   private faccia: string | null = null;
@@ -2556,17 +2639,21 @@ export class Scena {
     if (this.festa?.raduno) ab.sveglio = Math.max(ab.sveglio, 2); // alla festa non si dorme
     if (this.momento() === 'notte' && ab.sveglio <= 0) {
       const casa = this.casa(ab);
-      if (g.position.distanceTo(casa) < 0.25) {
+      // (chi proprio non riesce ad arrivare alla porta si addormenta lì vicino, invece di spingere tutta la notte)
+      if (ab.dormeQui && (ab.dormeQui.casa.distanceTo(casa) > 0.5 || ab.dormeQui.qui.distanceTo(g.position) > 0.6)) ab.dormeQui = undefined;
+      if (g.position.distanceTo(casa) < 0.25 || ab.dormeQui) {
         if (!ab.z.length) this.zeta(ab, true);
         for (const o of ab.m.occhi) o.scale.y = 0.12;
         this.dormi(ab, dt, t);
         return;
       }
+      // (se Giada ha spostato la casa mentre dormiva: si sveglia e la raggiunge)
+      if (ab.z.length) this.zeta(ab, false);
       if (ab.amico) { const b = this.abitanti.get(ab.amico); if (b) b.amico = null; ab.amico = null; }
       if (ab.attivita) this.fineAttivita(ab);
       ab.meta = casa;
       ab.pausa = 0;
-    } else if (ab.z.length) this.zeta(ab, false);
+    } else { if (ab.z.length) this.zeta(ab, false); ab.dormeQui = undefined; ab.notteFermo = 0; }
     ab.m.corpo.rotation.z = THREE.MathUtils.lerp(ab.m.corpo.rotation.z, 0, dt * 4);
     if (!ab.attivita) ab.m.corpo.rotation.x = THREE.MathUtils.lerp(ab.m.corpo.rotation.x, 0, dt * 4);
 
@@ -2580,8 +2667,17 @@ export class Scena {
     ab.m.corpo.scale.set(1, 1, 1);
 
     if (ab.deviazione && (ab.deviazione.distanceTo(g.position) < 0.3 || ab.dati.addormentato)) ab.deviazione = null;
-    const dir = (ab.deviazione ?? ab.meta).clone().sub(g.position);
-    const dist = ab.deviazione ? Math.max(0.2, dir.length()) : dir.length();
+    // la strada pensata per girare intorno alle cose: una tappa alla volta (se la meta cambia, non vale più)
+    if (ab.percorso) {
+      if (!ab.percorsoPer || ab.percorsoPer.distanceTo(ab.meta) > 0.6 || ab.dati.addormentato) ab.percorso = undefined;
+      else {
+        while (ab.percorso.length > 1 && Math.hypot(ab.percorso[0].x - g.position.x, ab.percorso[0].z - g.position.z) < 0.35) ab.percorso.shift();
+        if (ab.percorso.length <= 1) ab.percorso = undefined;
+      }
+    }
+    const tappa = ab.deviazione ?? ab.percorso?.[0] ?? null;
+    const dir = (tappa ?? ab.meta).clone().sub(g.position).setY(0);
+    const dist = tappa ? Math.max(0.2, dir.length()) : dir.length();
     const fase = ab.dati.fase;
     const cammina = ab.pausa <= 0 && dist >= 0.15;
 
@@ -2612,18 +2708,50 @@ export class Scena {
         if (bArrivato && ab.incontro === 0) ab.incontro = fase === 'cucciolo' ? 1.2 : 6 + Math.random() * 4;
         if (ab.incontro > 0) {
           ab.incontro -= dt;
-          // chiacchiera: testa che annuisce, braccia che gesticolano, fumetti
-          ab.m.testa.rotation.x = Math.sin(t * 6 + g.position.x) * 0.12;
-          ab.m.testa.rotation.z = Math.sin(t * 1.3) * 0.1;
-          if (ab.eretto > 0.5) ab.m.zampe.slice(0, 2).forEach((z, i) => (z.rotation.x = -0.6 - Math.abs(Math.sin(t * 4 + i * 1.5)) * 0.6));
+          const braccia = ab.m.zampe.slice(0, 2), modo = ab.modoIncontro ?? 0;
+          // (a turno: uno parla e gesticola, l'altro ascolta e annuisce)
+          const tocca = Math.sin(t * 0.9) > 0 === ab.dati.id < b.dati.id;
+          ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, 0, Math.min(1, dt * 8));
+          if (modo === 2) {
+            // ballano insieme: saltelli a tempo, braccia su, un giro ogni tanto
+            const batt = t * 6.5;
+            ab.m.corpo.position.y = Math.abs(Math.sin(batt)) * 0.12;
+            ab.m.corpo.rotation.z = Math.sin(batt) * 0.1;
+            if (ab.eretto > 0.5) braccia.forEach((z, i) => { z.rotation.x = -2.2 + Math.sin(batt + i * Math.PI) * 0.5; });
+            ab.m.testa.rotation.z = Math.sin(batt) * 0.15;
+          } else if (modo === 3 && ab.incontro > 1.2 && ab.incontro < 4.2) {
+            // un abbraccio: un passetto avanti, braccia aperte e poi strette, testa di lato
+            const k = Math.sin(((4.2 - ab.incontro) / 3) * Math.PI);
+            ab.m.corpo.position.z = THREE.MathUtils.lerp(ab.m.corpo.position.z, 0.16 * k, Math.min(1, dt * 6));
+            ab.m.corpo.rotation.x = 0.12 * k;
+            if (ab.eretto > 0.5) braccia.forEach((z, i) => { z.rotation.x = -1.25 * k; z.rotation.z = (i ? -1 : 1) * 0.35 * k; });
+            ab.m.testa.rotation.z = (ab.dati.id < b.dati.id ? 1 : -1) * 0.3 * k;
+            ab.m.testa.rotation.x = 0;
+          } else if (modo === 1) {
+            // si raccontano una cosa buffa e ridono: il corpo sussulta, la testa va indietro
+            ab.m.corpo.position.y = Math.max(0, Math.sin(t * 13)) * 0.03 * (tocca ? 0.4 : 1);
+            ab.m.testa.rotation.x = tocca ? Math.sin(t * 6) * 0.1 : -0.22 + Math.sin(t * 13) * 0.05;
+            if (ab.eretto > 0.5) braccia.forEach((z, i) => (z.rotation.x = tocca ? -0.9 - Math.abs(Math.sin(t * 5 + i * 1.5)) * 0.7 : -0.5));
+          } else {
+            // chiacchiera: chi parla gesticola, chi ascolta annuisce piano
+            ab.m.testa.rotation.x = tocca ? Math.sin(t * 6 + g.position.x) * 0.1 : 0.06 + Math.max(0, Math.sin(t * 3.2)) * 0.16;
+            ab.m.testa.rotation.z = Math.sin(t * 1.3 + (tocca ? 0 : 1.5)) * 0.1;
+            if (ab.eretto > 0.5) braccia.forEach((z, i) => (z.rotation.x = tocca ? -0.7 - Math.abs(Math.sin(t * 4 + i * 1.5)) * 0.7 : THREE.MathUtils.lerp(z.rotation.x, -0.25, Math.min(1, dt * 5))));
+          }
+          if (modo !== 3) { ab.m.corpo.position.z = THREE.MathUtils.lerp(ab.m.corpo.position.z, 0, Math.min(1, dt * 6)); braccia.forEach((z) => (z.rotation.z = THREE.MathUtils.lerp(z.rotation.z, 0, Math.min(1, dt * 6)))); }
           ab.prossimoBalloon -= dt;
           if (ab.prossimoBalloon <= 0 && fase !== 'cucciolo') {
             ab.prossimoBalloon = 1.6 + Math.random() * 1.6;
-            this.fumetto(ab, ['♥', '♪', '!', '?', '☺', '…', '✿'][Math.floor(Math.random() * 7)]);
+            const simboli = modo === 2 ? ['♪', '♫', '♪', '☺'] : modo === 3 ? ['♥', '♥', '☺'] : modo === 1 ? ['☺', '!', '☺', '♪'] : ['♥', '♪', '!', '?', '☺', '…', '✿'];
+            if (modo === 2 || modo === 3 || tocca || Math.random() < 0.35) this.fumetto(ab, simboli[Math.floor(Math.random() * simboli.length)]);
           }
           if (ab.incontro <= 0) {
             ab.amico = null;
             ab.incontro = 0;
+            ab.m.corpo.position.z = 0;
+            ab.m.corpo.rotation.x = 0;
+            ab.m.corpo.rotation.z = 0;
+            braccia.forEach((z) => (z.rotation.z = 0));
             ab.pausa = 1 + Math.random() * 2;
             if (fase === 'cucciolo') ab.salto = 1; // i cuccioli giocano: saltano insieme
           }
@@ -2664,7 +2792,7 @@ export class Scena {
     if (mezzo) {
       this.inSella(ab, mezzo);
       dir.normalize();
-      this.sterza(ab, dir, dist);
+      if (!ab.percorso) this.sterza(ab, dir, dist);
       g.position.addScaledVector(dir, Math.min(dist, (mezzo === 'moto' ? 2.6 : 1.7) * dt));
       const verso = Math.atan2(dir.x, dir.z);
       const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
@@ -2685,7 +2813,7 @@ export class Scena {
     const gioca = ab.amico && fase === 'cucciolo';
     const vel = (fase === 'cucciolo' ? (gioca ? 1.5 : 0.7) : 0.95) * (ab.dati.umore > 50 ? 1 : 0.6);
     dir.normalize();
-    this.sterza(ab, dir, dist);
+    if (!ab.percorso) this.sterza(ab, dir, dist);
     const verso = Math.atan2(dir.x, dir.z);
     const diff = Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y));
     g.rotation.y += diff * Math.min(1, dt * 5);
@@ -2890,7 +3018,9 @@ export class Scena {
     // l'erba sotto i piedi e il viale non servono: solo le cose vicine alla radura
     const lim = this.raggio + 4;
     this.ostacoli = o.filter((i) => Math.hypot(i.x, i.z) < lim + raggioDi(i));
+    this.ostacoliVer++;
   }
+  private ostacoliVer = 0;
 
   /** Solo per le prove: le cose ferme che si sovrappongono (dovrebbe essere vuoto). */
   sovrapposizioni(margine = 0): string[] {
@@ -3043,14 +3173,34 @@ export class Scena {
     }
     // chi cammina ma non si avvicina più alla meta per un po' (qualcosa in mezzo): si ferma lì e cambia idea
     for (const ab of tutti) {
-      if (ab.dati.addormentato || ab.pausa > 0 || ab.salto > 0) { ab.fermo = 0; continue; }
-      const dist = ab.meta.distanceTo(ab.m.gruppo.position);
-      if (dist < 0.15) { ab.fermo = 0; ab.distPrima = dist; continue; }
+      if (ab.dati.addormentato || ab.dormeQui || ab.pausa > 0 || ab.salto > 0) { ab.fermo = 0; continue; }
+      const distMeta = ab.meta.distanceTo(ab.m.gruppo.position);
+      if (distMeta < 0.15) { ab.fermo = 0; ab.distPrima = distMeta; continue; }
+      // (chi segue una strada a tappe si misura sulla prossima tappa: girando intorno a una casa ci si allontana dalla meta)
+      const dist = ab.percorso?.[0] ? ab.percorso[0].distanceTo(ab.m.gruppo.position) : distMeta;
       if (dist < ab.distPrima - 0.01 || dist > ab.distPrima + 0.6) { ab.distPrima = dist; ab.fermo = 0; continue; }
       ab.fermo += dt;
+      ab.prossimaStrada = Math.max(0, (ab.prossimaStrada ?? 0) - dt);
+      // bloccato da un secondo: invece di spingere contro il muro, pensa una strada che gira intorno
+      if (ab.fermo > 1 && !ab.percorso && !ab.deviazione && (ab.prossimaStrada ?? 0) <= 0 && distMeta > 0.8) {
+        const strada = this.strada(ab);
+        ab.percorsoPer = ab.meta.clone();
+        ab.prossimaStrada = 4; // (se non c'è strada non si riprova a ogni passo)
+        if (strada && strada.length > 1) {
+          ab.percorso = strada;
+          ab.fermo = 0;
+          ab.distPrima = Infinity;
+          continue;
+        }
+      }
       if (ab.fermo > 2.5) {
         ab.fermo = 0;
         ab.distPrima = Infinity;
+        if (this.momento() === 'notte' && ab.sveglio <= 0 && !ab.attivita) {
+          ab.notteFermo = (ab.notteFermo ?? 0) + 1;
+          if (ab.notteFermo >= (distMeta < 5 ? 3 : 6)) { ab.dormeQui = { qui: ab.m.gruppo.position.clone(), casa: ab.meta.clone() }; ab.percorso = undefined; continue; }
+        }
+        if (ab.percorso) { ab.percorso = undefined; continue; }
         if (ab.deviazione) { ab.deviazione = null; continue; }
         if (ab.attivita?.id === 'lavoro' && !ab.attivita.giro && dist < 1.5) {
           // quasi alla sua postazione ma qualcosa lo blocca: ci scivola dentro
@@ -3066,6 +3216,36 @@ export class Scena {
         }
       }
     }
+  }
+
+  /** La strada da dove si trova alla sua meta, girando intorno a case, staccionate e acqua (null se non c'è). */
+  private strada(ab: Abitante): THREE.Vector3[] | null {
+    const mis = this.misuraAnimale(ab);
+    const p = ab.m.gruppo.position, r = mis.r + mis.mezza * 0.6 + 0.14;
+    const lg = this.strutture.get('laghetto');
+    // gli altri che stanno fermi (dormono, lavorano, sono arrivati): si gira intorno anche a loro
+    const fermi: [number, number, number][] = [];
+    for (const b of this.abitanti.values()) {
+      if (b === ab || !b.m.gruppo.visible || this.trattenuti.has(b.dati.id)) continue;
+      const q = b.m.gruppo.position;
+      if (b.z.length || b.dati.addormentato || b.meta.distanceTo(q) < 0.2) fermi.push([q.x, q.z, this.spazioDi(b) + r]);
+    }
+    const libero = (x: number, z: number) => {
+      for (const [fx, fz, fr] of fermi) if (Math.abs(fx - x) < fr && Math.abs(fz - z) < fr && Math.hypot(fx - x, fz - z) < fr) return false;
+      for (const o of this.ostacoli) {
+        if (o.chi === ab.dati.id) continue;
+        const ro = raggioDi(o) + r;
+        if (Math.abs(o.x - x) > ro || Math.abs(o.z - z) > ro) continue;
+        if (spintaFuori(x, z, r, o)) return false;
+      }
+      if (lg) {
+        const cr = Math.cos(lg.rotation.y), sr = Math.sin(lg.rotation.y), X = x - lg.position.x, Z = z - lg.position.z;
+        if (fuoriDalLago(X * cr - Z * sr, X * sr + Z * cr, 1.05)) return false;
+      }
+      return !(this.arredo.terreno && this.inAcqua(x, z));
+    };
+    const tappe = trovaStrada([p.x, p.z], [ab.meta.x, ab.meta.z], libero, this.raggio + 6);
+    return tappe ? tappe.map(([x, z]) => new THREE.Vector3(x, 0, z)) : null;
   }
 
   /** Se (p) o il suo corpo è nell'acqua di un laghetto scavato, lo porta sulla riva più vicina (salendo). */
@@ -3143,9 +3323,9 @@ export class Scena {
     }
     // incontri: solo qualcuno, mai tutti insieme (al massimo un terzo del villaggio in chiacchiere)
     const inChiacchiera = tutti.filter((b) => b.amico).length;
-    const voglia = (ab.dati.fase === 'cucciolo' ? 0.22 : 0.18) * (momento === 'pranzo' || momento === 'sera' ? 1.4 : 1);
+    const voglia = (ab.dati.fase === 'cucciolo' ? 0.42 : 0.36) * (momento === 'pranzo' || momento === 'sera' ? 1.4 : 1);
     const liberi = tutti.filter((b) => b !== ab && !b.amico && b.salto <= 0 && !b.attivita);
-    if (liberi.length && inChiacchiera + 2 <= Math.max(2, Math.ceil(tutti.length / 3)) && Math.random() < voglia) {
+    if (liberi.length && inChiacchiera + 2 <= Math.max(2, Math.ceil(tutti.length / 2)) && Math.random() < voglia) {
       // preferisce chi è vicino
       liberi.sort((x, y) => x.m.gruppo.position.distanceTo(ab.m.gruppo.position) - y.m.gruppo.position.distanceTo(ab.m.gruppo.position));
       const b = liberi[Math.floor(Math.random() * Math.min(2, liberi.length))];
@@ -3157,6 +3337,9 @@ export class Scena {
       ab.amico = b.dati.id;
       b.amico = ab.dati.id;
       ab.incontro = b.incontro = 0;
+      // come passano il tempo: quasi sempre due chiacchiere, ogni tanto una risata, un ballo, un abbraccio
+      const sorte = Math.random();
+      ab.modoIncontro = b.modoIncontro = sorte < 0.45 ? 0 : sorte < 0.65 ? 1 : sorte < 0.82 ? 2 : 3;
       ab.meta = mezzo.clone().sub(asse);
       b.meta = mezzo.clone().add(asse);
       b.pausa = 0;

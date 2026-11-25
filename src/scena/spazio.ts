@@ -161,3 +161,96 @@ export function piuViciniCapsule(a: Capsula, b: Capsula): [number, number, numbe
   }
   return [p1x + d1x * s, p1z + d1z * s, p2x + d2x * t, p2z + d2z * t];
 }
+
+/**
+ * La strada tra due punti girando intorno alle cose (griglia a quadretti, cerca il percorso più corto).
+ * `libero(x, z)` dice se lì ci si può stare. Restituisce le tappe (l'ultima è la meta), o null se non c'è strada.
+ */
+export function trovaStrada(da: [number, number], a: [number, number], libero: (x: number, z: number) => boolean, lim: number, passo = 0.5): [number, number][] | null {
+  const N = Math.ceil((lim * 2) / passo) + 1;
+  const cella = (v: number) => Math.round((v + lim) / passo);
+  const mondo = (i: number) => i * passo - lim;
+  const dentro = (i: number, j: number) => i >= 0 && j >= 0 && i < N && j < N;
+  const memo = new Map<number, boolean>();
+  const ok = (i: number, j: number) => {
+    if (!dentro(i, j)) return false;
+    const k = i * N + j;
+    let v = memo.get(k);
+    if (v === undefined) memo.set(k, (v = libero(mondo(i), mondo(j))));
+    return v;
+  };
+  let si = cella(da[0]), sj = cella(da[1]);
+  let gi = cella(a[0]), gj = cella(a[1]);
+  if (!dentro(si, sj) || !dentro(gi, gj)) return null;
+  // chi parte da dentro una cosa (gli hanno messo una casa addosso) esce prima dal quadretto libero più vicino
+  let uscita: [number, number] | null = null;
+  if (!ok(si, sj)) {
+    let dm = Infinity;
+    for (let r = 1; r <= 8 && !uscita; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+      if (Math.max(Math.abs(di), Math.abs(dj)) !== r || !ok(si + di, sj + dj)) continue;
+      const d = Math.hypot(di, dj);
+      if (d < dm) { dm = d; uscita = [si + di, sj + dj]; }
+    }
+    if (!uscita) return null;
+    [si, sj] = uscita;
+  }
+  // la meta può essere attaccata a un mobile (una postazione, una porta): si arriva al quadretto libero più vicino
+  if (!ok(gi, gj)) {
+    let meglio: [number, number] | null = null, dm = Infinity;
+    for (let r = 1; r <= 4 && !meglio; r++) for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+      if (Math.max(Math.abs(di), Math.abs(dj)) !== r || !ok(gi + di, gj + dj)) continue;
+      const d = Math.hypot(mondo(gi + di) - a[0], mondo(gj + dj) - a[1]);
+      if (d < dm) { dm = d; meglio = [gi + di, gj + dj]; }
+    }
+    if (!meglio) return null;
+    [gi, gj] = meglio;
+  }
+  const g = new Map<number, number>(), da_ = new Map<number, number>();
+  const aperti: [number, number][] = [[Math.hypot(gi - si, gj - sj), si * N + sj]]; // [stima, cella]
+  g.set(si * N + sj, 0);
+  const chiusi = new Set<number>();
+  let trovato = false;
+  for (let giri = 0; aperti.length && giri < 8000; giri++) {
+    let m = 0;
+    for (let k = 1; k < aperti.length; k++) if (aperti[k][0] < aperti[m][0]) m = k;
+    const [, c] = aperti.splice(m, 1)[0];
+    if (chiusi.has(c)) continue;
+    chiusi.add(c);
+    const i = Math.floor(c / N), j = c % N;
+    if (i === gi && j === gj) { trovato = true; break; }
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      if (!di && !dj) continue;
+      const ni = i + di, nj = j + dj;
+      if (!ok(ni, nj) || chiusi.has(ni * N + nj)) continue;
+      // in diagonale solo se non si taglia uno spigolo
+      if (di && dj && (!ok(i + di, j) || !ok(i, j + dj))) continue;
+      const costo = g.get(c)! + (di && dj ? 1.414 : 1);
+      const n = ni * N + nj;
+      if (costo >= (g.get(n) ?? Infinity)) continue;
+      g.set(n, costo);
+      da_.set(n, c);
+      aperti.push([costo + Math.hypot(gi - ni, gj - nj), n]);
+    }
+  }
+  if (!trovato) return null;
+  const punti: [number, number][] = [];
+  for (let c: number | undefined = gi * N + gj; c !== undefined && c !== si * N + sj; c = da_.get(c)) punti.unshift([mondo(Math.floor(c / N)), mondo(c % N)]);
+  punti.push(a);
+  // si tolgono le tappe inutili: da ognuna si va dritti alla più lontana che si vede
+  const vede = (p: [number, number], q: [number, number]) => {
+    const l = Math.hypot(q[0] - p[0], q[1] - p[1]), n = Math.ceil(l / (passo * 0.4));
+    for (let k = 1; k < n; k++) if (!libero(p[0] + ((q[0] - p[0]) * k) / n, p[1] + ((q[1] - p[1]) * k) / n)) return false;
+    return true;
+  };
+  const out: [number, number][] = [];
+  let qui: [number, number] = uscita ? [mondo(si), mondo(sj)] : da, k = 0;
+  if (uscita) out.push(qui);
+  while (k < punti.length) {
+    let far = k;
+    for (let m = punti.length - 1; m > k; m--) if (vede(qui, punti[m])) { far = m; break; }
+    out.push(punti[far]);
+    qui = punti[far];
+    k = far + 1;
+  }
+  return out;
+}

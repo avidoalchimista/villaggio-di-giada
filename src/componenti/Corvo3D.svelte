@@ -3,7 +3,7 @@
   // sbatte le ali e annuisce quando parla. Ogni volta che cambia la battuta fa un saltello.
   import { onDestroy, onMount } from 'svelte';
   import * as THREE from 'three';
-  import { creaCorvo, mat } from '../scena/modelli';
+  import { creaCorvo, espressione, mat, rifinisci } from '../scena/modelli';
   import { CURVA, materiale } from '../scena/ps1';
 
   let { battuta = '', taglia = 230 }: { battuta?: string; taglia?: number } = $props();
@@ -44,7 +44,7 @@
     // via il palo e l'ombra del villaggio: qui sta su un ramo
     corvo.gruppo.children.slice(0, 2).forEach((o) => (o.visible = false));
     scena.add(corvo.gruppo);
-    const uccello = corvo.testa.parent!;
+    const uccello = corvo.uccello;
 
     const ramo = new THREE.Group();
     const legno = materiale({ color: '#7a5636', rim: 0.3 });
@@ -91,6 +91,8 @@
       const battito = parlando ? Math.max(0, Math.sin(t * 9)) * 0.7 : Math.sin(t * 8) * 0.4 * (Math.sin(t * 0.45) > 0.93 ? 1 : 0);
       corvo.ali[0].rotation.z = -battito;
       corvo.ali[1].rotation.z = battito;
+      espressione(corvo.m, parlando ? 'gioia' : 'fiducia');
+      rifinisci(corvo.m, dt, t);
       uccello.position.y = 1.6 + Math.abs(Math.sin(salto * Math.PI)) * 0.35 + Math.sin(t * 2) * 0.012;
       uccello.scale.y = 1 + Math.sin(t * 2) * 0.015;
       corvo.gruppo.rotation.y = 0.35 + Math.sin(t * 0.3) * 0.08;

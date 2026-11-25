@@ -80,8 +80,8 @@ const MANTI: Record<Specie, Mantello[]> = {
   maiale: [
     { corpo: '#f6b4c0', pancia: '#fcd2da', muso: '#f39aac', zampe: '#e88a9c', extra: '#f6b4c0', occhi: '#2a1a1c' },
     { corpo: '#f8c4c8', pancia: '#fde0e2', muso: '#f2a4b0', zampe: '#e898a4', extra: '#4a3a3a', occhi: '#2a1a1c' },
+    { corpo: '#f9c9b6', pancia: '#fde4d8', muso: '#f4a79a', zampe: '#eb9c8e', extra: '#f9c9b6', occhi: '#2a1a1c' },
     { corpo: '#3e3638', pancia: '#5a5052', muso: '#6a5a5c', zampe: '#2a2426', extra: '#f8f2ee', occhi: '#0e0a0a' },
-    { corpo: '#d88a52', pancia: '#f2c49a', muso: '#e8a070', zampe: '#a8603a', extra: '#d88a52', occhi: '#2a140a' },
   ],
   // uccellino: muso = la faccina/il petto colorato, extra = il cappuccio e le ali
   uccellino: [
@@ -278,16 +278,20 @@ function M(gen: THREE.Matrix4, p: V, s: V | number = 1, r?: V) {
   return gen.clone().multiply(_m.compose(new THREE.Vector3(...p), _q, sc));
 }
 
-/** divisa: se sta lavorando, con la divisa del suo mestiere. */
-export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
+/** Il corvo narratore: fatto come gli uccellini del villaggio, ma più grande, nero-blu e col becco lungo. */
+const MANTO_CORVO: Mantello = { corpo: '#2e3142', pancia: '#4a4f6a', muso: '#454a63', zampe: '#e0a040', extra: '#23252f', occhi: '#8a5a20' };
+
+/** divisa: se sta lavorando, con la divisa del suo mestiere. corvo: solo per il corvo narratore (vedi creaCorvo). */
+export function creaAnimale(a: Animale, divisa = false, corvo = false): ModelloAnimale {
   const asp = a.aspetto ?? aspettoDiRiserva(a);
-  const base = MANTI[a.specie][asp.manto % MANTI[a.specie].length];
+  const base = corvo ? MANTO_CORVO : MANTI[a.specie][asp.manto % MANTI[a.specie].length];
   const t = { segno: asp.tratto, lato: asp.lato, taglia: asp.taglia };
   const p = { ...base, zampe: t.segno === 'calzini bianchi' ? '#fbf8f2' : base.zampe };
   const piccolo = a.fase === 'cucciolo';
   const papera = a.specie === 'papera', uccello = a.specie === 'uccellino' || papera;
   const bipede = !piccolo || uccello;
-  const F = FORME[a.specie];
+  const F0 = FORME[a.specie];
+  const F = corvo ? { ...F0, P: { ...F0.P, torso: [0.25, 0.3, 0.26] as [number, number, number], testa: 0.6 } } : F0;
   const P = F.P;
   const zoccoli = F.piede === 'zoccolo';
   // corporatura: rotondetto, normale o slanciato (tre forme per specie: la pelle si prepara una volta sola per ognuna)
@@ -439,7 +443,7 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
     case 'lepre': codaPunti = [[0.02, -0.02, 0.085], [0.03, -0.07, 0.075]]; codaColori = [C_PUNTA]; break;
     case 'daino': codaPunti = [[0, 0, 0.05], [-0.06, -0.07, 0.045], [-0.13, -0.1, 0.03]]; break;
     case 'cavallo': codaPunti = [[0, 0, 0.06], [0.0, -0.12, 0.085], [-0.16, -0.2, 0.095], [-0.36, -0.22, 0.085], [-0.52, -0.2, 0.05]]; break;
-    case 'uccellino': codaPunti = [[0, 0, 0.07], [-0.05, -0.14, 0.06], [-0.1, -0.27, 0.04]]; break;
+    case 'uccellino': codaPunti = corvo ? [[0, 0, 0.09], [-0.08, -0.2, 0.08], [-0.2, -0.42, 0.05]] : [[0, 0, 0.07], [-0.05, -0.14, 0.06], [-0.1, -0.27, 0.04]]; break;
     case 'papera': codaPunti = [[0, 0, 0.09], [0.07, -0.14, 0.07], [0.15, -0.24, 0.035]]; break;
     default: break; // riccio, asino, mucca, maiale: coda sottile, fatta a parte
   }
@@ -549,7 +553,7 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
   if (a.specie === 'volpe') for (const s of [-1, 1]) sc.cono(hu(s * 0.22, -0.16, 0.1), hu(s * 0.44, -0.24, 0.02), rT(0.16), rT(0.05), iT, C_TESTA, 0.05);
 
   // ---------- la pelle: si prepara una volta per forma, poi si colora per ogni animale ----------
-  const chiave = [a.specie, piccolo ? 'c' : a.fase === 'giovane' ? 'g' : 'a', formaQ, folta ? 'f' : ''].join('|');
+  const chiave = [corvo ? 'corvo' : a.specie, piccolo ? 'c' : a.fase === 'giovane' ? 'g' : 'a', formaQ, folta ? 'f' : ''].join('|');
   let pelle = PELLI.get(chiave);
   if (!pelle) PELLI.set(chiave, (pelle = sc.costruisci(CELLA)));
 
@@ -659,10 +663,10 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       }
       break;
     case 'maiale':
-      if (asp.manto % 4 === 1) for (let k = 0; k < 5; k++) {
-        const pt = sulDorso(r0(), (r0() * 2 - 1) * 0.45);
-        macchia(goccia({ a: pt, r3: [0.07 + r0() * 0.05, 0.08 + r0() * 0.05, 0.08 + r0() * 0.05] }), p.extra, 0.008);
-      } else if (asp.manto % 4 === 2) {
+      if (asp.manto % 4 === 1) for (let k = 0; k < 7; k++) {
+        const pt = sulDorso(r0(), (r0() * 2 - 1) * 0.8);
+        macchia(goccia({ a: pt, r3: [0.1 + r0() * 0.07, 0.11 + r0() * 0.07, 0.11 + r0() * 0.07] }), p.extra, 0.008);
+      } else if (asp.manto % 4 === 3) {
         // cinta: la fascia chiara intorno alle spalle (e le braccia chiare)
         const chiara = col(p.extra);
         pitture.push((pt, out) => {
@@ -674,8 +678,10 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       break;
     case 'uccellino':
       // la faccina e il petto colorati, il cappuccio scuro
-      macchia(gT({ a: [0, -0.16, 0.2], r3: [0.42, 0.34, 0.4] }), p.muso, 0.012);
-      macchia(gT({ a: [0, 0.3, -0.1], r3: [0.56, 0.3, 0.56] }), p.extra, 0.012);
+      if (!corvo) {
+        macchia(gT({ a: [0, -0.16, 0.2], r3: [0.42, 0.34, 0.4] }), p.muso, 0.012);
+        macchia(gT({ a: [0, 0.3, -0.1], r3: [0.56, 0.3, 0.56] }), p.extra, 0.012);
+      }
       break;
     case 'papera':
       if (!piccolo && asp.manto % 4 === 1 && a.sesso === 'm') pitture.push((pt, out) => { const u = (pt.y - (pernoP[1] + 0.015)) / 0.028; if (Math.abs(u) < 1 && Math.abs(pt.x) < 0.2 && pt.z > -0.1) out.lerp(col('#ffffff'), 1); });
@@ -826,10 +832,11 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       const g = new THREE.SphereGeometry(0.15, 14, 10);
       as.pezzo(g, M(MT, [0, -0.1, 0.5], [1.0, 0.34, 1.3]), col(piccolo ? '#f6b040' : p.muso), iT, { contorno: true });
     } else {
-      as.pezzo(new THREE.ConeGeometry(0.075, 0.26, 10), M(MT, [0, -0.04, 0.55], 1, [Math.PI / 2, 0, 0]), col(asp.manto % 4 === 3 ? '#f2a020' : '#4a3a2e'), iT, { contorno: true });
+      if (corvo) as.pezzo(new THREE.ConeGeometry(0.12, 0.46, 10), M(MT, [0, -0.07, 0.62], [1, 1, 0.8], [Math.PI / 2, 0, 0]), col('#6a6e80'), iT, { contorno: true });
+      else as.pezzo(new THREE.ConeGeometry(0.075, 0.26, 10), M(MT, [0, -0.04, 0.55], 1, [Math.PI / 2, 0, 0]), col(asp.manto % 4 === 3 ? '#f2a020' : '#4a3a2e'), iT, { contorno: true });
     }
     // zampette sottili (palmate per la papera)
-    const colZ = col(papera ? p.zampe : '#c89a6a');
+    const colZ = col(papera || corvo ? p.zampe : '#c89a6a');
     for (const { s, A } of arti) {
       const i = s < 0 ? 2 : 3;
       as.pezzo(new THREE.CylinderGeometry(0.02, 0.02, hipY * 1.05, 6), new THREE.Matrix4().makeTranslation(A[0], hipY * 0.5, 0), colZ, I(zampe[i]), { contorno: true });
@@ -896,23 +903,27 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
       if (a.sesso === 'm') {
         if (piccolo) for (const s of [-1, 1]) sullaTesta(mesh(geo.palla(0.045), mat('#8a5a36'), s * 0.14, 0.42, -0.04));
         else for (const s of [-1, 1]) {
-          // palco: un'asta che sale, la pala piatta in cima e qualche punta
+          // palco: un ramo che sale curvando in fuori, con le sue punte (più piccolo da giovani)
           const palco = new THREE.Group();
           palco.position.set(s * 0.15, 0.36, -0.06);
-          palco.rotation.z = -s * 0.45;
-          const corno = mat('#c8a882', { rim: 0.2 });
-          palco.add(mesh(geo.cil(0.025, 0.04, 0.34, 6), corno, 0, 0.15, 0));
-          const punta1 = mesh(geo.cono(0.022, 0.14, 5), corno, 0, 0.12, 0.07);
-          punta1.rotation.x = 1.0;
-          palco.add(punta1);
-          const pala = mesh(geo.palla(0.13, 10), corno, s * 0.06, 0.38, -0.04);
-          pala.scale.set(1.25, 0.9, 0.22);
-          pala.rotation.z = -s * 0.5;
-          palco.add(pala);
-          for (const k of [0, 1, 2]) {
-            const pp = mesh(geo.cono(0.02, 0.1, 5), corno, s * (0.02 + k * 0.07), 0.48 + (k === 1 ? 0.04 : 0), -0.04);
-            pp.rotation.z = -s * (0.3 + k * 0.25);
-            palco.add(pp);
+          palco.scale.setScalar(a.fase === 'giovane' ? 0.62 : 1);
+          const corno = mat('#ead9b8', { rim: 0.25 });
+          const ramo = (da: V, a2: V, r1: number, r2: number) => {
+            const p1 = new THREE.Vector3(...da), p2 = new THREE.Vector3(...a2);
+            const r = mesh(geo.cil(r2, r1, p1.distanceTo(p2), 6), corno);
+            r.position.copy(p1).add(p2).multiplyScalar(0.5);
+            r.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p2.clone().sub(p1).normalize());
+            palco.add(r);
+            const nodo = mesh(geo.palla(r2, 6), corno);
+            nodo.position.copy(p2);
+            palco.add(nodo);
+          };
+          const A: V = [0, 0, 0], B: V = [s * 0.1, 0.2, -0.04], C: V = [s * 0.22, 0.4, -0.03], D: V = [s * 0.24, 0.6, 0.05];
+          ramo(A, B, 0.042, 0.034); ramo(B, C, 0.034, 0.028); ramo(C, D, 0.028, 0.012);
+          ramo(B, [s * 0.08, 0.3, 0.14], 0.026, 0.01); // la punta davanti
+          if (a.fase !== 'giovane') {
+            ramo(C, [s * 0.38, 0.5, -0.04], 0.024, 0.01);
+            ramo(C, [s * 0.16, 0.52, -0.16], 0.022, 0.01);
           }
           sullaTesta(palco);
         }
