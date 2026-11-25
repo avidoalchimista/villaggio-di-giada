@@ -19,7 +19,7 @@ import {
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto, accendiFinestre,
 } from './modelli';
-import { CURVA, NEVE, materiale, materialeTerreno, spriteTesto } from './ps1';
+import { CURVA, GUSCI, NEVE, materiale, materialeTerreno, spriteTesto } from './ps1';
 import type { Meteo } from '../lib/meteo';
 import { cappellinoDiFesta, Festa, POSTO_TORTA } from './festa';
 import { Pescata } from './pesca3d';
@@ -2036,6 +2036,40 @@ export class Scena {
 
   // ---------- ciclo ----------
 
+  private contaFotogrammi = 0;
+  private tmpV = new THREE.Vector3();
+  /**
+   * I contorni scuri delle cose lontane sono più sottili di un puntino: non si vedono, ma costano.
+   * Quelli lontani si spengono (vanno su un altro "strato" che la telecamera non guarda) e si riaccendono avvicinandosi.
+   */
+  private contorniLontani() {
+    const h = this.canvas.clientHeight * this.renderer.getPixelRatio();
+    const pxPerMetro = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
+    const limite = (0.018 * pxPerMetro) / 1.2; // il contorno resta finché è largo almeno ~1,2 puntini
+    const cam = this.camera.position;
+    let j = 0;
+    for (let i = 0; i < GUSCI.length; i++) {
+      const g = GUSCI[i];
+      let r: THREE.Object3D = g;
+      while (r.parent) r = r.parent;
+      if (r !== this.scene) {
+        // non è (più) nel villaggio: torna normale e lo si lascia perdere
+        if (r.type === 'Scene' || !g.parent) { g.layers.set(0); continue; }
+        // pezzo non ancora messo nella scena (o tolto): lo si aspetta un po', poi lo si lascia perdere
+        g.userData.attesa = (g.userData.attesa ?? 0) + 1;
+        if (g.userData.attesa < 60) GUSCI[j++] = g;
+        else g.layers.set(0);
+        continue;
+      }
+      GUSCI[j++] = g;
+      g.userData.attesa = 0;
+      const d = g.getWorldPosition(this.tmpV).distanceTo(cam);
+      const sc = g.parent ? Math.abs(g.parent.matrixWorld.elements[0]) + Math.abs(g.parent.matrixWorld.elements[1]) + Math.abs(g.parent.matrixWorld.elements[2]) : 1;
+      g.layers.set(d < limite * Math.max(0.3, sc) ? 0 : 1);
+    }
+    GUSCI.length = j;
+  }
+
   private ridimensiona() {
     const w = this.canvas.clientWidth || 1, h = this.canvas.clientHeight || 1;
     this.renderer.setSize(w, h, false);
@@ -2324,6 +2358,7 @@ export class Scena {
       return true;
     });
 
+    if (++this.contaFotogrammi % 12 === 0) this.contorniLontani();
     this.neve += ((this.meteo === 'neve' ? 1 : 0) - this.neve) * Math.min(1, dt * (this.meteo === 'neve' ? 0.05 : 0.02));
     NEVE.valore = this.neve < 0.01 ? 0 : this.neve;
     this.renderer.render(this.scene, this.camera);
@@ -2424,7 +2459,7 @@ export class Scena {
           }
           return;
         }
-        ab.m.corpo.position.y = 0;
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, 0, Math.min(1, dt * 8));
         return;
       }
     }
@@ -2437,13 +2472,14 @@ export class Scena {
     if (ab.pausa > 0) {
       ab.vel = 0;
       ab.pausa -= dt;
-      // respiro e testolina che si inclina
-      ab.m.corpo.position.y = Math.sin(t * 2.2 + g.position.x) * 0.012;
-      ab.m.testa.rotation.x = 0;
-      ab.m.testa.rotation.z = Math.sin(t * 0.8 + g.position.z) * 0.15;
-      ab.m.testa.rotation.y = Math.sin(t * 0.6 + g.position.x) * 0.35;
-      ab.m.zampe.forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, 0, dt * 6)));
-      if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(t * 3) * 0.3;
+      // respiro e testolina che si inclina (ci si arriva piano dalla camminata: niente scatti)
+      const morbido = Math.min(1, dt * 5);
+      ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, Math.sin(t * 2.2 + g.position.x) * 0.012, morbido);
+      ab.m.testa.rotation.x = THREE.MathUtils.lerp(ab.m.testa.rotation.x, 0, morbido);
+      ab.m.testa.rotation.z = THREE.MathUtils.lerp(ab.m.testa.rotation.z, Math.sin(t * 0.8 + g.position.z) * 0.15, morbido);
+      ab.m.testa.rotation.y = THREE.MathUtils.lerp(ab.m.testa.rotation.y, Math.sin(t * 0.6 + g.position.x) * 0.35, morbido);
+      ab.m.zampe.forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, 0, Math.min(1, dt * 6))));
+      if (ab.m.coda) ab.m.coda.rotation.y = THREE.MathUtils.lerp(ab.m.coda.rotation.y, Math.sin(t * 3) * 0.3, morbido);
       if (ab.pausa <= 0) this.scegliCosaFare(ab);
       return;
     }
@@ -2490,20 +2526,23 @@ export class Scena {
     const muso = new THREE.Vector3(Math.sin(g.rotation.y), 0, Math.cos(g.rotation.y)).multiplyScalar(0.75).addScaledVector(dir, 0.25).normalize();
     g.position.addScaledVector(muso, Math.min(dist, ab.vel * dt));
     const ritmo = Math.min(1.2, ab.vel / Math.max(0.1, vel)); // le zampe vanno a tempo con la velocità: niente passi sul posto
-    ab.m.testa.rotation.x = 0;
+    const morbido = Math.min(1, dt * 8);
+    ab.m.testa.rotation.x = THREE.MathUtils.lerp(ab.m.testa.rotation.x, 0, morbido);
     ab.m.testa.rotation.y = THREE.MathUtils.lerp(ab.m.testa.rotation.y, THREE.MathUtils.clamp(diff, -0.5, 0.5), Math.min(1, dt * 6)); // guarda dove sta per girare
+    // il saltello del passo è una curva morbida (prima rimbalzava a punta a ogni appoggio)
+    const saltello = (p: number) => 0.5 - 0.5 * Math.cos(p * 2);
     if (ab.eretto > 0.6) {
       ab.passo += dt * 8 * ritmo;
-      ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.05;
+      ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, saltello(ab.passo) * 0.05, morbido);
       ab.m.corpo.rotation.z = Math.sin(ab.passo) * 0.06; // ondeggia da un piede all'altro
       ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i % 2 === 0 ? 0 : Math.PI) + (i < 2 ? Math.PI : 0)) * (i < 2 ? 0.5 : 0.65)));
     } else {
       ab.passo += dt * (gioca ? 16 : 11) * (0.6 + 0.4 * ampiezzaPasso(ab.m)) * ritmo; // le zampe lunghe fanno passi più lenti
-      ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.1 * ritmo;
-      ab.m.testa.rotation.z = Math.sin(ab.passo) * 0.06;
+      ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, saltello(ab.passo) * 0.09 * ritmo, morbido);
+      ab.m.testa.rotation.z = THREE.MathUtils.lerp(ab.m.testa.rotation.z, Math.sin(ab.passo) * 0.06, morbido);
       ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(ab.m)));
     }
-    if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(ab.passo) * 0.4;
+    if (ab.m.coda) ab.m.coda.rotation.y = THREE.MathUtils.lerp(ab.m.coda.rotation.y, Math.sin(ab.passo) * 0.4, morbido);
   }
 
   // ---------- fisica: nessuno passa attraverso le case, gli attrezzi, il laghetto o gli altri ----------
