@@ -1,6 +1,9 @@
 <script lang="ts">
   // Schermata principale: la radura in 3D. Si tocca un animale, il corvo, il quaderno, le uova, le castagne.
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
+  import APiedi from '../componenti/APiedi.svelte';
+  import { chiSei, consiglio, daChePagina, DOMANDE, emozioniCheporto, paginaDi, type Battuta, type Domanda } from '../lib/chiacchiere';
+  import { carattereDi, nomeCarattere } from '../lib/carattere';
   import Casa from '../componenti/Casa.svelte';
   import Pesca from '../componenti/Pesca.svelte';
   import Acquario from '../componenti/Acquario.svelte';
@@ -19,7 +22,7 @@
   import { leggiMeta, scriviMeta } from '../lib/db';
   import frasi from '../dati/frasi.json';
   import {
-    app, cambiaArredo, chiudiMentreEriVia, prendiRitrovamentoQui, rientriQui, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, soffiaCandeline, vai,
+    analizzaTesto, app, cambiaArredo, chiudiMentreEriVia, prendiRitrovamentoQui, rientriQui, dataDiOggi, insegnaQui, prendiConsiglio, raccogliQui, rinominaAnimale, salutaAnimale, segnaBackupFatto, segnaSorpresaVista, soffiaCandeline, vai,
     type RigaDialogo,
   } from '../lib/app.svelte';
   import {
@@ -142,6 +145,50 @@
   // (il castoro racconta lui quello che fa)
   const dalCorvo = (eventi: Evento[]): RigaDialogo[] => eventi.map((e) => (e.tipo === 'castoro' || e.tipo === 'sentiero' ? { chi: 'Castoro', voce: 'animale' as const, testo: e.testo } : { chi: 'Corvo', voce: 'corvo' as const, testo: e.testo }));
   const chiDice = (a: Animale) => `${a.nome || nomeAnimale(a)} ${simbolo(a)}`;
+
+  // ---------- due chiacchiere faccia a faccia (toccando un animale) ----------
+  let faccia = $state<string | null>(null); // con chi si sta parlando in primo piano
+  let giroDialogo = $state(0); // cambia a ogni risposta: il fumetto riparte dalla prima riga
+  let consiglioAperto = $state(false);
+  let testoConsiglio = $state('');
+  let aPiedi = $state(false);
+  $effect(() => {
+    const id = dialogo?.tipo === 'animale' && !arreda ? (dialogo.animale?.id ?? null) : null;
+    untrack(() => {
+      if (id === faccia) return;
+      if (faccia) scena?.fineCinema();
+      consiglioAperto = false;
+      faccia = id && scena?.parlaCon(id) ? id : null;
+    });
+  });
+  function rispondi(a: Animale, battute: Battuta[]) {
+    dialogo = {
+      righe: battute.map((b) => (b.chi === 'corvo' ? { chi: 'Corvo', voce: 'corvo' as const, testo: b.testo } : { chi: chiDice(a), voce: 'animale' as const, testo: b.testo })),
+      animale: a,
+      tipo: 'animale',
+    };
+    giroDialogo += 1;
+    scena?.annuisci(a.id);
+  }
+  function chiedi(d: Domanda) {
+    const a = dialogo?.animale;
+    if (!a) return;
+    if (d === 'chi') rispondi(a, chiSei(a, dataDiOggi()));
+    else if (d === 'pagina') rispondi(a, daChePagina(a, paginaDi(a, app.voci, s.eventi), dataDiOggi()));
+    else if (d === 'emozioni') rispondi(a, emozioniCheporto(a));
+    else {
+      rispondi(a, [{ chi: 'animale', testo: 'Certo! Se vuoi, raccontami cosa ti passa per la testa, e io ci penso su. Oppure te ne do uno io.' }]);
+      testoConsiglio = '';
+      consiglioAperto = true;
+    }
+  }
+  function daiConsiglio() {
+    const a = dialogo?.animale;
+    if (!a) return;
+    const t = testoConsiglio.trim();
+    consiglioAperto = false;
+    rispondi(a, consiglio(a, giroDialogo + s.numeroVoci, t || undefined, t ? analizzaTesto : undefined));
+  }
 
   // ---------- primo piano: schiusa e sorprese "mentre eri via" ----------
   type Spettacolo = { passi: Evento[]; i: number; titolo: string; testo: string; pronto: boolean; nome: Animale | null };
@@ -675,6 +722,9 @@
     {@const l = luogo}
     <div class="sotto-acquario"><Luogo luogo={l} onchiudi={() => { luogo = null; scena?.fineCinema(); }} /></div>
   {/if}
+  {#if scena && !fs && !sp && !casa && !pesca && !gita && !acquario && !museo && !funghi && !luogo && !faccia && !menu}
+    <APiedi {scena} bind:attivo={aPiedi} conLevetta={!dialogo && !chiediNome && !insegnaA} />
+  {/if}
   {#if erroreGrafica}
     <div class="errore">Questo telefono non riesce a disegnare il bosco in 3D.</div>
   {/if}
@@ -728,6 +778,15 @@
   {:else if arreda && scena}
     <Arredo scena={scena} apri={aiuolaDaAprire} nuova={casaNuova} onchiudi={fineArredo} />
   {:else}
+  {#if faccia && dialogo?.animale}
+    {@const a = dialogo.animale}
+    <div class="primo-piano">
+      <div class="targhetta">
+        <div class="chi-e">{a.nome || nomeAnimale(a)} {simbolo(a)}</div>
+        <div class="che-tipo">{carattereDi(a).emoji} {nomeCarattere(a)} · {conArticolo(a)}{a.mestiere ? ` · ${nomeMestiere(a)}` : ''}</div>
+      </div>
+    </div>
+  {:else}
   <header class="hud-alto">
     <div class="sinistra">
       <div class="pillola nome-villaggio">{s.nomeVillaggio}</div>
@@ -738,6 +797,7 @@
       <div class="pillola castagne">🌰 {s.ghiande ?? 0}</div>
     </div>
   </header>
+  {/if}
 
   <div class="sotto">
     {#if chiediNome}
@@ -764,10 +824,22 @@
         <button class="tondo grigio chiudi" onclick={() => (insegnaA = null)}>Chiudi</button>
       </div>
     {:else if dialogo}
+      {#key giroDialogo}
       <Dialogo righe={dialogo.righe} onfine={chiudiDialogo} onriga={(r) => r.voce === 'corvo' && scena?.faiParlareCorvo(Math.min(4, r.testo.length / 28))}>
         {#snippet azioni()}
-          {#if dialogo?.tipo === 'animale' && dialogo.animale}
+          {#if dialogo?.tipo === 'animale' && dialogo.animale && consiglioAperto}
+            <textarea class="racconto" bind:value={testoConsiglio} rows="3" maxlength="500" placeholder="Scrivi qui cosa ti passa per la testa… (se vuoi)"></textarea>
+            <button class="tondo" onclick={daiConsiglio}>{testoConsiglio.trim() ? 'Ecco' : 'Dimmelo tu'}</button>
+            <button class="tondo grigio" onclick={() => (consiglioAperto = false)}>Lascia stare</button>
+          {:else if dialogo?.tipo === 'animale' && dialogo.animale}
             {@const a = dialogo.animale}
+            {#if a.nome && !a.addormentato}
+              <div class="domande">
+                {#each DOMANDE as d (d.id)}
+                  <button class="domanda" onclick={() => chiedi(d.id)}><span>{d.icona}</span> {d.testo(a)}</button>
+                {/each}
+              </div>
+            {/if}
             {#if a.fase !== 'cucciolo' && !a.studio && !a.addormentato}
               <button class="tondo" onclick={() => { dialogo = null; insegnaA = a; }}>{a.sesso === 'f' ? 'Insegnale' : 'Insegnagli'} qualcosa</button>
             {/if}
@@ -789,6 +861,7 @@
           {/if}
         {/snippet}
       </Dialogo>
+      {/key}
     {:else if menu}
       <MenuCostruisci
         onchiudi={() => (menu = false)}
@@ -812,7 +885,7 @@
           <button class="bottone-costruisci gita" onclick={apriGita} aria-label="Escursione">🎒<span class="punto visibile"></span></button>
         {/if}
       </div>
-      <p class="suggerimento">Tocca chi vuoi · 1 dito muove · 2 dita zoom e giro</p>
+      <p class="suggerimento">{aPiedi ? 'Tocca chi vuoi per parlarci · trascina per guardarti intorno' : 'Tocca chi vuoi · 1 dito muove · 2 dita zoom e giro'}</p>
     {/if}
   </div>
   {/if}
@@ -882,6 +955,27 @@
   .gita { background: #c8842a; }
   .funghi { background: #a8483a; }
   .fuori { position: absolute; bottom: -4px; right: -4px; min-width: 20px; height: 20px; border-radius: 999px; background: #3f7a4a; color: #fff; font-size: 0.72rem; font-weight: 900; display: flex; align-items: center; justify-content: center; border: 2px solid var(--legno); }
+  /* faccia a faccia con un animale */
+  .primo-piano { position: fixed; inset: 0; pointer-events: none; }
+  .primo-piano::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 42%, transparent 50%, rgba(10, 8, 30, 0.42) 100%);
+    animation: appare 0.8s ease-out both;
+  }
+  .targhetta {
+    position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 1;
+    background: var(--panna); border: 3px solid var(--legno); border-radius: 18px; box-shadow: 0 4px 0 var(--legno-scuro);
+    padding: 6px 18px 7px; text-align: center; white-space: nowrap; max-width: 92%; animation: cade 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  }
+  .chi-e { font-weight: 900; font-size: 1.15rem; color: var(--inchiostro); }
+  .che-tipo { font-weight: 700; font-size: 0.8rem; color: var(--testo-tenue); overflow: hidden; text-overflow: ellipsis; }
+  .domande { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
+  .domanda {
+    background: #fff6dc; color: var(--inchiostro); border: 2px solid var(--legno); box-shadow: 0 3px 0 var(--legno-scuro);
+    border-radius: 14px; padding: 8px 10px; font-size: 0.9rem; font-weight: 800; text-align: left; text-shadow: none; line-height: 1.2;
+  }
+  .domanda span { font-size: 1.05rem; }
+  .racconto { width: 100%; font: inherit; font-size: 1rem; padding: 10px 12px; border-radius: 14px; border: 2px solid var(--legno); background: #fffdf6; resize: none; }
   .quadro-grande { position: absolute; inset: 0; z-index: 10; background: rgba(10, 14, 40, 0.7); display: flex; align-items: center; justify-content: center; border: none; border-radius: 0; box-shadow: none; padding: 24px; }
   .quadro-grande img { width: 100%; max-width: 420px; image-rendering: pixelated; border: 14px solid #9a6a40; border-radius: 6px; box-shadow: 0 10px 30px #0008; }
   /* primo piano: bande da film, titolo e didascalia */
