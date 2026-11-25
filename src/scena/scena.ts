@@ -3716,7 +3716,7 @@ export class Scena {
     const tanMezzo = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     const lungo = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
     // (il muso sporge verso di noi: si conta anche mezza lunghezza del corpo)
-    c.dist = THREE.MathUtils.clamp(Math.max(h, lungo * 0.75) / (0.32 * 2 * tanMezzo) + lungo / 2, 1.7, 6);
+    c.dist = THREE.MathUtils.clamp(Math.max(h, lungo * 0.75) / (0.38 * 2 * tanMezzo) + lungo / 2, 1.7, 6);
     c.alt = occhi + 0.1;
     c.guardaY = Math.max(0.05, h * 0.5 - h * 0.55);
     c.angolo += 0.35; // un po' di tre quarti: si vede il muso e anche i vestiti

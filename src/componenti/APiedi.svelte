@@ -108,7 +108,7 @@
     box-shadow: 0 3px 0 var(--legno-scuro); pointer-events: none;
   }
   .aiuto-piedi {
-    position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 4; width: min(92%, 460px);
+    position: absolute; left: 50%; top: calc(112px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 4; width: min(92%, 460px);
     background: rgba(12, 10, 30, 0.78); color: #fff; font-weight: 700; font-size: 0.85rem; text-align: center; line-height: 1.4;
     padding: 8px 14px; border-radius: 14px; pointer-events: none; animation: appare 0.4s ease-out both;
   }
