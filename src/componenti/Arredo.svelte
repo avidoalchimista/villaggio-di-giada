@@ -78,6 +78,14 @@
   }
 
   function tasto(e: KeyboardEvent) {
+    // Esc: prima lascia la cosa scelta, poi esce dall'arredo
+    if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement) && !dipingi) {
+      e.preventDefault();
+      if (aiuolaAperta) aiuolaAperta = null;
+      else if (scelto) scegli(null);
+      else onchiudi();
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !(e.target instanceof HTMLInputElement)) {
       e.preventDefault();
       annulla();
@@ -173,7 +181,7 @@
     if (nuova) {
       // una casa nuova: è già scelta, Giada la trascina dove vuole
       scegli(nuova);
-      messaggio = `📍 ${nomeDi(nuova)}: trascinala dove vuoi (o tocca il prato), girala con le frecce, poi tocca «Fatto ✓».`;
+      messaggio = `📍 ${nomeDi(nuova)}: trascinala dove vuoi (o tocca il prato), girala con le frecce, poi tocca «✓ Mettila qui».`;
     }
     if (apri) {
       modo = 'orto';
@@ -267,7 +275,7 @@
     <div class="pillola">🌰 {s.ghiande}</div>
     <div class="riga">
       <button class="tondo grigio annulla" disabled={!storia.length} onclick={annulla} title="Annulla (Ctrl+Z)">↶ Annulla</button>
-      <button class="tondo fatto" onclick={onchiudi}>Fatto ✓</button>
+      <button class="tondo fatto" onclick={onchiudi}>✓ Ho finito</button>
     </div>
   </div>
 
@@ -336,11 +344,19 @@
               <button class="mini" onclick={() => ruota(-1)} aria-label="Gira a destra">↻</button>
               {#if scelto.startsWith('a:')}<button class="mini" onclick={() => (aiuolaAperta = scelto!.slice(2))}>🌱 Pianta</button>{/if}
               {#if scelto.startsWith('a:') || scelto.startsWith('q:') || scelto.startsWith('o:')}<button class="mini" onclick={mettiVia}>Metti via</button>{/if}
-              <button class="mini" onclick={() => scegli(null)}>OK</button>
+              {#if nuova && scelto === nuova}
+                <!-- la casa nuova: messa a posto, si torna subito al villaggio -->
+                <button class="mini conferma" onclick={onchiudi}>✓ Mettila qui</button>
+              {:else}
+                <button class="mini conferma" onclick={() => scegli(null)}>✓ Lascia qui</button>
+              {/if}
             </div>
           </div>
         {:else}
-          <p class="aiuto">{AIUTO[modo]}</p>
+          <div class="riga-aiuto">
+            <p class="aiuto">{AIUTO[modo]}</p>
+            <button class="mini esci" onclick={onchiudi}>✓ Ho finito</button>
+          </div>
         {/if}
 
         {#if modo === 'sentiero'}
@@ -425,6 +441,10 @@
     color: #fff; box-shadow: none; text-shadow: none;
   }
   .mini:disabled { opacity: 0.45; }
+  .mini.conferma { background: #ffe08a; color: #4a2c0a; border-color: #ffe08a; font-weight: 800; }
+  .riga-aiuto { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .riga-aiuto .aiuto { flex: 1; }
+  .mini.esci { flex: none; background: #f0814f; border-color: #ffd7c2; font-weight: 800; white-space: nowrap; }
   .scelto { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
   .materiali { margin-top: 2px; }
   .materiale { padding: 6px 10px; border-radius: 10px; font-size: 0.82rem; color: #fff; border: 3px solid transparent; box-shadow: none; text-shadow: 0 1px 2px #0008; }

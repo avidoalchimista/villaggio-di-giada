@@ -710,6 +710,18 @@
     arreda = true;
   }
 
+  // toccando «Villaggio» in basso mentre si è già qui si torna al villaggio di sempre: via arredo e menu
+  let richiamoVisto = app.richiamo;
+  $effect(() => {
+    if (app.richiamo === richiamoVisto) return;
+    richiamoVisto = app.richiamo;
+    untrack(() => {
+      if (arreda) fineArredo();
+      menu = false;
+      novitaAperta = false;
+    });
+  });
+
   function fineArredo() {
     // se Giada ha detto «Fatto» senza spostarla, la casa resta lì dov'è: quel posto ora è suo
     const k = casaNuova;
@@ -895,7 +907,7 @@
     <div class="sotto-acquario"><Luogo luogo={l} onchiudi={() => { luogo = null; scena?.fineCinema(); }} /></div>
   {/if}
   {#if scena && !fs && !sp && !casa && !pesca && !gita && !acquario && !museo && !funghi && !luogo && !faccia && !menu}
-    <APiedi {scena} bind:attivo={aPiedi} conLevetta={!dialogo && !chiediNome && !insegnaA} />
+    <APiedi {scena} bind:attivo={aPiedi} conLevetta={!dialogo && !chiediNome && !insegnaA} alto={arreda} />
   {/if}
   {#if erroreGrafica}
     <div class="errore">Questo telefono non riesce a disegnare il bosco in 3D.</div>

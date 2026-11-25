@@ -973,7 +973,7 @@ const CASA_EMOZIONE: Record<Emozione, { tetto: string; porta: string; muro: stri
  * della pagina con cui è nato. Crescendo la abbellisce (vasi, recinto, comignolo...).
  * È grande: circa 2,5 metri di lato, porta davanti (verso +z).
  */
-export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, mestiere: string | null, livelloCasa = 1, ampliamenti: string[] = []): THREE.Group {
+export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, mestiere: string | null, livelloCasa = 1, ampliamenti: string[] = [], davanti?: (g: THREE.Group, fronte: number) => void): THREE.Group {
   const g = new THREE.Group();
   const c = CASA_EMOZIONE[emozione] ?? CASA_EMOZIONE.gioia;
   const muro = mat('#ffffff', { map: texture(64, macchie([c.muro, '#' + new THREE.Color(c.muro).offsetHSL(0, 0, -0.06).getHexString(), c.muro], 0.6, specie.length + emozione.length)) });
@@ -1205,6 +1205,7 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
     ins.rotation.x = ri;
     g.add(ins);
     g.add(creaAttrezziMestiere(mestiere, fronte));
+    davanti?.(g, fronte); // le cose fatte con Giada (i vasi del vasaio)
   }
 
   // davanti alla casa il giardinetto, pensato come un piccolo set col suo tema (secondo l'emozione);

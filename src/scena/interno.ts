@@ -287,7 +287,7 @@ export class Interno {
     if (livello >= 4) extra.push('foto', 'palloncini');
     for (const d of extra) if (!c.decorazioni.includes(d)) this.decorazione(d, a);
     // le cose fatte con Giada nei minigiochi: i vasi sulla mensola, la torta sul tavolo
-    if (this.ricordi.vasi?.length) this.mensolaVasi(this.ricordi.vasi);
+    if (this.ricordi.vasi?.length) this.mensolaVasi(this.ricordi.vasi.slice(-5)); // in casa gli ultimi cinque, gli altri fuori
     if (this.ricordi.torta) this.tortaFatta(this.ricordi.torta, 0.2 - 0.05, 1.3 + 0.28, 0.79);
     // il ritratto di Giada (un cuoricino) sopra il letto: ogni casa ne ha uno
     this.quadretto(-2.5, 2.3, '♥', '#ff8fb1');
@@ -1212,6 +1212,7 @@ export class Interno {
     this.ascolto.abort();
     this.resizeObs.disconnect();
     this.renderer.dispose();
+    this.renderer.forceContextLoss(); // libera subito il disegno 3D: il telefono ne tiene pochi aperti insieme
   }
 }
 

@@ -924,3 +924,44 @@ export function trovaPostazione(casa: THREE.Object3D): Postazione | null {
   casa.userData.postazione = p;
   return p;
 }
+
+/**
+ * Lo scaffale dei vasi fatti al tornio con Giada, fuori dalla casa del vasaio, di fianco al tornio.
+ * Si riempie un vaso alla volta (tre ripiani da cinque); quando è pieno, gli altri si mettono in fila per terra davanti.
+ * Coordinate della casa, come gli attrezzi del mestiere.
+ */
+export function creaVasiFuori(vasi: { profilo: number[]; alto: number; colore: string }[], forma: (profilo: number[], alto: number, s: number, h: number) => THREE.BufferGeometry, fronte: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'vasi-fatti';
+  const z = Math.max(fronte, 1.1) + 0.45;
+  const [px, pz] = POSTO_POSTAZIONE(z);
+  const sc = new THREE.Group();
+  const largo = 1.35, fondo = 0.36;
+  const ripiani = [0.06, 0.52, 0.98];
+  for (const y of ripiani) add(sc, mesh(geo.scatola(largo, 0.05, fondo), legno()), 0, y, 0);
+  for (const x of [-largo / 2 + 0.03, largo / 2 - 0.03]) for (const zz of [-fondo / 2 + 0.03, fondo / 2 - 0.03]) add(sc, mesh(geo.scatola(0.05, 1.12, 0.05), scuro()), x, 0.56, zz);
+  // dietro, una tavola per non far cadere i vasi
+  add(sc, mesh(geo.scatola(largo, 0.12, 0.03), scuro()), 0, 1.06, -fondo / 2 + 0.02);
+  sc.add(ombra(0.8));
+  const perRipiano = 5, passo = (largo - 0.2) / (perRipiano - 1);
+  vasi.forEach((v, i) => {
+    const o = mesh(forma(v.profilo, v.alto, 0.24, 0.34), mat(v.colore, { rim: 0.45 }));
+    if (i < perRipiano * ripiani.length) {
+      // si riempie dal ripiano in basso, da sinistra
+      const r = Math.floor(i / perRipiano), k = i % perRipiano;
+      o.position.set(-largo / 2 + 0.1 + k * passo, ripiani[r] + 0.025, 0.02);
+      sc.add(o);
+    } else {
+      // scaffale pieno: in fila per terra davanti, due file
+      const j = i - perRipiano * ripiani.length;
+      o.position.set(-largo / 2 + 0.12 + (j % 6) * 0.23, 0, 0.42 + Math.floor(j / 6) * 0.26);
+      sc.add(o);
+    }
+  });
+  // a destra del tornio, girato verso chi arriva
+  sc.position.set(px + 1.55, 0, pz - 0.35);
+  sc.rotation.y = -0.75;
+  sc.userData.spazio = 0.7;
+  g.add(sc);
+  return g;
+}

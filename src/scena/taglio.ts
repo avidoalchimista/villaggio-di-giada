@@ -90,6 +90,7 @@ export class Taglio {
   private lato = new THREE.Vector3();
   private quota = 0.5;
   private grandezza = 1;
+  private ultimoColpo = performance.now(); // senza colpi per qualche secondo, l'accetta si mette via
   finito = false;
 
   constructor(
@@ -101,7 +102,11 @@ export class Taglio {
     readonly onCade: () => void,
   ) {
     this.servono = COLPI[cosa];
-    this.base = bersaglio.rotation.clone();
+    // un albero lasciato a metà ricorda i colpi già dati e la sua tacca
+    this.colpi = Math.min(this.servono - 1, (bersaglio.userData.colpiDati as number) ?? 0);
+    this.tacca = (bersaglio.userData.tacca as THREE.Mesh | undefined) ?? null;
+    this.base = (bersaglio.userData.rotazione0 as THREE.Euler | undefined)?.clone() ?? bersaglio.rotation.clone();
+    bersaglio.userData.rotazione0 ??= this.base.clone();
     const p = bersaglio.position;
     // cade di lato rispetto a chi guarda (così si vede tutta la caduta), dalla parte del bosco
     const guarda = new THREE.Vector3(p.x - daDove.x, 0, p.z - daDove.z).normalize();
@@ -127,7 +132,8 @@ export class Taglio {
 
   /** Un tocco di Giada: un colpo (se l'accetta sta già colpendo, il colpo parte subito dopo). */
   colpo(): void {
-    if (this.cade >= 0) return;
+    if (this.cade >= 0 || this.finito) return;
+    this.ultimoColpo = performance.now();
     if (this.t >= 0) { this.inCoda = Math.min(1, this.inCoda + 1); return; }
     this.t = 0;
   }
@@ -200,8 +206,26 @@ export class Taglio {
     this.onCade();
   }
 
+  /**
+   * Basta colpi (Giada ha smesso, o ha chiuso l'arredo): l'accetta e i pallini vanno via, l'albero torna dritto.
+   * I colpi dati e la tacca restano: toccandolo di nuovo si riprende da lì.
+   */
+  metteVia() {
+    if (this.cade >= 0 || this.finito) return;
+    this.bersaglio.userData.colpiDati = this.colpi;
+    this.bersaglio.userData.tacca = this.tacca;
+    this.bersaglio.rotation.copy(this.base);
+    this.scena.remove(this.accetta);
+    if (this.contatore) { this.scena.remove(this.contatore); this.contatore.material.map?.dispose(); this.contatore = null; }
+    for (const q of this.pezzetti) this.scena.remove(q.o);
+    this.pezzetti.length = 0;
+    this.finito = true;
+  }
+
   /** Avanza di dt secondi. */
   passo(dt: number) {
+    // nessun colpo da qualche secondo: l'accetta non resta sospesa in aria
+    if (this.cade < 0 && this.t < 0 && performance.now() - this.ultimoColpo > 4000) return this.metteVia();
     // l'accetta
     if (this.t >= 0) {
       const prima = this.t;
@@ -325,6 +349,7 @@ export class Taglio {
 
   /** Se la scena si chiude a metà. */
   smonta() {
+    if (this.cade < 0) { this.metteVia(); return; }
     this.scena.remove(this.accetta);
     this.scena.remove(this.legna);
     if (this.contatore) this.scena.remove(this.contatore);

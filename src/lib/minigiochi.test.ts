@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ARGILLA_INIZIO, castagnePer, colpoLegna, COSTELLAZIONI, costellazioneDa, disegnoTorta, FORME_VASO, lineaGiusta, MINIGIOCHI,
-  minigiocoDi, minigiochiAperti, modellaVaso, PARTITE_PAGATE, premiaPartita, puoAiutare, puntiStelle, salvaCostellazione, salvaVaso,
+  minigiocoDi, minigiochiAperti, modellaVaso, PARTITE_PAGATE, premiaPartita, puoAiutare, puntiStelle, salvaCostellazione, salvaVaso, VASI_FUORI,
   somiglianzaTorta, somiglianzaVaso,
 } from './minigiochi';
 import { MESTIERI } from './mestieri';
@@ -90,8 +90,10 @@ describe('i minigiochi delle botteghe', () => {
 
   it('le cose che restano non riempiono il villaggio all\'infinito', () => {
     const s = stato();
-    for (let i = 0; i < 9; i++) salvaVaso(s, 'a1', { data: OGGI, profilo: [...ARGILLA_INIZIO.profilo], alto: 1, colore: '#fff' });
-    expect(s.botteghe!.vasi.a1.length).toBe(5);
+    for (let i = 0; i < 40; i++) salvaVaso(s, 'a1', { data: OGGI + i, profilo: [...ARGILLA_INIZIO.profilo], alto: 1, colore: '#fff' });
+    // i vasi si accumulano dal vasaio (tanti), ma non all'infinito: restano gli ultimi
+    expect(s.botteghe!.vasi.a1.length).toBe(VASI_FUORI);
+    expect(s.botteghe!.vasi.a1.at(-1)!.data).toBe(OGGI + 39);
     for (let i = 0; i < 9; i++) salvaCostellazione(s, { data: OGGI, nome: 'x' + i, forma: 'cuore', punti: [], linee: [] });
     expect(s.botteghe!.stelle.length).toBe(6);
     expect(s.botteghe!.stelle[5].nome).toBe('x8');
