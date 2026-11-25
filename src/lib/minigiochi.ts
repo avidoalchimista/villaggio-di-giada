@@ -23,7 +23,7 @@ export interface DefMinigioco {
 export const MINIGIOCHI: DefMinigioco[] = [
   { id: 'legna', mestiere: 'taglialegna', nome: 'Spacca la legna', icona: '🪓', come: 'Tocca quando la luce è sopra la crepa del ciocco: più sei precisa, più pezzi di legna!', ricordo: 'La legna va nella catasta accanto alla casa.' },
   { id: 'torta', mestiere: 'pasticcere', nome: 'Decora la torta', icona: '🎂', come: 'Copia il disegno del biglietto: scegli panna o fragola e tocca la torta dove vanno.', ricordo: 'La torta resta in vetrina, dentro la pasticceria.' },
-  { id: 'tornio', mestiere: 'vasaio', nome: 'Il tornio', icona: '🏺', come: "Tieni il dito sull'argilla mentre gira: verso fuori la allarghi, verso dentro la stringi, in alto la allunghi.", ricordo: 'Il vaso resta sulla mensola, a casa del vasaio.' },
+  { id: 'tornio', mestiere: 'vasaio', nome: 'Il tornio', icona: '🏺', come: "Tieni il dito sull'argilla mentre gira: verso fuori la allarghi, verso dentro la stringi, in alto la allunghi.", ricordo: 'Il vaso resta dal vasaio, sul suo scaffale fuori casa: puoi farne tanti.' },
   { id: 'foto', mestiere: 'fotografo', nome: 'Foto ricordo', icona: '📷', come: 'Scatta quando sorridono tutti! Hai tre foto.', ricordo: "La foto più bella va nell'album, nel diario." },
   { id: 'stelle', mestiere: 'astronomo', nome: 'Unisci le stelle', icona: '✨', come: 'Trascina il dito da una stella brillante all’altra per disegnare la costellazione.', ricordo: 'La costellazione resta nel cielo del villaggio, di notte.' },
   { id: 'moto', mestiere: 'motociclista', nome: 'Giro in moto', icona: '🏍', come: 'Guida la moto sul sentiero: raccogli le lettere e schiva le pozzanghere. Inclina il telefono o tocca a destra e a sinistra.', ricordo: 'Le lettere arrivano a tutti: il villaggio è contento.' },
@@ -60,7 +60,7 @@ export interface Botteghe {
   giorno: string; // ultimo giorno in cui si è giocato
   partite: Record<string, number>; // partite di oggi per minigioco
   fatte: Record<string, number>; // partite in tutto (la prima volta l'animale spiega)
-  vasi: Record<string, Vaso[]>; // per vasaio (id animale): al massimo 5 sulla mensola
+  vasi: Record<string, Vaso[]>; // per vasaio (id animale): fuori sullo scaffale (al massimo VASI_FUORI), in casa gli ultimi 5
   torte: Record<string, Torta>; // per pasticcere: l'ultima torta in vetrina
   stelle: Costellazione[]; // al massimo 6 nel cielo
   album?: FotoAlbum[]; // le foto ricordo più belle (al massimo 12), nel diario
@@ -125,8 +125,10 @@ export function salvaVaso(s: StatoGioco, animale: string, v: Vaso) {
   const b = botteghe(s);
   const l = (b.vasi[animale] ??= []);
   l.push(v);
-  while (l.length > 5) l.shift(); // sulla mensola ce ne stanno cinque: il più vecchio va regalato
+  while (l.length > VASI_FUORI) l.shift(); // scaffale e fila per terra pieni: il più vecchio va regalato
 }
+/** Quanti vasi restano dal vasaio: 15 sullo scaffale fuori e altri 12 in fila per terra davanti. */
+export const VASI_FUORI = 27;
 export function salvaTorta(s: StatoGioco, animale: string, t: Torta) {
   botteghe(s).torte[animale] = t;
 }
@@ -158,7 +160,7 @@ const FRASI: Record<IdMinigioco, [string[], string[], string[]]> = {
   ],
   tornio: [
     ['Ogni vaso storto ha la sua personalità!', 'Un po\' sbilenco, ma tiene i fiori benissimo.'],
-    ['Che bel vaso! Lo metto sulla mensola.', 'Hai le mani da vasaia!'],
+    ['Che bel vaso! Lo metto sullo scaffale qui fuori.', 'Hai le mani da vasaia!'],
     ['Perfetto! Sembra quello del biglietto.', 'Lo faccio vedere a tutti, è bellissimo!'],
   ],
   foto: [

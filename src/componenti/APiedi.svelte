@@ -7,7 +7,8 @@
   import { onDestroy } from 'svelte';
   import type { Scena } from '../scena/scena';
 
-  let { scena, attivo = $bindable(false), conLevetta = true }: { scena: Scena; attivo?: boolean; conLevetta?: boolean } = $props();
+  // alto: mentre si arreda i pannelli in basso sono più grandi, il bottone sale un po' per non coprirli
+  let { scena, attivo = $bindable(false), conLevetta = true, alto = false }: { scena: Scena; attivo?: boolean; conLevetta?: boolean; alto?: boolean } = $props();
 
   const tocco = typeof window !== 'undefined' && (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0);
   let aiuto = $state(false);
@@ -67,13 +68,13 @@
   });
 </script>
 
-<button class={['interruttore', attivo && 'acceso']} onclick={cambia} aria-label={attivo ? 'Torna alla vista dall\'alto' : 'Cammina nel villaggio'}>
+<button class={['interruttore', attivo && 'acceso', alto && 'alto']} onclick={cambia} aria-label={attivo ? 'Torna alla vista dall\'alto' : 'Cammina nel villaggio'}>
   <Icona nome={attivo ? 'vola' : 'piedi'} taglia={30} />
   <span class="dida">{attivo ? 'Dall\'alto' : 'A piedi'}</span>
 </button>
 
 {#if attivo && tocco && conLevetta}
-  <div class="levetta" bind:this={base} onpointerdown={giu} onpointermove={sposta} onpointerup={su} onpointercancel={su} role="presentation">
+  <div class={['levetta', alto && 'alto']} bind:this={base} onpointerdown={giu} onpointermove={sposta} onpointerup={su} onpointercancel={su} role="presentation">
     <div class="pomello" style:transform="translate({pomello.x}px, {pomello.y}px)"></div>
   </div>
 {/if}
@@ -95,6 +96,8 @@
     background: var(--panna); color: var(--inchiostro); border: 3px solid var(--legno); box-shadow: 0 4px 0 var(--legno-scuro);
     text-shadow: none;
   }
+  .interruttore.alto { top: 32%; }
+  .levetta.alto { top: calc(32% - 20px); }
   .interruttore.acceso { background: #2f5d8a; color: #fff; }
   .dida { font-size: 0.58rem; font-weight: 900; letter-spacing: 0.02em; margin-top: 1px; }
   .levetta {

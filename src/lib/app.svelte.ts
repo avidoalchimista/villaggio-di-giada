@@ -42,6 +42,8 @@ export const app = $state({
   provaCompleanno: 0,
   // modalità prova: apre subito il minigioco di una bottega (anche se nel villaggio non c'è quel mestiere)
   provaMinigioco: null as string | null,
+  // cresce quando si tocca «Villaggio» mentre si è già nel villaggio: chiude l'arredo, i menu e i pannelli aperti
+  richiamo: 0,
 });
 
 export interface RigaDialogo {
@@ -431,6 +433,7 @@ export function chiudiMentreEriVia() {
 }
 
 export function vai(s: Schermata, animale?: string) {
+  if (s === 'villaggio' && app.schermata === 'villaggio') app.richiamo += 1;
   app.schermata = s;
   if (animale) app.animaleAperto = animale;
   window.scrollTo(0, 0);

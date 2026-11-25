@@ -7,7 +7,8 @@ import { hash } from '../lib/caso';
 import { COLORE_VIRTU } from '../lib/etichette';
 import { emozioneDellaPagina, REGOLE } from '../lib/gioco';
 import { defMestiere, virtuMestiere, type DefMestiere } from '../lib/mestieri';
-import { creaBici, creaMoto, trovaPostazione } from './botteghe';
+import { creaBici, creaMoto, creaVasiFuori, trovaPostazione } from './botteghe';
+import { geometriaVaso } from './minigiochi/tornio';
 import { CastoroInScena } from './castoro';
 import { animaCostruzioneNuova, COSTRUZIONI_NUOVE, creaCostruzioneNuova, creaPezzoFila, fantasma, USO_COSTRUZIONE } from './esterni';
 import { altezzaTerreno, arredoVuoto, conAcqua, FILA, pezziFila, type TipoFila, fasePianta, LATO_TERRENO, LIVELLO_ACQUA, N_TERRENO, PASSO_TERRENO, toltoAncora, LATO_SENTIERO, CELLA, PIANTE, PREZZI, type Arredo, type Posto } from '../lib/arredo';
@@ -805,10 +806,12 @@ export class Scena {
       if (a.mestiere) {
         const emo = a.emozione ?? emozioneDellaPagina(null, a);
         const livello = a.livelloCasa ?? 1;
-        const firma = `${a.specie}|${emo}|${a.fase}|${a.mestiere}|${livello}|${(a.ampliamenti ?? []).join(',')}`;
+        // i vasi fatti al tornio con Giada restano fuori, sullo scaffale del vasaio
+        const vasi = a.mestiere === 'vasaio' ? s.botteghe?.vasi?.[a.id] ?? [] : [];
+        const firma = `${a.specie}|${emo}|${a.fase}|${a.mestiere}|${livello}|${(a.ampliamenti ?? []).join(',')}|${vasi.length}:${vasi.at(-1)?.data ?? ''}`;
         const vecchia = this.botteghe.get(a.id);
         if (!vecchia || vecchia.userData.firma !== firma) {
-          const b = creaCasaAnimale(a.specie, emo, a.fase, a.mestiere, livello, a.ampliamenti ?? []);
+          const b = creaCasaAnimale(a.specie, emo, a.fase, a.mestiere, livello, a.ampliamenti ?? [], vasi.length ? (g, fronte) => g.add(creaVasiFuori(vasi, geometriaVaso, fronte)) : undefined);
           b.userData.livello = livello;
           // quanto spazio prende la casa (per non passarci attraverso): la sagoma, più la stanza in più
           b.userData.ingombroCasa = (SAGOMA_CASA[a.specie]?.mezza ?? 1.1) + 0.15 + (livello >= 3 ? 0.35 : 0);
@@ -2508,6 +2511,8 @@ export class Scena {
     for (let i = 0; i < pos.count; i++) pos.setY(i, 0.6 + Math.sin(t * 0.8 + i) * 0.5 + (i % 3) * 0.4);
     pos.needsUpdate = true;
 
+    // uscendo dall'accetta (o dall'arredo) l'accetta si mette via subito, non resta in aria
+    if (this.modo !== 'togli') for (const tg of this.tagli) tg.metteVia();
     for (const tg of this.tagli) tg.passo(dt);
     if (this.tagli.some((tg) => tg.finito)) this.tagli = this.tagli.filter((tg) => !tg.finito);
 
@@ -4524,5 +4529,6 @@ export class Scena {
     this.festa?.distruggi();
     this.resizeObs.disconnect();
     this.renderer.dispose();
+    this.renderer.forceContextLoss(); // libera subito il disegno 3D: il telefono ne tiene pochi aperti insieme
   }
 }

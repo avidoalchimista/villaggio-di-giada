@@ -293,6 +293,7 @@ export abstract class Palco {
     this.ascolto.abort();
     this.resizeObs.disconnect();
     this.renderer.dispose();
+    this.renderer.forceContextLoss(); // libera subito il disegno 3D: il telefono ne tiene pochi aperti insieme
   }
 }
 

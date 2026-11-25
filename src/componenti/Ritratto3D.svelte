@@ -60,6 +60,7 @@
   onDestroy(() => {
     cancelAnimationFrame(raf);
     renderer?.dispose();
+    renderer?.forceContextLoss(); // libera subito il disegno 3D (il telefono ne tiene pochi aperti insieme)
   });
 </script>
 
