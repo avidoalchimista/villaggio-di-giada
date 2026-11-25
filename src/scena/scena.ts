@@ -1898,9 +1898,10 @@ export class Scena {
   entraAPiedi() {
     if (this.aPiedi) return;
     const a = this.angolo;
-    this.piedi.set(this.centro.x + Math.sin(a) * 4, 0, this.centro.z + Math.cos(a) * 4);
+    // un po' indietro e un po' di lato: davanti c'è tutto il villaggio, non il palo del corvo
+    this.piedi.set(this.centro.x + Math.sin(a) * 7 + Math.cos(a) * 2.5, 0, this.centro.z + Math.cos(a) * 7 - Math.sin(a) * 2.5);
     this.tieniPiedi();
-    this.imbardata = a;
+    this.imbardata = Math.atan2(this.piedi.x - this.centro.x, this.piedi.z - this.centro.z);
     this.beccheggio = -0.12;
     this.velCentro.set(0, 0, 0);
     this.aPiedi = true;
@@ -1936,7 +1937,7 @@ export class Scena {
 
   /** Giada resta nella radura, fuori dalle case, dagli alberi, dagli animali e dall'acqua. */
   private tieniPiedi(prima?: THREE.Vector3) {
-    const p = this.piedi, r = 0.3;
+    const p = this.piedi, r = 0.45;
     for (let giro = 0; giro < 3; giro++) {
       for (const o of this.ostacoli) {
         const f = spintaFuori(p.x, p.z, r, o);
@@ -2120,7 +2121,7 @@ export class Scena {
       this.angolo += this.velAngolo * dt * 60;
     }
     // la tastiera: frecce/WASD spostano, Q/E girano, +/- avvicinano (morbido, come col dito)
-    if (this.aPiedi && !this.cine) this.passiAPiedi(dt);
+    if (this.aPiedi && !this.cine) this.passiAPiedi(Math.min(0.1, dtVero));
     else if (this.tasti.size && !this.cine) {
       const avanti = (this.tasti.has('w') || this.tasti.has('arrowup') ? 1 : 0) - (this.tasti.has('s') || this.tasti.has('arrowdown') ? 1 : 0);
       const lato = (this.tasti.has('d') || this.tasti.has('arrowright') ? 1 : 0) - (this.tasti.has('a') || this.tasti.has('arrowleft') ? 1 : 0);
@@ -2162,7 +2163,8 @@ export class Scena {
       guarda = new THREE.Vector3(this.centro.x, 0.6, this.centro.z);
     }
     this.morbido = Math.max(0, this.morbido - dt);
-    const k = cin || this.morbido > 0 ? Math.min(1, dt * 2.4) : 1;
+    // (col tempo vero, non coi fotogrammi: anche se il telefono va a scatti la telecamera arriva in tempo)
+    const k = cin || this.morbido > 0 ? 1 - Math.exp(-Math.min(0.5, dtVero) * 2.4) : 1;
     // (se un conto è andato storto la telecamera non resta persa nel nulla: riparte da dove dovrebbe essere)
     if (!Number.isFinite(this.centro.x + this.centro.z) || !Number.isFinite(this.centroVoluto.x + this.centroVoluto.z)) { this.centro.set(0, 0, 0); this.centroVoluto.set(0, 0, 0); }
     if (!Number.isFinite(voluta.x + voluta.y + voluta.z) || !Number.isFinite(guarda.x + guarda.y + guarda.z)) {
@@ -3665,12 +3667,19 @@ export class Scena {
     if (!ab || !ab.m.gruppo.visible || this.pescata || this.gita) return false;
     if (!this.inquadra({ tipo: 'animale', id })) return false;
     const c = this.cine!;
-    const sc = ab.m.gruppo.scale.x;
+    // inquadratura dalla misura vera dell'animale: occupa circa due quinti dello schermo in altezza
+    // e sta nella metà alta, sopra il fumetto
+    const box = new THREE.Box3().setFromObject(ab.m.gruppo);
+    const base = ab.m.gruppo.position.y;
+    const h = Math.max(0.3, box.max.y - base);
     const testa = new THREE.Box3().setFromObject(ab.m.testa).getCenter(new THREE.Vector3());
-    const occhi = Math.max(0.3, testa.y - ab.m.gruppo.position.y);
-    c.dist = 1.25 * sc + 0.75;
-    c.alt = occhi + 0.12;
-    c.guardaY = occhi * 0.82;
+    const occhi = THREE.MathUtils.clamp(testa.y - base, 0.2, h);
+    const tanMezzo = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const lungo = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+    // (il muso sporge verso di noi: si conta anche mezza lunghezza del corpo)
+    c.dist = THREE.MathUtils.clamp(Math.max(h, lungo * 0.75) / (0.32 * 2 * tanMezzo) + lungo / 2, 1.7, 6);
+    c.alt = occhi + 0.1;
+    c.guardaY = Math.max(0.05, h * 0.5 - h * 0.55);
     c.angolo += 0.35; // un po' di tre quarti: si vede il muso e anche i vestiti
     ab.m.gruppo.rotation.y = c.angolo;
     ab.salto = 0.5;

@@ -139,7 +139,7 @@ export function emozioniCheporto(a: Animale): Battuta[] {
   }
   if (a.ricordi.length) {
     const r = a.ricordi[a.ricordi.length - 1];
-    out.push(a_(`L'ultima pagina che mi è rimasta nel cuore: ${r.frase.charAt(0).toLowerCase()}${r.frase.slice(1)}`, a));
+    out.push(a_(`L'ultima pagina che mi è rimasta nel cuore: «${r.frase}»`, a));
   }
   if (a.umore < 45) out.push(a_('Oggi sono un po\' giù… ma quando passi a trovarmi mi torna il sorriso.', a));
   else if (a.umore > 80) out.push(a_('E adesso? Adesso sono contentissim{o}, perché sei qui!', a));

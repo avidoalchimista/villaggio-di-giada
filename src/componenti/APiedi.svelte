@@ -18,7 +18,7 @@
       scena.entraAPiedi();
       aiuto = true;
       clearTimeout(timer);
-      timer = setTimeout(() => (aiuto = false), 7000);
+      timer = setTimeout(() => (aiuto = false), 10000);
     } else {
       scena.esciAPiedi();
       aiuto = false;

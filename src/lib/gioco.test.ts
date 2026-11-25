@@ -306,10 +306,11 @@ describe('edifici e simulazione', () => {
   it('la simulazione è deterministica', () => {
     const a = conChiosco();
     const b = conChiosco();
-    // gli id delle voci sono casuali ma non entrano nello stato
+    // gli id delle voci sono casuali: entrano nello stato solo come "pagina da cui è nato" (si tolgono per il confronto)
     simula(a, aggiungiGiorni(a.ultimoAccesso, 40));
     simula(b, aggiungiGiorni(b.ultimoAccesso, 40));
-    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    const senzaPagina = (s: StatoGioco) => JSON.stringify(s, (k, v) => (k === 'pagina' ? undefined : v));
+    expect(senzaPagina(a)).toBe(senzaPagina(b));
   });
 
   it('sblocca i capitoli della storia', () => {
