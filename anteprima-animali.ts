@@ -1,6 +1,6 @@
 // Pagina di prova (non nel gioco): griglia di animali per confrontare i modelli.
 import * as THREE from 'three';
-import { creaAnimale, creaCasaAnimale, posa, rifinisci, espressione } from './src/scena/modelli';
+import { creaAnimale, creaCasaAnimale, creaCorvo, posa, rifinisci, espressione } from './src/scena/modelli';
 import { CURVA } from './src/scena/ps1';
 import { TRATTI } from './src/lib/gioco';
 import { SPECIE, VIRTU } from './src/lib/tipi';
@@ -81,6 +81,17 @@ celle.forEach((c, i) => {
   m.gruppo.rotation.y = +(q.get('rot') ?? 0.9);
   sc.add(m.gruppo);
 });
+if (modo === 'corvo') {
+  [0.5, -0.6, 1.6].forEach((r, i) => {
+    const c = creaCorvo();
+    for (let k = 0; k < 30; k++) rifinisci(c.m, 0.05, 1 + k * 0.05);
+    if (i === 2) { c.ali[0].rotation.z = -0.6; c.ali[1].rotation.z = 0.6; rifinisci(c.m, 0.05, 3); }
+    c.gruppo.position.set((i - 1) * 2.4, -2.2, 0);
+    c.gruppo.scale.setScalar(1.5);
+    c.gruppo.rotation.y = r;
+    sc.add(c.gruppo);
+  });
+}
 if (modo === 'case') {
   // le case dei mestieri, viste da davanti e un po' dall'alto
   const da = +(q.get('da') ?? 0), quanti = +(q.get('n') ?? 6), colonne = +(q.get('c') ?? 3);

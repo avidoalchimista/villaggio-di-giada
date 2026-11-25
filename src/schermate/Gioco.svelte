@@ -548,6 +548,7 @@
     }
     scena.onTocco = tocco;
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).scena = scena;
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).prova = { entra, esci, animali: () => s.animali }; // (solo per le prove automatiche)
     if (!attivo) scena.sospendi(true);
   });
 

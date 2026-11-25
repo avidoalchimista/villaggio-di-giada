@@ -146,6 +146,7 @@ export function unisciTutto<T extends THREE.Object3D>(radice: T, esclusi = new S
 // ---------- animali ----------
 // (ridisegnati: un corpo solo e liscio, in piedi da grandi, occhi espressivi: vedi animali3d.ts)
 export { creaAnimale, posa, ampiezzaPasso, aggiornaMestiere, tagliaSpecie, rifinisci, espressione, parla, seduta, type ModelloAnimale, type Espressione } from './animali3d';
+import { creaAnimale, type ModelloAnimale } from './animali3d';
 
 export function varia(colore: string, tinta: number, luce: number) {
   return '#' + new THREE.Color(colore).offsetHSL(tinta, 0, luce).getHexString();
@@ -184,8 +185,9 @@ export function creaNido(): THREE.Group {
 
 // ---------- corvo ----------
 
-export interface ModelloCorvo { gruppo: THREE.Group; testa: THREE.Group; ali: THREE.Object3D[] }
+export interface ModelloCorvo { gruppo: THREE.Group; uccello: THREE.Group; testa: THREE.Object3D; ali: THREE.Object3D[]; m: ModelloAnimale }
 
+/** Il corvo narratore sul suo palo: disegnato come gli altri animali (corpo liscio, occhi che parlano), col suo cappello. */
 export function creaCorvo(): ModelloCorvo {
   const gruppo = new THREE.Group();
   gruppo.add(ombra(0.5));
@@ -194,43 +196,18 @@ export function creaCorvo(): ModelloCorvo {
   const uccello = new THREE.Group();
   uccello.position.y = 1.6;
   gruppo.add(uccello);
-  const nero = mat('#2e3142', { rim: 0.6 });
-  const corpo = mesh(geo.palla(0.32), nero, 0, 0.3, 0);
-  corpo.scale.set(0.95, 1.1, 1);
-  uccello.add(corpo);
-  uccello.add(mesh(geo.palla(0.2), mat('#454a63', { rim: 0.3 }), 0, 0.26, 0.17));
-  for (const x of [-0.08, 0.08]) uccello.add(mesh(geo.cil(0.03, 0.03, 0.14, 6), mat('#e0a040'), x, 0.02, 0.06));
-  const coda = mesh(geo.scatola(0.26, 0.05, 0.38), nero, 0, 0.18, -0.36);
-  coda.rotation.x = 0.5;
-  uccello.add(coda);
-  const ali: THREE.Object3D[] = [];
-  for (const s of [-1, 1]) {
-    const perno = new THREE.Group();
-    perno.position.set(s * 0.27, 0.42, 0);
-    const ala = mesh(geo.palla(0.22), mat('#262836', { rim: 0.5 }), s * 0.05, -0.12, -0.04);
-    ala.scale.set(0.35, 1, 1.25);
-    perno.add(ala);
-    uccello.add(perno);
-    ali.push(perno);
-  }
-  const testa = new THREE.Group();
-  testa.position.set(0, 0.78, 0.04);
-  uccello.add(testa);
-  testa.add(mesh(geo.palla(0.28), nero));
-  const becco = mesh(geo.cono(0.085, 0.34, 10), mat('#565a6a', { rim: 0.4 }), 0, -0.05, 0.37);
-  becco.rotation.x = Math.PI / 2;
-  testa.add(becco);
-  for (const x of [-0.12, 0.12]) {
-    const o = mesh(geo.palla(0.075), mat('#ffffff', { rim: 0 }), x, 0.06, 0.21);
-    o.userData.senzaContorno = true;
-    testa.add(o);
-    const p = mesh(geo.palla(0.045), mat('#111111', { rim: 0 }), x * 1.05, 0.06, 0.27);
-    p.userData.senzaContorno = true;
-    testa.add(p);
-  }
+  const m = creaAnimale({
+    id: 'corvo', nome: 'Corvo', specie: 'uccellino', sesso: 'm', fase: 'adulto', xp: 0, mestiere: null, vestiti: [],
+    aspetto: { manto: 0, tratto: '-', forma: 0, occhi: 0.6, orecchie: 0.5, taglia: 1, lato: 1 },
+  } as unknown as Parameters<typeof creaAnimale>[0], false, true);
+  // (l'ombra per terra è quella del palo)
+  for (const c of [...m.gruppo.children]) if (c !== m.corpo) m.gruppo.remove(c);
+  m.gruppo.scale.setScalar(0.95);
+  uccello.add(m.gruppo);
   const cappello = new THREE.Group();
-  cappello.position.y = 0.2;
+  cappello.position.set(0, 0.36, -0.02);
   cappello.rotation.z = -0.12;
+  cappello.scale.setScalar(1.55);
   cappello.add(mesh(geo.cil(0.38, 0.38, 0.04, 20), mat('#7a5a3c')));
   cappello.add(mesh(geo.cil(0.18, 0.22, 0.22, 20), mat('#7a5a3c'), 0, 0.12, 0));
   cappello.add(mesh(geo.cil(0.226, 0.226, 0.06, 20), mat('#b5452e'), 0, 0.06, 0));
@@ -240,9 +217,8 @@ export function creaCorvo(): ModelloCorvo {
   const piuma2 = mesh(geo.capsula(0.035, 0.3), mat('#f2c94c'), 0.25, 0.24, -0.1);
   piuma2.rotation.z = -0.9;
   cappello.add(piuma2);
-  testa.add(cappello);
-  contorno(uccello);
-  return { gruppo, testa, ali };
+  m.testa.add(contorno(cappello));
+  return { gruppo, uccello, testa: m.testa, ali: [m.zampe[0], m.zampe[1]], m };
 }
 
 // ---------- ambiente ----------

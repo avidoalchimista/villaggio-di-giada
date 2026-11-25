@@ -42,7 +42,7 @@ export const NOME_MANTO: Record<Specie, string[]> = {
   cavallo: ['baio', 'palomino', 'pomellato', 'morello'],
   asino: ['grigio', 'marrone', 'crema', 'scuro'],
   mucca: ['pezzata nera', 'pezzata rossa', 'bruna', 'color panna'],
-  maiale: ['rosa', 'pezzato', 'cinta', 'fulvo'],
+  maiale: ['rosa', 'pezzato', 'color pesca', 'cinta'],
   uccellino: ['pettirosso', 'cinciallegra', 'passerotto', 'merlo'],
   papera: ['bianca', 'germano', 'grigia', 'color crema'],
 };
