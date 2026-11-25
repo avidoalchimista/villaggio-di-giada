@@ -8,6 +8,16 @@
   let { onchiudi, oncostruito }: { onchiudi: () => void; oncostruito: (e: Evento) => void } = $props();
   let s = $derived(app.stato!);
   let scelta = $state<DefCostruzione | null>(null);
+  let vediFatte = $state(false);
+  // prima quelle che si possono fare, poi quelle quasi pronte; le altre da scoprire e quelle già fatte stanno piegate
+  let gruppi = $derived.by(() => {
+    const pronte: DefCostruzione[] = [], quasi: DefCostruzione[] = [], chiuse: DefCostruzione[] = [], fatte: DefCostruzione[] = [];
+    for (const c of REGOLE.costruzioni) {
+      const st = statoCostruzione(s, c);
+      (st === 'pronta' ? pronte : st === 'fatta' ? fatte : st === 'bloccata' ? chiuse : quasi).push(c);
+    }
+    return { pronte, quasi, chiuse, fatte };
+  });
 
   const nomeDi = (id?: string) => REGOLE.costruzioni.find((c) => c.id === id)?.nome ?? '';
 
@@ -42,16 +52,26 @@
     </div>
   {:else}
     <ul>
-      {#each REGOLE.costruzioni as c (c.id)}
-        {@const st = statoCostruzione(s, c)}
-        <li>
-          <button class="voce" class:fatta={st === 'fatta'} class:bloccata={st === 'bloccata'} disabled={st !== 'pronta'} onclick={() => (scelta = c)}>
-            <span class="nome">{st === 'bloccata' ? '???' : c.nome}</span>
-            <span class="prezzo">{st === 'fatta' ? '✔' : `🌰 ${c.costo}`}</span>
-            {#if st !== 'fatta' && st !== 'pronta'}<span class="motivo">{motivo(c)}</span>{/if}
-          </button>
-        </li>
+      {#each gruppi.pronte as c (c.id)}
+        <li><button class="voce pronta" onclick={() => (scelta = c)}><span class="nome">{c.nome}</span><span class="prezzo">🌰 {c.costo}</span></button></li>
+      {:else}
+        <li class="niente">Per ora non c'è niente di nuovo da costruire.</li>
       {/each}
+      {#each gruppi.quasi as c (c.id)}
+        <li><button class="voce" disabled><span class="nome">{c.nome}</span><span class="prezzo">🌰 {c.costo}</span><span class="motivo">{motivo(c)}</span></button></li>
+      {/each}
+      {#if gruppi.chiuse.length}
+        {@const c = gruppi.chiuse[0]}
+        <li><button class="voce bloccata" disabled><span class="nome">🔒 ???</span><span class="prezzo">🌰 {c.costo}</span><span class="motivo">{motivo(c)}{gruppi.chiuse.length > 1 ? ` · e altre ${gruppi.chiuse.length - 1} da scoprire` : ''}</span></button></li>
+      {/if}
+      {#if gruppi.fatte.length}
+        <li><button class="voce piega" onclick={() => (vediFatte = !vediFatte)}><span class="nome">✔ Già costruite ({gruppi.fatte.length})</span><span class="prezzo">{vediFatte ? '▲' : '▼'}</span></button></li>
+        {#if vediFatte}
+          {#each gruppi.fatte as c (c.id)}
+            <li><div class="voce fatta"><span class="nome">{c.nome}</span><span class="prezzo">✔</span></div></li>
+          {/each}
+        {/if}
+      {/if}
     </ul>
     <p class="aiuto">Le castagne arrivano scrivendo nel diario, esaudendo le richieste degli animali e raccogliendo quelle cadute sotto il castagno.</p>
     <button class="tondo grigio chiudi" onclick={onchiudi}>Chiudi</button>
@@ -85,7 +105,10 @@
   .voce:not(:disabled)::before { content: '▶'; color: #ffe08a; position: absolute; margin-left: -2px; opacity: 0; }
   .voce:disabled { opacity: 1; }
   .voce.bloccata { color: #8f9bc4; }
-  .voce.fatta { color: #9fe3a0; }
+  .voce.fatta { color: #9fe3a0; font-size: 0.9rem; padding: 5px 10px; }
+  .voce.pronta { background: rgba(255, 224, 138, 0.14); border-color: rgba(255, 224, 138, 0.45); }
+  .voce.piega { color: #9fe3a0; background: transparent; }
+  .niente { font-size: 0.88rem; color: #c4cff0; padding: 6px 4px; }
   .prezzo { color: #ffe08a; }
   .fatta .prezzo { color: #9fe3a0; }
   .motivo { grid-column: 1 / -1; font-size: 0.78rem; font-weight: 700; color: #aab6dc; }

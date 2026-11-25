@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icona, { type NomeIcona } from './Icona.svelte';
   // Modalità arredo: Giada sistema il villaggio come vuole. Sposta le cose, abbatte alberi con l'accetta,
   // disegna il sentiero, fa aiuole e semina, dipinge quadretti, mette cartelli e recinti.
   import { onDestroy, onMount } from 'svelte';
@@ -375,9 +376,9 @@
       </div>
 
       <div class="strumenti">
-        {#each [['sposta', '✋', 'Sposta'], ['togli', '🪓', 'Accetta'], ['sentiero', '🟫', 'Sentiero'], ['terreno', '⛏️', 'Pala'], ['acqua', '💧', 'Acqua'], ['fila', '🚧', 'In fila'], ['orto', '🌱', 'Aiuole'], ['quadri', '🪧', 'Cose']] as [m, icona, nome] (m)}
+        {#each [['sposta', 'sposta', 'Sposta'], ['togli', 'accetta', 'Accetta'], ['sentiero', 'sentiero', 'Sentiero'], ['terreno', 'pala', 'Pala'], ['acqua', 'acqua', 'Acqua'], ['fila', 'fila', 'In fila'], ['orto', 'aiuole', 'Aiuole'], ['quadri', 'cose', 'Cose']] as [m, icona, nome] (m)}
           <button class="strumento" class:attivo={modo === m} onclick={() => cambiaModo(m as ModoArredo)}>
-            <span class="icona">{icona}</span><span>{nome}</span>
+            <Icona nome={icona as NomeIcona} taglia={26} /><span>{nome}</span>
           </button>
         {/each}
       </div>
@@ -431,10 +432,9 @@
   .materiale.attivo { border-color: #ffe08a; transform: scale(1.06); }
   .strumenti { display: flex; gap: 4px; background: var(--panna); border: 3px solid var(--legno); border-radius: 18px; padding: 4px; box-shadow: 0 4px 0 var(--legno-scuro); }
   .strumento {
-    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 0; padding: 5px 1px; border-radius: 12px; white-space: nowrap;
+    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 1px; border-radius: 12px; white-space: nowrap;
     background: transparent; color: var(--inchiostro); font-size: 0.66rem; font-weight: 800; box-shadow: none; border: none; text-shadow: none;
   }
-  .strumento .icona { font-size: 1.25rem; }
   .strumento.attivo { background: #ffe08a; }
   .posti { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .posto { background: rgba(255, 255, 255, 0.07); border-radius: 10px; padding: 6px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px; }

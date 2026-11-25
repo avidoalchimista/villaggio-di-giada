@@ -2,6 +2,7 @@
   // Schermata principale: la radura in 3D. Si tocca un animale, il corvo, il quaderno, le uova, le castagne.
   import { onDestroy, onMount, untrack } from 'svelte';
   import APiedi from '../componenti/APiedi.svelte';
+  import Icona from '../componenti/Icona.svelte';
   import { chiSei, consiglio, daChePagina, DOMANDE, emozioniCheporto, paginaDi, type Battuta, type Domanda } from '../lib/chiacchiere';
   import { carattereDi, nomeCarattere } from '../lib/carattere';
   import Casa from '../componenti/Casa.svelte';
@@ -931,7 +932,7 @@
       <div class="pillola castagne">🌰 {s.ghiande ?? 0}</div>
       {#if novita.length && !menu && !arreda}
         <button class="pillola novita" class:aperta={novitaAperta} onclick={() => { dialogo = null; novitaAperta = !novitaAperta; }}>
-          <span class="stella">★</span> {novita.length === 1 ? '1 novità' : `${novita.length} novità`}
+          <span class="stella"><Icona nome="stella" taglia={18} /></span> {novita.length === 1 ? '1 novità' : `${novita.length} novità`}
         </button>
       {/if}
     </div>
@@ -1026,15 +1027,25 @@
     {:else if !acquario && !museo && !funghi && !luogo && !gita}
       <div class={['azioni-basso', gitaPossibile && 'affollate']}>
         <button class="bottone-diario" onclick={() => vai('diario')}>
-          <span class="icona">📖</span> Scrivi nel diario
+          <Icona nome="diario" taglia={30} /> Scrivi nel diario
         </button>
-        <button class="bottone-costruisci" onclick={() => (menu = true)} aria-label="Costruisci">
-          🔨<span class="punto" class:visibile={puoCostruire}></span>
+        <button class="tasto" onclick={() => { novitaAperta = false; menu = true; }}>
+          <span class="tondino costruisci"><Icona nome="costruisci" taglia={30} /><span class="punto" class:visibile={puoCostruire}></span></span>
+          <span class="etichetta">Costruisci</span>
         </button>
-        <button class="bottone-costruisci arreda" onclick={() => (arreda = true)} aria-label="Arreda">🪴</button>
-        <button class="bottone-costruisci funghi" onclick={() => { dialogo = null; funghi = true; }} aria-label="Funghi">🍄{#if nelBosco}<span class="fuori">{nelBosco}</span>{/if}<span class="punto" class:visibile={haFunghi && !nelBosco}></span></button>
+        <button class="tasto" onclick={() => { novitaAperta = false; arreda = true; }}>
+          <span class="tondino arreda"><Icona nome="arreda" taglia={30} /></span>
+          <span class="etichetta">Arreda</span>
+        </button>
+        <button class="tasto" onclick={() => { dialogo = null; novitaAperta = false; funghi = true; }}>
+          <span class="tondino funghi"><Icona nome="funghi" taglia={30} />{#if nelBosco}<span class="fuori">{nelBosco}</span>{/if}<span class="punto" class:visibile={haFunghi && !nelBosco}></span></span>
+          <span class="etichetta">Funghi</span>
+        </button>
         {#if gitaPossibile}
-          <button class="bottone-costruisci gita" onclick={apriGita} aria-label="Escursione">🎒<span class="punto visibile"></span></button>
+          <button class="tasto" onclick={apriGita}>
+            <span class="tondino gita"><Icona nome="gita" taglia={30} /><span class="punto visibile"></span></span>
+            <span class="etichetta">Gita</span>
+          </button>
         {/if}
       </div>
       <p class="suggerimento">{aPiedi ? 'Tocca chi vuoi per parlarci · trascina per guardarti intorno' : 'Tocca chi vuoi · 1 dito muove · 2 dita zoom e giro'}</p>
@@ -1069,7 +1080,8 @@
     animation: cade 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both, chiama 2.2s ease-in-out 0.6s infinite;
   }
   .novita.aperta { animation: none; background: #ffe08a; }
-  .novita .stella { color: #e0a020; display: inline-block; animation: gira 3s linear infinite; }
+  .novita { display: flex; align-items: center; gap: 5px; }
+  .novita .stella { display: inline-block; animation: gira 4s linear infinite; }
   @keyframes chiama { 0%, 70%, 100% { transform: none; } 78% { transform: scale(1.1) rotate(-3deg); } 86% { transform: scale(1.06) rotate(3deg); } }
   @keyframes gira { to { transform: rotate(360deg); } }
   .novita-voce { align-items: center; gap: 10px; text-align: left; }
@@ -1078,21 +1090,34 @@
   .vai { flex: none; color: #ffe08a; font-weight: 800; font-size: 0.85rem; }
   .riga-novita { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
   .sesso { display: block; font-size: 0.85rem; color: var(--testo-tenue); }
-  .azioni-basso { display: flex; gap: 8px; align-items: center; }
-  .azioni-basso.affollate .bottone-costruisci { width: 52px; height: 52px; font-size: 1.35rem; }
-  .azioni-basso.affollate .bottone-diario { font-size: 1.02rem; padding: 12px 8px; }
-  .bottone-costruisci {
-    position: relative; width: 62px; height: 62px; flex: none; border-radius: 50%; padding: 0; font-size: 1.6rem;
-    background: var(--notte-blu); border: 4px solid var(--legno); box-shadow: 0 6px 0 var(--legno-scuro);
+  .azioni-basso { display: flex; gap: 6px; align-items: flex-end; }
+  /* i tasti: un tondino colorato con l'icona e la scritta sotto (si capisce subito cosa fanno) */
+  .tasto { flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0; background: none; border: none; box-shadow: none; text-shadow: none; width: 60px; }
+  .tondino {
+    position: relative; width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: var(--panna); border: 3px solid var(--legno); box-shadow: 0 4px 0 var(--legno-scuro);
+    transition: transform 0.12s;
   }
-  .punto { position: absolute; top: -2px; right: -2px; width: 18px; height: 18px; border-radius: 50%; background: #ffd166; border: 3px solid var(--legno); transform: scale(0); transition: transform 0.2s; }
+  .tasto:active .tondino { transform: translateY(3px); box-shadow: 0 1px 0 var(--legno-scuro); }
+  .tondino.costruisci { background: #dce6f6; }
+  .tondino.arreda { background: #dff0d2; }
+  .tondino.funghi { background: #fbe0d8; }
+  .tondino.gita { background: #fbe9c6; }
+  .etichetta {
+    font-size: 0.64rem; font-weight: 900; color: #fff; white-space: nowrap;
+    background: rgba(59, 38, 22, 0.72); border-radius: 999px; padding: 1px 5px;
+  }
+  .azioni-basso.affollate .tasto { width: 54px; }
+  .azioni-basso.affollate .tondino { width: 46px; height: 46px; }
+  .azioni-basso.affollate .bottone-diario { font-size: 0.98rem; padding: 12px 6px; }
+  .punto { position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; background: #ffd166; border: 3px solid var(--legno); transform: scale(0); transition: transform 0.2s; }
   .punto.visibile { transform: scale(1); animation: respira 1.2s infinite; }
   .bottone-diario {
-    flex: 1; font-size: 1.2rem; padding: 14px; border-radius: 999px;
+    flex: 1; min-width: 0; font-size: 1.12rem; padding: 13px 8px; border-radius: 999px; align-self: center; margin-bottom: 18px;
+    display: flex; align-items: center; justify-content: center; gap: 6px; line-height: 1.1;
     background: var(--brace); border: 4px solid var(--legno); box-shadow: 0 6px 0 var(--legno-scuro);
     animation: respira 2.4s ease-in-out infinite;
   }
-  .bottone-diario .icona { font-size: 1.3rem; }
   @keyframes respira { 50% { transform: scale(1.03); } }
   .suggerimento { text-align: center; color: #fff; font-weight: 700; font-size: 0.8rem; margin-top: 10px; text-shadow: 0 1px 2px #0008; }
   .nome-box { animation: entra 0.28s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
@@ -1117,9 +1142,6 @@
   .giorni { color: #ffe08a; }
   .vuoto, .aiuto { font-size: 0.85rem; color: #c4cff0; margin: 8px 2px; }
   .chiudi { align-self: center; }
-  .arreda { background: #3f7a4a; }
-  .gita { background: #c8842a; }
-  .funghi { background: #a8483a; }
   .fuori { position: absolute; bottom: -4px; right: -4px; min-width: 20px; height: 20px; border-radius: 999px; background: #3f7a4a; color: #fff; font-size: 0.72rem; font-weight: 900; display: flex; align-items: center; justify-content: center; border: 2px solid var(--legno); }
   /* faccia a faccia con un animale */
   .primo-piano { position: fixed; inset: 0; pointer-events: none; }
