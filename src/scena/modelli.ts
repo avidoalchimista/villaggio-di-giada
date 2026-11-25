@@ -98,10 +98,11 @@ export function mesh(g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z
  * i fili d'erba...): si vedono identici, ma il telefono li disegna in un colpo solo invece che uno per uno.
  * Va chiamato prima del contorno. I pezzi con un nome o con figli restano come sono.
  */
-export function unisciPezzi<T extends THREE.Object3D>(g: T): T {
+export function unisciPezzi<T extends THREE.Object3D>(g: T, esclusi?: Set<THREE.Object3D>): T {
   const gruppi = new Map<string, { m: THREE.Material; senza: boolean; pezzi: THREE.Mesh[] }>();
   for (const c of g.children) {
     if (!(c instanceof THREE.Mesh) || c.children.length || c.name || Array.isArray(c.material)) continue;
+    if (esclusi?.has(c) || !c.visible) continue;
     if (Object.keys(c.userData).some((k) => k !== 'senzaContorno')) continue; // pezzi che si muovono o servono a qualcosa
     if (c.material instanceof THREE.MeshBasicMaterial) continue; // ombre e simili
     const senza = !!c.userData.senzaContorno;
@@ -116,7 +117,22 @@ export function unisciPezzi<T extends THREE.Object3D>(g: T): T {
     const geos = pezzi.map((c) => {
       c.updateMatrix();
       const gg = indicizzate ? c.geometry.clone() : c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
-      return gg.applyMatrix4(c.matrix);
+      gg.applyMatrix4(c.matrix);
+      // un pezzo specchiato (scala negativa) va rigirato, altrimenti si vedrebbe "da dentro"
+      if (c.matrix.determinant() < 0) {
+        if (gg.index) {
+          const a = gg.index.array;
+          for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; }
+        } else {
+          for (const nome of Object.keys(gg.attributes)) {
+            const at = gg.attributes[nome], n = at.itemSize, arr = at.array;
+            for (let i = 0; i < at.count; i += 3) for (let j = 0; j < n; j++) {
+              const t = arr[(i + 1) * n + j]; arr[(i + 1) * n + j] = arr[(i + 2) * n + j]; arr[(i + 2) * n + j] = t;
+            }
+          }
+        }
+      }
+      return gg;
     });
     const nomi = Object.keys(geos[0].attributes);
     if (!geos.every((gg) => Object.keys(gg.attributes).length === nomi.length && nomi.every((n) => gg.attributes[n]))) continue;
@@ -129,6 +145,14 @@ export function unisciPezzi<T extends THREE.Object3D>(g: T): T {
     g.add(u);
   }
   return g;
+}
+
+/** Come unisciPezzi, ma in tutto il modello, ramo per ramo (lascia stare i pezzi in `esclusi`, che si muovono). */
+export function unisciTutto<T extends THREE.Object3D>(radice: T, esclusi = new Set<THREE.Object3D>()): T {
+  const nodi: THREE.Object3D[] = [];
+  radice.traverse((o) => { if (o.children.length > 1) nodi.push(o); });
+  for (const n of nodi) unisciPezzi(n, esclusi);
+  return radice;
 }
 
 // ---------- animali ----------
@@ -1439,6 +1463,9 @@ export function creaAnimale(a: Animale, divisa = false): ModelloAnimale {
   vesti(a, { testa, busto, pancia, corpo, collo, fiore, fiocco }, divisa);
   gruppo.userData.divisa = divisa;
 
+  // i pezzi fermi con lo stesso colore (macchie, bottoni, vestiti, orecchie...) diventano uno solo:
+  // l'animale è identico ma il telefono fa molta meno fatica. Restano separati quelli che si muovono.
+  unisciTutto(corpo, new Set<THREE.Object3D>([busto, pancia, ...occhi, ...zampe, ...(coda ? [coda as THREE.Object3D] : [])]));
   contorno(corpo);
   gruppo.userData.taglia = t.taglia * F.taglia;
   const m: ModelloAnimale = { gruppo, corpo, busto, pancia, testa, zampe, coda: coda as THREE.Object3D | null, occhi, accessorio: null, mestiere: null,
@@ -2583,6 +2610,7 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
   }
   if (!altPorta) altPorta = 0.45;
   g.add(mesh(geo.palla(0.04), mat('#f2c94c'), 0.15, altPorta, fronte + 0.04));
+  dettagliCasa(g, { vetro, porta, tetto, colore: c.tetto, muro: c.muro });
 
   // insegna del mestiere sopra la porta, con la scritta; davanti il bancone e gli attrezzi del mestiere
   if (mestiere) {
@@ -2605,7 +2633,127 @@ export function creaCasaAnimale(specie: Specie, emozione: Emozione, fase: Fase, 
   g.add(creaGiardinetto(emozione, c, fronte));
   if (ampliamenti.length) creaAmpliamenti(g, specie, ampliamenti, c, fronte);
   if (livelloCasa >= 2) miglioraCasa(g, specie, c, livelloCasa, fronte, altPorta);
+  unisciPezzi(g); // tutti i dettagli in pochi pezzi: la casa è ricca ma leggera da disegnare
   return contorno(g);
+}
+
+/** Tegole dipinte: file di squame con l'ombra sotto e la luce sopra (per i tetti a punta). */
+const cacheTegole = new Map<string, THREE.MeshToonMaterial>();
+function tegole(colore: string): THREE.MeshToonMaterial {
+  let m = cacheTegole.get(colore);
+  if (m) return m;
+  const base = new THREE.Color(colore);
+  const scuro = '#' + base.clone().offsetHSL(0, 0.02, -0.14).getHexString();
+  const chiaro = '#' + base.clone().offsetHSL(0, -0.02, 0.08).getHexString();
+  const t = texture(128, (cx, l) => {
+    cx.fillStyle = colore;
+    cx.fillRect(0, 0, l, l);
+    const file = 6, w = l / 8, h = l / file;
+    for (let r = 0; r < file; r++) {
+      for (let k = -1; k < 9; k++) {
+        const x = k * w + (r % 2) * w / 2, y = r * h;
+        // squama: mezzo tondo verso il basso, ombra sul bordo, luce in alto
+        cx.fillStyle = (k + r) % 3 === 0 ? chiaro : colore;
+        cx.beginPath();
+        cx.moveTo(x, y);
+        cx.lineTo(x + w, y);
+        cx.lineTo(x + w, y + h * 0.55);
+        cx.quadraticCurveTo(x + w / 2, y + h * 1.15, x, y + h * 0.55);
+        cx.closePath();
+        cx.fill();
+        cx.strokeStyle = scuro;
+        cx.lineWidth = 2;
+        cx.stroke();
+      }
+    }
+  });
+  t.repeat.set(4, 3);
+  m = mat('#ffffff', { map: t, rim: 0.4 });
+  cacheTegole.set(colore, m);
+  return m;
+}
+
+/**
+ * I dettagli che rendono vera una casetta, uguali per tutte le specie:
+ * cornici e davanzali alle finestre (con la crocetta e le persiane), stipiti, assi e gradino alla porta,
+ * tegole sui tetti a punta. Si guardano i pezzi già messi (finestre, porta, tetto) e si decorano lì.
+ */
+function dettagliCasa(g: THREE.Group, o: { vetro: THREE.Material; porta: THREE.Material; tetto: THREE.Material; colore: string; muro: string }) {
+  const cornice = mat('#fbf3e4', { rim: 0.3 });
+  const legnoScuro = mat(varia(o.colore, 0, -0.12));
+  const persiana = mat(varia(o.colore, 0.02, -0.04), { rim: 0.3 });
+  const assi = mat(varia('#6a4a30', 0, 0), { rim: 0 });
+  const sasso = mat('#c9c0b2', { rim: 0.3 });
+  const fiori = ['#ff8fb1', '#ffd166', '#ffffff', '#b39ddb'];
+  const nuovi: THREE.Object3D[] = [];
+  const vicino = (pezzo: THREE.Mesh, figlio: THREE.Object3D) => {
+    // il dettaglio sta nello stesso posto (e girato allo stesso modo) del pezzo che decora
+    const d = new THREE.Group();
+    d.position.copy(pezzo.position);
+    d.quaternion.copy(pezzo.quaternion);
+    d.add(figlio);
+    nuovi.push(d);
+    return figlio;
+  };
+  let i = 0;
+  for (const c of [...g.children]) {
+    if (!(c instanceof THREE.Mesh)) continue;
+    const p = (c.geometry as THREE.BufferGeometry & { parameters?: Record<string, number> }).parameters ?? {};
+    const tipo = c.geometry.type;
+    if (c.material === o.vetro && tipo === 'BoxGeometry') {
+      // finestra quadrata: cornice, crocetta, davanzale con un vasetto, persiane aperte
+      const w = p.width * c.scale.x, h = p.height * c.scale.y, z = p.depth / 2 + 0.012;
+      const sp = 0.045;
+      vicino(c, mesh(geo.scatola(w + sp * 2, sp, 0.05), cornice, 0, h / 2 + sp / 2, z - 0.015));
+      vicino(c, mesh(geo.scatola(sp, h, 0.05), cornice, -w / 2 - sp / 2, 0, z - 0.015));
+      vicino(c, mesh(geo.scatola(sp, h, 0.05), cornice, w / 2 + sp / 2, 0, z - 0.015));
+      vicino(c, mesh(geo.scatola(sp * 0.6, h, 0.03), cornice, 0, 0, z));
+      vicino(c, mesh(geo.scatola(w, sp * 0.6, 0.03), cornice, 0, 0, z));
+      vicino(c, mesh(geo.scatola(w + sp * 3.5, sp * 1.3, 0.16), cornice, 0, -h / 2 - sp * 0.6, z + 0.05));
+      if (w > 0.28) {
+        for (const lato of [-1, 1]) {
+          const pe = vicino(c, mesh(geo.scatola(w * 0.48, h * 1.02, 0.03), persiana, lato * (w / 2 + sp + w * 0.24), 0, z - 0.01));
+          // le doghe delle persiane
+          for (let k = -1; k <= 1; k++) vicino(c, mesh(geo.scatola(w * 0.4, 0.012, 0.012), legnoScuro, pe.position.x, k * h * 0.28, z + 0.008));
+        }
+      }
+      if (i++ % 2 === 0) {
+        const vaso = vicino(c, mesh(geo.scatola(w * 0.8, 0.09, 0.12), mat('#c8603a', { rim: 0.2 }), 0, -h / 2 - sp * 0.6 + 0.07, z + 0.07));
+        for (let k = 0; k < 3; k++) {
+          const f = vicino(c, mesh(geo.palla(0.035, 6), mat(fiori[(k + i) % fiori.length], { rim: 0.2 }), -w * 0.28 + k * w * 0.28, vaso.position.y + 0.07, z + 0.07));
+          f.userData.senzaContorno = true;
+        }
+      }
+    } else if (c.material === o.vetro && tipo === 'CylinderGeometry') {
+      // finestra tonda: cornice ad anello e crocetta (il cilindro guarda verso il suo asse)
+      const r = p.radiusTop;
+      const anello = vicino(c, mesh(new THREE.TorusGeometry(r + 0.02, 0.03, 6, 20), cornice, 0, p.height / 2, 0));
+      anello.rotation.x = Math.PI / 2;
+      vicino(c, mesh(geo.scatola(r * 2, 0.02, 0.025), cornice, 0, p.height / 2 + 0.005, 0));
+      vicino(c, mesh(geo.scatola(0.025, 0.02, r * 2), cornice, 0, p.height / 2 + 0.005, 0));
+    } else if (c.material === o.porta && tipo === 'BoxGeometry') {
+      // porta: stipiti e architrave, assi verticali, gradino di pietra se è a terra
+      const w = p.width, h = p.height, z = p.depth / 2 + 0.01;
+      vicino(c, mesh(geo.scatola(w + 0.14, 0.07, 0.07), legnoScuro, 0, h / 2 + 0.035, z - 0.02));
+      for (const lato of [-1, 1]) vicino(c, mesh(geo.scatola(0.07, h, 0.07), legnoScuro, lato * (w / 2 + 0.035), 0, z - 0.02));
+      for (const x of [-w / 4, w / 4]) vicino(c, mesh(geo.scatola(0.015, h * 0.94, 0.01), assi, x, 0, z));
+      vicino(c, mesh(geo.scatola(w * 0.8, 0.03, 0.012), assi, 0, h * 0.18, z));
+      if (c.position.y - h / 2 < 0.06) vicino(c, mesh(geo.scatola(w + 0.3, 0.06, 0.3), sasso, 0, -h / 2 + 0.03, z + 0.13));
+    } else if (c.material === o.porta && tipo === 'CylinderGeometry') {
+      const anello = vicino(c, mesh(new THREE.TorusGeometry(p.radiusTop + 0.03, 0.04, 6, 20), legnoScuro, 0, p.height / 2, 0));
+      anello.rotation.x = Math.PI / 2;
+    } else if (c.material === o.tetto && tipo === 'ConeGeometry') {
+      c.material = tegole(o.colore);
+    }
+  }
+  // i dettagli si mettono come pezzi sciolti della casa (così poi si uniscono per materiale)
+  for (const d of nuovi) {
+    d.updateMatrix();
+    for (const f of [...d.children]) {
+      f.applyMatrix4(d.matrix);
+      g.add(f);
+    }
+  }
 }
 
 /** Tetto a capanna (prisma triangolare): base larga `l`, alto `h`, profondo `p`, appoggiato a y = 0. */
