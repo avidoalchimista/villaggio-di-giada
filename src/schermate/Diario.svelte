@@ -8,7 +8,10 @@
   import { meseDi } from '../lib/date';
   import { EMOZIONI, FORZE_PER_VIRTU, VIRTU, virtuDi, type Emozione, type Evento, type Forza, type Punteggi, type VoceDiario } from '../lib/tipi';
 
-  let fase = $state<'scrivi' | 'conferma' | 'fatto' | 'archivio'>('scrivi');
+  let fase = $state<'scrivi' | 'conferma' | 'fatto' | 'archivio' | 'album'>('scrivi');
+  // le foto ricordo del fotografo (vedi lib/minigiochi.ts)
+  const album = $derived([...(app.stato?.botteghe?.album ?? [])].reverse());
+  const nomeDi = (id: string) => { const a = app.stato?.animali.find((x) => x.id === id); return a ? (a.nome || nomeAnimale(a)) : ''; };
   let testo = $state('');
   let difficile = $state(false);
   let serio = $state(false);
@@ -174,6 +177,9 @@
       <button class="pillola-bottone" onclick={() => { aperta = null; mese = ''; fase = 'archivio'; }}>
         📚 <span>{app.voci.length}</span>
       </button>
+      {#if album.length}
+        <button class="pillola-bottone" onclick={() => (fase = 'album')} aria-label="Album delle foto">📷 <span>{album.length}</span></button>
+      {/if}
     </header>
     {#if !testo}<Corvo id="diario_vuoto" piccolo />{/if}
 
@@ -200,6 +206,21 @@
       <span class="icona-meteo">{difficile ? '🌧️' : '⛅'}</span> È stata una giornata difficile
     </button>
     <button class="largo grande" disabled={testo.trim().length < 3} onclick={analizza}>✨ Ho finito</button>
+
+  {:else if fase === 'album'}
+    <header class="testata">
+      <h1>L'album delle foto</h1>
+      <button class="pillola-bottone" onclick={() => (fase = 'scrivi')}>✏️ Scrivi</button>
+    </header>
+    <p class="tenue">Le foto ricordo più belle, fatte con il fotografo del villaggio.</p>
+    <div class="album">
+      {#each album as f, i (f.data + i)}
+        <figure class="polaroid" style:--g="{(i % 3 - 1) * 2}deg">
+          <img src={f.foto} alt="Foto ricordo del {dataLeggibile(f.data)}" />
+          <figcaption>{dataLeggibile(f.data)}{#if f.chi.length}<br /><span>{f.chi.map(nomeDi).filter(Boolean).join(', ')}</span>{/if}</figcaption>
+        </figure>
+      {/each}
+    </div>
 
   {:else if fase === 'conferma'}
     <header class="testata"><h1>Cosa ho capito</h1></header>
@@ -447,4 +468,9 @@
     padding: 1px 12px; border-radius: 999px; border: 3px solid var(--legno); transform: rotate(-3deg);
   }
   .sfoglia button { min-width: 120px; }
+  .album { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; padding: 8px 4px 24px; }
+  .polaroid { margin: 0; background: #fff; padding: 8px 8px 10px; border-radius: 4px; box-shadow: 0 4px 12px rgba(74, 52, 36, 0.25); transform: rotate(var(--g)); }
+  .polaroid img { width: 100%; display: block; border-radius: 2px; }
+  .polaroid figcaption { font-size: 0.78rem; font-weight: 800; text-align: center; margin-top: 6px; color: var(--inchiostro); }
+  .polaroid figcaption span { color: var(--testo-tenue); font-weight: 700; }
 </style>

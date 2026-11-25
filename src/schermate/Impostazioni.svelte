@@ -3,6 +3,7 @@
   import GuidaIcona from '../componenti/GuidaIcona.svelte';
   import { app, vai, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, provaSentiero, richiamaDaiFunghi, nuovoRitrovamento, provaFestaDiCompleanno, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
+  import { MINIGIOCHI } from '../lib/minigiochi';
   import { giorniTra } from '../lib/date';
 
   let nome = $state(app.stato!.nomeVillaggio);
@@ -140,6 +141,12 @@
       <p style="margin-top:12px">Il 24 luglio il villaggio fa una festa per il compleanno di Giada. Per vederla adesso:</p>
       <div class="riga" style="flex-wrap:wrap">
         <button class="secondario tondo" onclick={provaFestaDiCompleanno}>🎂 Prova la festa di compleanno</button>
+      </div>
+      <p style="margin-top:12px">I minigiochi delle botteghe si aprono quando nel villaggio c'è un animale con quel mestiere. Per provarli subito:</p>
+      <div class="riga" style="flex-wrap:wrap">
+        {#each MINIGIOCHI as m (m.id)}
+          <button class="secondario tondo" onclick={() => { app.provaMinigioco = m.id; vai('villaggio'); }}>{m.icona} {m.nome}</button>
+        {/each}
       </div>
       <p style="margin-top:12px">Il castoro trova un sentiero verso un posto lontano ogni mese o due. Per farglielo trovare adesso (serve che il castoro sia già arrivato):</p>
       <div class="riga" style="flex-wrap:wrap">

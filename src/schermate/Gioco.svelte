@@ -7,6 +7,8 @@
   import { carattereDi, nomeCarattere } from '../lib/carattere';
   import Casa from '../componenti/Casa.svelte';
   import Pesca from '../componenti/Pesca.svelte';
+  import Minigioco from '../componenti/Minigioco.svelte';
+  import { MINIGIOCHI, puoAiutare } from '../lib/minigiochi';
   import Acquario from '../componenti/Acquario.svelte';
   import Museo from '../componenti/Museo.svelte';
   import Funghi from '../componenti/Funghi.svelte';
@@ -71,6 +73,35 @@
     casa = null;
     scena?.sospendi(false);
   }
+  // «Dai una mano»: il minigioco della bottega (il villaggio intanto si ferma, così non rallenta)
+  let aiuto = $state<{ animale: Animale; amici: Animale[] } | null>(null);
+  function daiUnaMano(a: Animale) {
+    dialogo = null;
+    casa = null;
+    const amici = s.animali.filter((x) => x.id !== a.id && x.fase !== 'uovo' && !x.addormentato)
+      .sort(() => Math.random() - 0.5).slice(0, 4);
+    aiuto = { animale: JSON.parse(JSON.stringify(a)), amici: JSON.parse(JSON.stringify(amici)) };
+    scena?.sospendi(true);
+  }
+  function smettiDiAiutare() {
+    aiuto = null;
+    scena?.sospendi(false);
+  }
+  // modalità prova: il minigioco scelto nel pannello, anche se nel villaggio quel mestiere non c'è
+  $effect(() => {
+    const id = app.provaMinigioco;
+    if (!id || !attivo) return;
+    untrack(() => {
+      app.provaMinigioco = null;
+      const def = MINIGIOCHI.find((m) => m.id === id);
+      if (!def) return;
+      const chi = s.animali.find((a) => a.mestiere === def.mestiere) ?? s.animali.find((a) => a.fase !== 'uovo') ?? s.animali[0];
+      if (!chi) return;
+      const finto = { ...JSON.parse(JSON.stringify(chi)), mestiere: def.mestiere, addormentato: false } as Animale;
+      if (finto.fase === 'cucciolo' || finto.fase === 'giovane' || finto.fase === 'uovo') finto.fase = 'adulto';
+      daiUnaMano(finto);
+    });
+  });
   // pescare al laghetto
   let pesca = $state<'mattina' | 'giorno' | 'sera' | 'notte' | null>(null);
   function vaiAPescare() {
@@ -121,7 +152,7 @@
       if (Object.keys(x.funghi).some((id) => FUNGO[id]?.mangia === 'veleno')) righe.push(corvo('', 'Cra! Attenzione: uno di quei funghi è velenoso. Quello non si cucina: si guarda soltanto, magari al museo.'));
       rientriDaDire.push(righe);
     }
-    if (rientriDaDire.length && !dialogo && !sp && !fs && !casa && !pesca && !gita && !arreda && !menu) {
+    if (rientriDaDire.length && !dialogo && !sp && !fs && !casa && !aiuto && !pesca && !gita && !arreda && !menu) {
       dialogo = { righe: rientriDaDire.flat() };
       rientriDaDire = [];
       scena?.festeggia();
@@ -558,7 +589,7 @@
     clearInterval(timerFunghi);
     sp = null; fs = null; poi = null; dopoDialogo = null; avantiFesta = null;
     dialogo = null; chiediNome = null; insegnaA = null; menu = false; arreda = false; aiuolaDaAprire = null; casaNuova = null;
-    casa = null; pesca = null; acquario = false; museo = false; funghi = false; luogo = null; gita = null; quadroAperto = null;
+    casa = null; aiuto = null; pesca = null; acquario = false; museo = false; funghi = false; luogo = null; gita = null; quadroAperto = null;
     faccia = null; consiglioAperto = false; aPiedi = false; inPrimoPiano = null; novitaAperta = false;
     rientriDaDire = [];
     giaChiesto.clear();
@@ -836,7 +867,12 @@
   <canvas bind:this={canvas} class="mondo"></canvas>
   {#if attivo}
   {#if casa}
-    <Casa abitanti={casa.abitanti} proprietario={casa.proprietario} momento={() => scena?.momento() ?? 'lavoro'} onchiudi={esci} />
+    <Casa abitanti={casa.abitanti} proprietario={casa.proprietario} momento={() => scena?.momento() ?? 'lavoro'} onchiudi={esci}
+      onaiuta={casa.proprietario && puoAiutare(casa.proprietario) ? () => { const p = s.animali.find((a) => a.id === casa?.proprietario?.id); if (p) daiUnaMano(p); } : undefined} />
+  {/if}
+  {#if aiuto}
+    {@const chi = aiuto}
+    {#key chi}<Minigioco animale={chi.animale} amici={chi.amici} onchiudi={smettiDiAiutare} />{/key}
   {/if}
   {#if pesca}
     <Pesca {scena} momento={pesca} onchiudi={smettiDiPescare} />
@@ -983,6 +1019,7 @@
             {#if a.fase !== 'cucciolo' && !a.studio && !a.addormentato}
               <button class="tondo" onclick={() => { dialogo = null; insegnaA = a; }}>{a.sesso === 'f' ? 'Insegnale' : 'Insegnagli'} qualcosa</button>
             {/if}
+            {#if puoAiutare(a)}<button class="tondo" onclick={() => daiUnaMano(a)}>🤝 Dai una mano</button>{/if}
             {#if a.mestiere}<button class="tondo grigio" onclick={() => entra(a)}>🏠 Casa</button>{/if}
             <button class="tondo grigio" onclick={() => { dialogo = null; vai('animale', a.id); }}>Scheda</button>
             <button class="tondo grigio" onclick={() => (dialogo = null)}>Ciao!</button>

@@ -5,6 +5,7 @@ import type { Castoro } from './castoro';
 import type { Escursione } from './escursioni';
 import type { Funghi } from './funghi';
 import type { Museo } from './museo';
+import type { Botteghe } from './minigiochi';
 
 export const VIRTU = ['coraggio', 'umanita', 'saggezza', 'giustizia', 'temperanza', 'trascendenza'] as const;
 export type Virtu = (typeof VIRTU)[number];
@@ -159,6 +160,7 @@ export interface StatoGioco {
   compagno?: string; // l'animale del cuore di Giada, quello che parte con lei in escursione
   funghi?: Funghi; // chi è a funghi e il cestino di Giada (vedi funghi.ts)
   museo?: Museo; // le cose trovate in giro e i funghi esposti (vedi museo.ts)
+  botteghe?: Botteghe; // i minigiochi delle botteghe: partite, vasi, torte, costellazioni (vedi minigiochi.ts)
 }
 
 export interface Pescato {

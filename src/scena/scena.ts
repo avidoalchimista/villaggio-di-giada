@@ -236,6 +236,8 @@ export class Scena {
   private renderer: THREE.WebGLRenderer;
   private qualita: RisoluzioneAdattiva;
   private cielo = new Cielo();
+  private chiaveStelle = '';
+  private thetaStelle: number | null = null;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
   private sole = new THREE.DirectionalLight('#fff1d6', 2.2);
@@ -734,6 +736,17 @@ export class Scena {
     this.ghiande = s.ghiande;
     this.ultimoStato = s;
     this.aggiornaCastagne(s.castagneMature ?? 0);
+    // le costellazioni disegnate con l'astronomo: nel cielo, davanti a dove guarda la telecamera all'inizio
+    const stelle = s.botteghe?.stelle ?? [];
+    const chiave = stelle.map((c) => c.forma + c.data).join();
+    if (chiave !== this.chiaveStelle) {
+      this.chiaveStelle = chiave;
+      if (this.thetaStelle === null) {
+        const f = this.camera.getWorldDirection(new THREE.Vector3());
+        this.thetaStelle = Math.atan2(f.z, f.x);
+      }
+      this.cielo.costellazioni(stelle, this.thetaStelle);
+    }
     this.conRichiesta = s.richiesta?.animale ?? null;
     const primaVolta = this.strutture.size === 0 && !this.giaAggiornata;
     for (const c of s.costruzioni) this.metti(c.id, s, !primaVolta);
