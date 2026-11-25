@@ -342,6 +342,16 @@ export class Scena {
   private tasti = new Set<string>();
   onArredo: (e: EventoArredo) => void = () => {};
 
+  // ---------- a piedi: la visuale in prima persona, per passeggiare e arredare da vicino ----------
+  /** true = Giada cammina nel villaggio con gli occhi suoi (prima persona) */
+  aPiedi = false;
+  private piedi = new THREE.Vector3(); // dove sta Giada
+  private imbardata = 0; // dove guarda (0 = come la telecamera di sempre con angolo 0)
+  private beccheggio = -0.12; // in su e in giù
+  private levetta = { x: 0, y: 0 }; // la levetta sullo schermo del telefono (x destra, y avanti)
+  private passoTesta = 0; // la testa ondeggia appena camminando
+  private static OCCHI = 1.45; // altezza degli occhi: una persona tra gli animali
+
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     // risoluzione che si adatta: nitida quando si può, mai a scatti
@@ -1442,6 +1452,14 @@ export class Scena {
       }
       const prima = this.dita.get(e.pointerId)!;
       this.dita.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.dita.size >= 2 && this.aPiedi) {
+        // a piedi: con due dita ci si guarda intorno (un dito può star disegnando il sentiero)
+        const m = this.mezzo();
+        if (this.mezzoDita) this.guardaIntorno(m.x - this.mezzoDita.x, m.y - this.mezzoDita.y);
+        this.mezzoDita = m;
+        if (this.trascina) this.trascina.mosso = 99;
+        return;
+      }
       if (this.dita.size >= 2) {
         const d = this.distanzaDita();
         if (this.distanzaPizzico) this.zoomVoluto = this.zoom = THREE.MathUtils.clamp(this.zoom * (this.distanzaPizzico / d), 0.5, 2.4);
@@ -1463,6 +1481,7 @@ export class Scena {
       this.trascina.mosso += Math.abs(dx) + Math.abs(dy);
       this.trascina.x = e.clientX;
       this.trascina.y = e.clientY;
+      if (this.trascina.ruota && this.aPiedi) { this.guardaIntorno(dx, dy); return; }
       if (this.trascina.ruota) {
         // tasto destro: girare intorno al punto guardato (e un po' di zoom tirando su e giù)
         this.angolo -= dx * 0.008;
@@ -1494,7 +1513,8 @@ export class Scena {
         }
         return;
       }
-      this.trascinaVista(prima.x, prima.y, e.clientX, e.clientY);
+      if (this.aPiedi) this.guardaIntorno(e.clientX - prima.x, e.clientY - prima.y);
+      else this.trascinaVista(prima.x, prima.y, e.clientX, e.clientY);
     });
     const fine = (e: PointerEvent) => {
       this.dita.delete(e.pointerId);
@@ -1519,6 +1539,7 @@ export class Scena {
     c.addEventListener('wheel', (e) => {
       if (this.cine) return;
       e.preventDefault();
+      if (this.aPiedi) return;
       // la rotella (o due dita sul trackpad) avvicina e allontana con dolcezza, in proporzione a quanto si gira
       const passo = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
       this.zoomVoluto = THREE.MathUtils.clamp(this.zoomVoluto * Math.exp(passo * 0.0012), 0.5, 2.4);
@@ -1528,7 +1549,7 @@ export class Scena {
       const dove = e.target as HTMLElement | null;
       if (dove && (dove.tagName === 'INPUT' || dove.tagName === 'TEXTAREA' || dove.isContentEditable)) return;
       const k = e.key.toLowerCase();
-      if (!['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'q', 'e', '+', '-', '='].includes(k)) return;
+      if (!['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'q', 'e', '+', '-', '=', 'shift'].includes(k)) return;
       if (e.type === 'keydown') this.tasti.add(k); else this.tasti.delete(k);
       if (k.startsWith('arrow')) e.preventDefault();
     };
@@ -1867,7 +1888,108 @@ export class Scena {
 
   /** Gira la telecamera di un quarto di giro (pulsante). */
   ruota(verso: number) {
+    if (this.aPiedi) { this.imbardata += verso * 0.5; return; }
     this.velAngolo += verso * 0.06;
+  }
+
+  // ---------- a piedi ----------
+
+  /** Si scende nel villaggio: Giada sta un po' indietro dal punto guardato, girata come la telecamera di adesso. */
+  entraAPiedi() {
+    if (this.aPiedi) return;
+    const a = this.angolo;
+    this.piedi.set(this.centro.x + Math.sin(a) * 4, 0, this.centro.z + Math.cos(a) * 4);
+    this.tieniPiedi();
+    this.imbardata = a;
+    this.beccheggio = -0.12;
+    this.velCentro.set(0, 0, 0);
+    this.aPiedi = true;
+    this.morbido = 1.4;
+  }
+
+  /** Si torna alla vista dall'alto, che guarda proprio dove si guardava camminando. */
+  esciAPiedi() {
+    if (!this.aPiedi) return;
+    this.aPiedi = false;
+    this.levetta = { x: 0, y: 0 };
+    const c = this.piedi.clone().add(new THREE.Vector3(-Math.sin(this.imbardata), 0, -Math.cos(this.imbardata)).multiplyScalar(4));
+    this.limita(c);
+    this.centro.copy(c);
+    this.centroVoluto.copy(c);
+    this.angolo = this.imbardata;
+    this.velAngolo = 0;
+    this.morbido = 1.4;
+  }
+
+  /** La levetta del telefono: x verso destra, y in avanti (da -1 a 1). */
+  cammina(x: number, y: number) {
+    this.levetta.x = x;
+    this.levetta.y = y;
+  }
+
+  /** Girare la testa (trascinando il dito o il mouse): a destra si guarda a destra, in su si guarda in su. */
+  private guardaIntorno(dx: number, dy: number) {
+    const k = this.canvas.clientWidth < 700 ? 0.0065 : 0.0042;
+    this.imbardata -= dx * k;
+    this.beccheggio = THREE.MathUtils.clamp(this.beccheggio - dy * k, -1.25, 0.55);
+  }
+
+  /** Giada resta nella radura, fuori dalle case, dagli alberi, dagli animali e dall'acqua. */
+  private tieniPiedi(prima?: THREE.Vector3) {
+    const p = this.piedi, r = 0.3;
+    for (let giro = 0; giro < 3; giro++) {
+      for (const o of this.ostacoli) {
+        const f = spintaFuori(p.x, p.z, r, o);
+        if (f) { p.x += f.x * f.d; p.z += f.z * f.d; }
+      }
+      for (const ab of this.abitanti.values()) {
+        if (!ab.m.gruppo.visible) continue;
+        const q = ab.m.gruppo.position, d = Math.hypot(p.x - q.x, p.z - q.z), R = r + this.spazioDi(ab);
+        if (d < R && d > 1e-4) { p.x += ((p.x - q.x) / d) * (R - d); p.z += ((p.z - q.z) / d) * (R - d); }
+      }
+    }
+    const lim = this.raggio + 1.5;
+    if (p.length() > lim) p.setLength(lim);
+    if (prima && this.inAcqua(p.x, p.z)) {
+      // nell'acqua non si entra: si scivola lungo la riva
+      if (!this.inAcqua(p.x, prima.z)) p.z = prima.z;
+      else if (!this.inAcqua(prima.x, p.z)) p.x = prima.x;
+      else p.copy(prima);
+    }
+  }
+
+  /** Un passo: levetta, WASD o frecce. Il punto guardato dalla vista dall'alto segue Giada (così si arreda davanti a lei). */
+  private passiAPiedi(dt: number) {
+    const t = this.tasti;
+    let avanti = this.levetta.y + (t.has('w') || t.has('arrowup') ? 1 : 0) - (t.has('s') || t.has('arrowdown') ? 1 : 0);
+    let lato = this.levetta.x + (t.has('d') ? 1 : 0) - (t.has('a') ? 1 : 0);
+    // frecce a destra e a sinistra, Q ed E: si gira
+    if (t.has('arrowleft') || t.has('q')) this.imbardata += dt * 1.9;
+    if (t.has('arrowright') || t.has('e')) this.imbardata -= dt * 1.9;
+    const l = Math.hypot(avanti, lato);
+    if (l > 1) { avanti /= l; lato /= l; }
+    if (l > 0.02) {
+      const v = (t.has('shift') ? 5.2 : 3) * dt;
+      const sy = Math.sin(this.imbardata), cy = Math.cos(this.imbardata);
+      const prima = this.piedi.clone();
+      this.piedi.x += (-sy * avanti + cy * lato) * v;
+      this.piedi.z += (-cy * avanti - sy * lato) * v;
+      this.tieniPiedi(prima);
+      this.passoTesta += this.piedi.distanceTo(prima) * 5.5;
+    }
+    const davanti = this.piedi.clone().add(new THREE.Vector3(-Math.sin(this.imbardata), 0, -Math.cos(this.imbardata)).multiplyScalar(3));
+    this.limita(davanti);
+    this.centro.copy(davanti);
+    this.centroVoluto.copy(davanti);
+  }
+
+  /** Solo per le prove: mette Giada in un punto preciso, girata verso un altro. */
+  mettiAPiedi(x: number, z: number, versoX: number, versoZ: number, giu = -0.12) {
+    if (!this.aPiedi) this.entraAPiedi();
+    this.piedi.set(x, 0, z);
+    this.imbardata = Math.atan2(x - versoX, z - versoZ);
+    this.beccheggio = giu;
+    this.morbido = 0;
   }
 
   private distanzaDita() {
@@ -1998,7 +2120,8 @@ export class Scena {
       this.angolo += this.velAngolo * dt * 60;
     }
     // la tastiera: frecce/WASD spostano, Q/E girano, +/- avvicinano (morbido, come col dito)
-    if (this.tasti.size && !this.cine) {
+    if (this.aPiedi && !this.cine) this.passiAPiedi(dt);
+    else if (this.tasti.size && !this.cine) {
       const avanti = (this.tasti.has('w') || this.tasti.has('arrowup') ? 1 : 0) - (this.tasti.has('s') || this.tasti.has('arrowdown') ? 1 : 0);
       const lato = (this.tasti.has('d') || this.tasti.has('arrowright') ? 1 : 0) - (this.tasti.has('a') || this.tasti.has('arrowleft') ? 1 : 0);
       if (avanti || lato) {
@@ -2027,6 +2150,13 @@ export class Scena {
       voluta = new THREE.Vector3(p.x + Math.sin(ang) * cin.dist, p.y + cin.alt, p.z + Math.cos(ang) * cin.dist);
       guarda = new THREE.Vector3(p.x, p.y + cin.guardaY, p.z);
       CURVA.valore = 0.0004;
+    } else if (this.aPiedi) {
+      // a piedi: gli occhi di Giada, che ondeggiano appena a ogni passo
+      const y = Math.max(0, this.altezza(this.piedi.x, this.piedi.z)) + Scena.OCCHI + Math.sin(this.passoTesta) * 0.03;
+      voluta = new THREE.Vector3(this.piedi.x, y, this.piedi.z);
+      const cp = Math.cos(this.beccheggio);
+      guarda = voluta.clone().add(new THREE.Vector3(-Math.sin(this.imbardata) * cp, Math.sin(this.beccheggio), -Math.cos(this.imbardata) * cp).multiplyScalar(8));
+      CURVA.valore = 0.0006;
     } else {
       voluta = new THREE.Vector3(this.centro.x + Math.sin(this.angolo + oscilla) * dist, alt, this.centro.z + Math.cos(this.angolo + oscilla) * dist);
       guarda = new THREE.Vector3(this.centro.x, 0.6, this.centro.z);
@@ -3524,6 +3654,35 @@ export class Scena {
     this.cine = { segui: () => bersaglio.getWorldPosition(pos).setY(0), dist, alt, guardaY, angolo: ang, animale: cosa.tipo === 'animale' ? cosa.id : undefined, oggetto: bersaglio };
     if (cosa.tipo === 'animale') (bersaglio as THREE.Group).rotation.y = ang;
     return true;
+  }
+
+  /**
+   * Faccia a faccia con un animale, per chiacchierare: la telecamera scende all'altezza dei suoi occhi,
+   * vicina, e lui si gira a guardarti. Finisce con fineCinema().
+   */
+  parlaCon(id: string): boolean {
+    const ab = this.abitanti.get(id);
+    if (!ab || !ab.m.gruppo.visible || this.pescata || this.gita) return false;
+    if (!this.inquadra({ tipo: 'animale', id })) return false;
+    const c = this.cine!;
+    const sc = ab.m.gruppo.scale.x;
+    const testa = new THREE.Box3().setFromObject(ab.m.testa).getCenter(new THREE.Vector3());
+    const occhi = Math.max(0.3, testa.y - ab.m.gruppo.position.y);
+    c.dist = 1.25 * sc + 0.75;
+    c.alt = occhi + 0.12;
+    c.guardaY = occhi * 0.82;
+    c.angolo += 0.35; // un po' di tre quarti: si vede il muso e anche i vestiti
+    ab.m.gruppo.rotation.y = c.angolo;
+    ab.salto = 0.5;
+    return true;
+  }
+
+  /** Mentre parla: un saltello o un cenno, così si capisce che risponde. */
+  annuisci(id: string) {
+    const ab = this.abitanti.get(id);
+    if (!ab) return;
+    ab.salto = Math.max(ab.salto, 0.3);
+    ab.pausa = 999;
   }
 
   /** Ingombro di un oggetto visto dall'alto (raggio) e quanto è alto: calcolato una volta sola. */

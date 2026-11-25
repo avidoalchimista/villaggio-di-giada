@@ -282,6 +282,7 @@ export function applicaVoce(s: StatoGioco, voce: VoceDiario): Evento[] {
       if (a.vociPerSchiudersi <= 0) {
         a.fase = 'cucciolo';
         a.emozione = emozioneDellaPagina(voce, a);
+        a.pagina = voce.id;
         const f = a.sesso === 'f';
         evento(s, data, 'schiusa', `L'uovo si è schiuso: è nat${f ? 'a' : 'o'} ${conArticolo(a)}! Puoi ${f ? 'darle' : 'dargli'} un nome.`, out, a.id);
       }

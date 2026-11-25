@@ -114,6 +114,12 @@ export function analizzaFrase(frase: string, regole: Regola[]): Analisi {
   return { forze, emozioni, segnaliSeri: SEGNALI_SERI.some((s) => frase.includes(s)) };
 }
 
+/** C'è una frase di malessere serio (autolesionismo)? Gli sfoghi normali non contano. */
+export function haSegnaliSeri(testo: string): boolean {
+  const norm = normalizza(testo);
+  return SEGNALI_SERI.some((s) => norm.includes(s));
+}
+
 export function analizza(testo: string, regole: Regola[]): Analisi {
   const tot: Analisi = { forze: {}, emozioni: {}, segnaliSeri: false };
   const norm = normalizza(testo);

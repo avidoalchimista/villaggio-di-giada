@@ -82,6 +82,7 @@ export interface Animale {
   aspetto: Aspetto; // com'è fatto: unico nel villaggio
   studio: { id: string; inizio: string; fine: string } | null; // cosa sta imparando ora
   emozione?: Emozione; // l'emozione della pagina che l'ha fatto nascere: si vede nella sua casa
+  pagina?: string; // id della pagina di diario che l'ha fatto nascere (quella della schiusa)
   vestiti?: string[]; // capi che si è fatto da solo crescendo (vedi vestiti.ts)
   carattere?: string; // sognatore, allegro, ordinato... (vedi carattere.ts): diverso per ognuno
   livelloCasa?: number; // 1..4: quanto Giada ha migliorato la sua casa-bottega (vedi migliorie.ts)
