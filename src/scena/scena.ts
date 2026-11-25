@@ -18,7 +18,7 @@ import {
   creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, ampiezzaPasso, rifinisci, espressione, parla, seduta, type Espressione, creaCastagno, creaCastagna, creaCanna,
   animaLaghetto, puntoLago, fuoriDalLago, SAGOMA_CASA, creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
-  creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto, accendiFinestre,
+  creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, accendiFinestre,
 } from './modelli';
 import { CURVA, GUSCI, NEVE, materiale, materialeTerreno, spriteTesto } from './ps1';
 import { Lotti, STRATO_LOTTI } from './lotti';
@@ -1083,7 +1083,8 @@ export class Scena {
       let g = this.oggetti.get(o.id);
       if (g && g.userData.testo !== (o.testo ?? '')) { this.scene.remove(g); g = undefined; }
       if (!g) {
-        g = o.tipo === 'cartello' ? creaCartelloVia(o.testo ?? '') : creaRecinto();
+        // ogni pezzo messo in fila è quello scelto (siepe, muretto, lampione...), non sempre la staccionata
+        g = o.tipo === 'cartello' ? creaCartelloVia(o.testo ?? '') : creaPezzoFila(o.tipo);
         g.userData.chiave = 'o:' + o.id;
         g.userData.testo = o.testo ?? '';
         this.oggetti.set(o.id, g);

@@ -124,7 +124,10 @@
     }
     if (k.startsWith('a:')) return "L'aiuola";
     if (k.startsWith('q:')) return 'Il quadretto';
-    if (k.startsWith('o:')) return a.oggetti.find((o) => 'o:' + o.id === k)?.tipo === 'cartello' ? 'Il cartello' : 'Il recinto';
+    if (k.startsWith('o:')) {
+      const t = a.oggetti.find((o) => 'o:' + o.id === k)?.tipo;
+      return t === 'cartello' ? 'Il cartello' : t && t in FILA ? `${FILA[t as TipoFila].nome}` : 'Il recinto';
+    }
     return '';
   }
 
