@@ -3755,6 +3755,26 @@ export class Scena {
     return true;
   }
 
+  /** Il castoro in primo piano, quando parla. */
+  inquadraCastoro(): boolean {
+    if (!this.castoro.gruppo.visible || this.pescata || this.gita) return false;
+    const o = this.castoro.animale;
+    const pos = new THREE.Vector3();
+    const p = o.getWorldPosition(new THREE.Vector3());
+    // un po' di lato, dalla parte della radura: si vede lui e l'albero che rosicchia
+    const ang = Math.atan2(-p.x, -p.z) + 0.75;
+    this.cine = { segui: () => o.getWorldPosition(pos).setY(0), dist: 3.3, alt: 1.5, guardaY: 0.3, angolo: ang, oggetto: o };
+    return true;
+  }
+
+  /** Il corvo in primo piano quando parla: tutto intero, cappello compreso, sopra il fumetto. */
+  inquadraCorvo(): boolean {
+    if (!this.inquadra({ tipo: 'corvo' })) return false;
+    const c = this.cine!;
+    c.dist = 4.6; c.alt = 2.1; c.guardaY = 1.25;
+    return true;
+  }
+
   /**
    * Faccia a faccia con un animale, per chiacchierare: la telecamera scende all'altezza dei suoi occhi,
    * vicina, e lui si gira a guardarti. Finisce con fineCinema().

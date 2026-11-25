@@ -163,6 +163,32 @@
       faccia = id && scena?.parlaCon(id) ? id : null;
     });
   });
+  // ---------- chi parla si vede da vicino (il corvo, il castoro, un animale) ----------
+  let inPrimoPiano: string | null = null;
+  function inquadraChiParla(r: RigaDialogo) {
+    if (!scena || sp || fs || faccia || arreda || casa || pesca || acquario || museo || funghi || luogo || gita || aPiedi) return;
+    if (!dialogo || dialogo.tipo === 'casa' || dialogo.tipo === 'animale') return; // (per la casa nuova si guarda il posto)
+    let chi: string | null = null;
+    if (r.voce === 'corvo') chi = 'corvo';
+    else if (r.chi === 'Castoro') chi = 'castoro';
+    else if (r.voce === 'animale') {
+      const a = s.animali.find((x) => x.fase !== 'uovo' && chiDice(x) === r.chi);
+      if (a) chi = 'a:' + a.id;
+    }
+    if (!chi || chi === inPrimoPiano) return;
+    const ok = chi === 'corvo' ? scena.inquadraCorvo() : chi === 'castoro' ? scena.inquadraCastoro() : scena.inquadra({ tipo: 'animale', id: chi.slice(2) });
+    if (ok) inPrimoPiano = chi;
+  }
+  // finito il fumetto si torna alla vista di sempre
+  $effect(() => {
+    const aperto = !!dialogo && dialogo.tipo !== 'animale';
+    untrack(() => {
+      if (aperto || !inPrimoPiano) return;
+      inPrimoPiano = null;
+      if (!dialogo && !sp && !fs) scena?.fineCinema();
+    });
+  });
+
   function rispondi(a: Animale, battute: Battuta[]) {
     dialogo = {
       righe: battute.map((b) => (b.chi === 'corvo' ? { chi: 'Corvo', voce: 'corvo' as const, testo: b.testo } : { chi: chiDice(a), voce: 'animale' as const, testo: b.testo })),
@@ -471,7 +497,7 @@
     sp = null; fs = null; poi = null; dopoDialogo = null; avantiFesta = null;
     dialogo = null; chiediNome = null; insegnaA = null; menu = false; arreda = false; aiuolaDaAprire = null; casaNuova = null;
     casa = null; pesca = null; acquario = false; museo = false; funghi = false; luogo = null; gita = null; quadroAperto = null;
-    faccia = null; consiglioAperto = false; aPiedi = false;
+    faccia = null; consiglioAperto = false; aPiedi = false; inPrimoPiano = null;
     rientriDaDire = [];
     giaChiesto.clear();
     if (!scena) return;
@@ -868,7 +894,7 @@
       </div>
     {:else if dialogo}
       {#key giroDialogo}
-      <Dialogo righe={dialogo.righe} onfine={chiudiDialogo} onriga={(r) => r.voce === 'corvo' && scena?.faiParlareCorvo(Math.min(4, r.testo.length / 28))}>
+      <Dialogo righe={dialogo.righe} onfine={chiudiDialogo} onriga={(r) => { if (r.voce === 'corvo') scena?.faiParlareCorvo(Math.min(4, r.testo.length / 28)); inquadraChiParla(r); }}>
         {#snippet azioni()}
           {#if dialogo?.tipo === 'animale' && dialogo.animale && consiglioAperto}
             <textarea class="racconto" bind:value={testoConsiglio} rows="3" maxlength="500" placeholder="Scrivi qui cosa ti passa per la testa… (se vuoi)"></textarea>

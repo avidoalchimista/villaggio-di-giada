@@ -95,6 +95,8 @@ export class CastoroInScena {
   private albero: THREE.Object3D | null = null;
   /** L'albero che sta rosicchiando (si inclina: non va disegnato insieme agli altri). */
   get alberoRosicchiato() { return this.albero; }
+  /** Il castoro vero e proprio (per inquadrarlo quando parla). */
+  get animale(): THREE.Object3D { return this.castoro; }
   private nascosti: THREE.Object3D[] = [];
   private chiave = '';
   private avanti = 0; // da 0 a 1
