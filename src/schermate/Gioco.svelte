@@ -40,12 +40,14 @@
   import type { Animale, Evento } from '../lib/tipi';
   import { Scena, type Bersaglio } from '../scena/scena';
 
+  // il villaggio resta montato anche quando si guarda un'altra pagina (diario, storia...): lì è solo fermo e nascosto
+  let { attivo = true }: { attivo?: boolean } = $props();
   let canvas: HTMLCanvasElement;
   let scena = $state.raw<Scena | null>(null);
   let s = $derived(app.stato!);
 
-  type Dialogo = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' | 'casa' | 'escursione'; chiave?: string };
-  let dialogo = $state<Dialogo | null>(null);
+  type DialogoAperto = { righe: RigaDialogo[]; animale?: Animale; tipo?: 'animale' | 'backup' | 'casa' | 'escursione'; chiave?: string };
+  let dialogo = $state<DialogoAperto | null>(null);
   let chiediNome = $state<Animale | null>(null);
   let insegnaA = $state<Animale | null>(null);
   let nome = $state('');
@@ -193,7 +195,7 @@
   // ---------- primo piano: schiusa e sorprese "mentre eri via" ----------
   type Spettacolo = { passi: Evento[]; i: number; titolo: string; testo: string; pronto: boolean; nome: Animale | null };
   let sp = $state<Spettacolo | null>(null);
-  let poi: Dialogo | null = null; // il dialogo da mostrare quando lo spettacolo è finito
+  let poi: DialogoAperto | null = null; // il dialogo da mostrare quando lo spettacolo è finito
   let dopoDialogo: (() => void) | null = null; // cosa fare quando si chiude il dialogo
   const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const nat = (a: Animale) => `nat${a.sesso === 'f' ? 'a' : 'o'}`;
@@ -337,10 +339,13 @@
   let fs = $state<{ passo: PassoFesta | null; pronto: boolean } | null>(null);
   let avantiFesta: (() => void) | null = null;
   /** Mostra un passo dello spettacolo e aspetta che Giada tocchi il bottone. */
+  let giro = 0; // cambia uscendo dal villaggio: la festa lasciata a metà non va avanti da sola
   function passoFesta(p: PassoFesta, attesa = 900): Promise<void> {
+    const g = giro;
     return new Promise((ok) => {
       fs = { passo: null, pronto: false };
       setTimeout(() => {
+        if (g !== giro) return;
         if (!fs) return ok();
         fs = { passo: p, pronto: true };
         avantiFesta = ok;
@@ -424,6 +429,13 @@
     }
     scena.onTocco = tocco;
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).scena = scena;
+    if (!attivo) scena.sospendi(true);
+  });
+
+  /** Si entra nel villaggio (la prima volta, o tornando dal diario o da un'altra pagina). */
+  function entraNelVillaggio() {
+    if (!scena) return;
+    scena.sospendi(false);
     // chi è nato senza che Giada l'abbia visto resta uovo finché non guarda la schiusa
     const sorprese = sorpreseDaMostrare();
     scena.trattieni(sorprese.filter((e) => e.tipo === 'schiusa').map((e) => e.animale!));
@@ -446,9 +458,27 @@
     setTimeout(controllaRientri, 2500);
 
     // il giorno del compleanno, prima di tutto la festa; poi il resto
-    if (fareFesta) festaDiCompleanno().then(() => accogli(sorprese));
+    const g = giro;
+    if (fareFesta) festaDiCompleanno().then(() => g === giro && accogli(sorprese));
     else accogli(sorprese);
-  });
+  }
+
+  /** Si va su un'altra pagina: il villaggio si ferma e tutto quello che era aperto si chiude (come prima, quando si smontava). */
+  function esciDalVillaggio() {
+    giro += 1;
+    clearInterval(timerMeteo);
+    clearInterval(timerFunghi);
+    sp = null; fs = null; poi = null; dopoDialogo = null; avantiFesta = null;
+    dialogo = null; chiediNome = null; insegnaA = null; menu = false; arreda = false; aiuolaDaAprire = null; casaNuova = null;
+    casa = null; pesca = null; acquario = false; museo = false; funghi = false; luogo = null; gita = null; quadroAperto = null;
+    faccia = null; consiglioAperto = false; aPiedi = false;
+    rientriDaDire = [];
+    giaChiesto.clear();
+    if (!scena) return;
+    scena.fineCinema();
+    scena.esciAPiedi();
+    scena.sospendi(true);
+  }
 
   /** Cosa succede appena si entra (quello che si vede in primo piano non si ripete nel fumetto). */
   function accogli(sorprese: Evento[]) {
@@ -456,7 +486,7 @@
     const giaInPrimoPiano = new Set(sorprese.map((e) => e.testo));
     const daDiario = app.codaDialoghi.length > 0;
     const conforto = daDiario ? null : serveConforto();
-    let primo: Dialogo | null = null;
+    let primo: DialogoAperto | null = null;
     if (daDiario) {
       primo = { righe: app.codaDialoghi.filter((r) => !giaInPrimoPiano.has(r.testo)) };
       app.codaDialoghi = [];
@@ -515,10 +545,22 @@
     scena?.distruggi();
   });
 
-  // tiene la scena allineata allo stato del gioco
+  // tiene la scena allineata allo stato del gioco (solo mentre si guarda il villaggio: tornando, prima si
+  // trattengono nell'uovo i nati da far vedere, poi si aggiorna)
+  let dentro = false;
   $effect(() => {
     const snap = JSON.stringify(app.stato);
-    if (scena && snap) scena.aggiorna(JSON.parse(snap));
+    const on = attivo;
+    const sc = scena;
+    untrack(() => {
+      if (!sc || !snap) return;
+      if (!on) {
+        if (dentro) { dentro = false; esciDalVillaggio(); }
+        return;
+      }
+      if (!dentro) { dentro = true; entraNelVillaggio(); }
+      else sc.aggiorna(JSON.parse(snap));
+    });
   });
 
   // chi si costruisce la casa chiede a Giada dove metterla (quando non sta succedendo altro)
@@ -698,8 +740,9 @@
   let dataTesto = $derived(new Date(dataDiOggi() + 'T12:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' }));
 </script>
 
-<div class="gioco">
+<div class="gioco" style:display={attivo ? null : 'none'}>
   <canvas bind:this={canvas} class="mondo"></canvas>
+  {#if attivo}
   {#if casa}
     <Casa abitanti={casa.abitanti} proprietario={casa.proprietario} momento={() => scena?.momento() ?? 'lavoro'} onchiudi={esci} />
   {/if}
@@ -888,6 +931,7 @@
       <p class="suggerimento">{aPiedi ? 'Tocca chi vuoi per parlarci · trascina per guardarti intorno' : 'Tocca chi vuoi · 1 dito muove · 2 dita zoom e giro'}</p>
     {/if}
   </div>
+  {/if}
   {/if}
 </div>
 

@@ -20,6 +20,7 @@ import {
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto, accendiFinestre,
 } from './modelli';
 import { CURVA, GUSCI, NEVE, materiale, materialeTerreno, spriteTesto } from './ps1';
+import { Lotti, STRATO_LOTTI } from './lotti';
 import type { Meteo } from '../lib/meteo';
 import { cappellinoDiFesta, Festa, POSTO_TORTA } from './festa';
 import { Pescata } from './pesca3d';
@@ -240,6 +241,8 @@ export class Scena {
   private edifici = new Map<string, THREE.Group>();
   private botteghe = new Map<string, THREE.Group>();
   private bosco = new THREE.Group();
+  /** Le cose ferme disegnate a lotti (vedi lotti.ts): molto meno lavoro per il telefono. */
+  private lotti = new Lotti();
   private giaAggiornataSentieri = false;
   private castoro = new CastoroInScena();
   private acquario: AcquarioInScena | null = null;
@@ -374,6 +377,7 @@ export class Scena {
     this.allarga(5.5);
     this.scene.add(this.selvatici);
     this.scene.add(this.fantasmi);
+    this.scene.add(this.lotti.gruppo);
 
     this.resizeObs = new ResizeObserver(() => this.ridimensiona());
     this.resizeObs.observe(canvas);
@@ -1690,6 +1694,7 @@ export class Scena {
     const r = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
+    ray.layers.enable(STRATO_LOTTI);
     ray.setFromCamera(ndc, this.camera);
     const piano = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const p = new THREE.Vector3();
@@ -1750,6 +1755,7 @@ export class Scena {
     const r = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
+    ray.layers.enable(STRATO_LOTTI);
     ray.setFromCamera(ndc, this.camera);
     const lista = [...cose];
     const hit = ray.intersectObjects(lista.map(([, o]) => o), true)[0];
@@ -2003,6 +2009,7 @@ export class Scena {
     const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     // il mondo è curvato nello shader: per il tocco basta un raggio un po' più generoso
     const ray = new THREE.Raycaster();
+    ray.layers.enable(STRATO_LOTTI);
     ray.setFromCamera(ndc, this.camera);
     const candidati: THREE.Object3D[] = [
       this.corvo.gruppo, this.quaderno, this.castagne, this.nido, ...(this.grande ? [this.grande] : []), ...this.uova.values(), ...this.edifici.values(), ...this.botteghe.values(),
@@ -2042,6 +2049,40 @@ export class Scena {
    * I contorni scuri delle cose lontane sono più sottili di un puntino: non si vedono, ma costano.
    * Quelli lontani si spengono (vanno su un altro "strato" che la telecamera non guarda) e si riaccendono avvicinandosi.
    */
+  /** Quali cose ferme si disegnano insieme: il bosco e le cose piccole a spicchi, le case ognuna per sé. */
+  private composizioneLotti() {
+    const l = new Map<string, THREE.Object3D[]>();
+    const metti = (k: string, o: THREE.Object3D) => { const v = l.get(k); if (v) v.push(o); else l.set(k, [o]); };
+    const spicchio = (o: THREE.Object3D) => {
+      const a = Math.atan2(o.position.z, o.position.x);
+      return Math.floor(((a + Math.PI) / (Math.PI * 2)) * 12) % 12 + (Math.hypot(o.position.x, o.position.z) > this.raggio + 2.5 ? 12 : 0);
+    };
+    const fuori = new Set<THREE.Object3D>(this.tagli.map((t) => t.bersaglio));
+    const r = this.castoro.alberoRosicchiato;
+    if (r) fuori.add(r);
+    for (const o of this.bosco.children) if (!fuori.has(o)) metti('b' + spicchio(o), o);
+    for (const o of this.selvatici.children) if (!fuori.has(o)) metti('s' + spicchio(o), o);
+    for (const [k, o] of this.oggetti) if (!fuori.has(o)) metti('o' + spicchio(o), o), void k;
+    for (const [k, o] of this.botteghe) metti('c:' + k, o);
+    for (const [k, o] of this.edifici) metti('e:' + k, o);
+    for (const [k, o] of this.strutture) metti('t:' + k, o);
+    for (const [k, o] of this.aiuole) metti('a' + spicchio(o), o), void k;
+    metti('fissi', this.nido);
+    if (this.grande) metti('fissi', this.grande);
+    return l;
+  }
+
+  /** Gli animali (e il corvo, il castoro): i pezzi fermi di ogni parte del corpo si uniscono lì (vedi lotti.ts). */
+  private lottiDentro() {
+    const l = new Map<string, [THREE.Object3D, THREE.Object3D[]]>();
+    for (const r of this.radiciDentro()) this.lotti.lottiDentro(r, l);
+    return l;
+  }
+
+  private radiciDentro() {
+    return [...[...this.abitanti.values()].map((ab) => ab.m.gruppo), this.corvo.gruppo, this.castoro.gruppo];
+  }
+
   private contorniLontani() {
     const h = this.canvas.clientHeight * this.renderer.getPixelRatio();
     const pxPerMetro = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
@@ -2063,6 +2104,14 @@ export class Scena {
       }
       GUSCI[j++] = g;
       g.userData.attesa = 0;
+      if (g.userData.inLotto) continue; // lo disegna il suo lotto (vedi lotti.ts)
+      const lotto = g.userData.lotto as { centro: THREE.Vector3; raggio: number; spazio: THREE.Object3D | null } | undefined;
+      if (lotto) {
+        const c = lotto.spazio ? this.tmpV.copy(lotto.centro).applyMatrix4(lotto.spazio.matrixWorld) : lotto.centro;
+        const sc = lotto.spazio ? Math.hypot(lotto.spazio.matrixWorld.elements[0], lotto.spazio.matrixWorld.elements[1], lotto.spazio.matrixWorld.elements[2]) : 1;
+        g.layers.set(Math.max(0, c.distanceTo(cam) - lotto.raggio * sc) < limite * Math.max(0.3, sc) ? 0 : 1);
+        continue;
+      }
       const d = g.getWorldPosition(this.tmpV).distanceTo(cam);
       const sc = g.parent ? Math.abs(g.parent.matrixWorld.elements[0]) + Math.abs(g.parent.matrixWorld.elements[1]) + Math.abs(g.parent.matrixWorld.elements[2]) : 1;
       g.layers.set(d < limite * Math.max(0.3, sc) ? 0 : 1);
@@ -2298,10 +2347,14 @@ export class Scena {
       this.ambiente.intensity = lampo ? 3 : this.ambiente.intensity;
       if (this.fulmine <= 0) this.luceDelGiorno();
     }
-    const vento = this.meteo === 'vento' ? 1 : this.meteo === 'temporale' || this.meteo === 'pioggia' ? 0.5 : 0.12;
+    // gli alberi ondeggiano quando c'è vento; con l'aria ferma stanno fermi (e si disegnano a lotti, molto più leggeri)
+    const vento = this.meteo === 'vento' ? 1 : this.meteo === 'temporale' ? 0.6 : 0;
+    const rosicchiato = this.castoro.alberoRosicchiato;
     for (let i = 0; i < this.bosco.children.length; i += 1) {
       const o = this.bosco.children[i];
-      o.rotation.z = Math.sin(t * 1.6 + i * 0.7) * 0.035 * vento;
+      if (o === rosicchiato) continue;
+      if (vento) o.rotation.z = Math.sin(t * 1.6 + i * 0.7) * 0.035 * vento;
+      else if (o.rotation.z !== 0) o.rotation.z = 0;
     }
 
     // il "!" sopra chi ha una richiesta
@@ -2359,6 +2412,11 @@ export class Scena {
     });
 
     if (++this.contaFotogrammi % 12 === 0) this.contorniLontani();
+    // a lotti solo con la vista di sempre: nei primi piani le cose davanti si tolgono di mezzo una per una
+    this.lotti.attivo = !cin && !vento;
+    if (this.contaFotogrammi % 30 === 1) this.lotti.imposta(this.composizioneLotti(), this.lottiDentro());
+    for (const r of this.radiciDentro()) if (r.visible) this.lotti.osserva(r);
+    this.lotti.passo();
     this.neve += ((this.meteo === 'neve' ? 1 : 0) - this.neve) * Math.min(1, dt * (this.meteo === 'neve' ? 0.05 : 0.02));
     NEVE.valore = this.neve < 0.01 ? 0 : this.neve;
     this.renderer.render(this.scene, this.camera);
@@ -3757,7 +3815,7 @@ export class Scena {
     const lung2 = dx * dx + dz * dz || 1;
     const ora = new Set<THREE.Object3D>();
     const prova = (o: THREE.Object3D) => {
-      if (o === bersaglio || o === this.bosco || o === this.selvatici || o === this.prato) return;
+      if (o === bersaglio || o === this.bosco || o === this.selvatici || o === this.prato || o === this.lotti.gruppo) return;
       if (this.pescata && (o === this.strutture.get('laghetto') || o === this.strutture.get('ponticello'))) return;
       if (o instanceof THREE.Light || o instanceof THREE.Points || o instanceof THREE.Sprite) return;
       if (!o.visible && !this.nascostiCine.has(o)) return;
@@ -4085,6 +4143,7 @@ export class Scena {
     window.removeEventListener('keyup', this.suTasto);
     window.removeEventListener('blur', this.lasciaTasti);
     for (const t of this.tagli) t.smonta();
+    this.lotti.distruggi();
     this.festa?.distruggi();
     this.resizeObs.disconnect();
     this.renderer.dispose();

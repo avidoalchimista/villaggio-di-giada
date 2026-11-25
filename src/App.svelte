@@ -48,8 +48,9 @@
     <GuidaIcona onfatto={chiudiGuidaIcona} />
   </div>
 {:else}
-  {#if app.schermata === 'villaggio'}<Gioco />
-  {:else if app.schermata === 'diario'}<Diario />
+  <!-- il villaggio resta sempre pronto sotto le altre pagine: tornandoci non si ricostruisce da capo -->
+  {#if app.stato}<Gioco attivo={app.schermata === 'villaggio'} />{/if}
+  {#if app.schermata === 'diario'}<Diario />
   {:else if app.schermata === 'animale'}<Animale />
   {:else if app.schermata === 'storia'}<Storia />
   {:else if app.schermata === 'statistiche'}<Statistiche />
