@@ -13,6 +13,7 @@
   import ComeSiGioca from './componenti/ComeSiGioca.svelte';
   import { doveSiamo } from './lib/telefono';
   import Icona, { type NomeIcona } from './componenti/Icona.svelte';
+  import Logo from './componenti/Logo.svelte';
 
   // promemoria piccolo finché il villaggio è aperto nel browser invece che dall'icona
   const dove = doveSiamo();
@@ -45,6 +46,7 @@
   <Intro />
 {:else if app.schermata === 'icona' && !app.stato}
   <div class="pagina" style="padding-top:28px">
+    <Logo larghezza={200} />
     <h1 style="text-align:center">Il villaggio di Giada</h1>
     <GuidaIcona onfatto={chiudiGuidaIcona} />
   </div>
