@@ -8,6 +8,9 @@ import { hash } from '../lib/caso';
 import type { Animale } from '../lib/tipi';
 import { aggiornaMestiere, ampiezzaPasso, creaAnimale, espressione, mat, posa, rifinisci, seduta, SIMBOLI_MESTIERE, type ModelloAnimale } from './modelli';
 import { contorno, CURVA, macchie, ombra, spriteTesto, texture } from './ps1';
+import type { Torta, Vaso } from '../lib/minigiochi';
+import { geometriaVaso } from './minigiochi/tornio';
+import { creaDecoro } from './minigiochi/torta';
 
 const geo = {
   palla: (r: number, s = 16) => new THREE.SphereGeometry(r, s, Math.round(s * 0.75)),
@@ -91,6 +94,7 @@ export class Interno {
     abitanti: Animale[],
     private momento: () => Momento,
     proprietario?: Animale,
+    private ricordi: { vasi?: Vaso[]; torta?: Torta } = {},
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -234,10 +238,45 @@ export class Interno {
     if (livello >= 3 && !c.decorazioni.some((d) => d === 'bandierine' || d === 'stelle')) extra.push('lucine');
     if (livello >= 4) extra.push('foto', 'palloncini');
     for (const d of extra) if (!c.decorazioni.includes(d)) this.decorazione(d, a);
+    // le cose fatte con Giada nei minigiochi: i vasi sulla mensola, la torta sul tavolo
+    if (this.ricordi.vasi?.length) this.mensolaVasi(this.ricordi.vasi);
+    if (this.ricordi.torta) this.tortaFatta(this.ricordi.torta, 0.2 - 0.05, 1.3 + 0.28, 0.79);
     // il ritratto di Giada (un cuoricino) sopra il letto: ogni casa ne ha uno
     this.quadretto(-2.5, 2.3, '♥', '#ff8fb1');
     this.ancore.set('tappeto', [1.3, -0.2, 0.4]);
     this.ancore.set('finestra', [0.4, -1.55, Math.PI]);
+  }
+
+  /** La mensola sulla parete di fondo con i vasi fatti al tornio (vedi minigiochi/tornio.ts). */
+  private mensolaVasi(vasi: Vaso[]) {
+    const g = new THREE.Group();
+    const largo = 0.3 * vasi.length + 0.2;
+    g.add(mesh(geo.scatola(largo, 0.06, 0.32), mat('#9a6c44'), 0, 0, 0));
+    for (const s of [-1, 1]) g.add(mesh(geo.scatola(0.05, 0.18, 0.05), mat('#7a5232'), s * (largo / 2 - 0.12), -0.1, -0.1));
+    vasi.forEach((v, i) => {
+      const o = mesh(geometriaVaso(v.profilo, v.alto, 0.3, 0.42), mat(v.colore, { rim: 0.45 }), -largo / 2 + 0.25 + i * 0.3, 0.03, 0.02);
+      g.add(o);
+    });
+    // sulla parete di fondo, tra il letto e la finestra
+    g.position.set(-1.05, 1.25, -LZ + 0.2);
+    this.scene.add(contorno(g));
+  }
+
+  /** La torta decorata con Giada, su un'alzatina (vedi minigiochi/torta.ts). */
+  private tortaFatta(t: Torta, x: number, z: number, y: number) {
+    const g = new THREE.Group();
+    const r = 0.22;
+    g.add(mesh(geo.cil(0.05, 0.07, 0.12, 10), mat('#ffffff', { rim: 0.4 }), 0, 0.06, 0));
+    g.add(mesh(geo.cil(r + 0.05, r + 0.04, 0.02, 20), mat('#ffffff', { rim: 0.4 }), 0, 0.13, 0));
+    g.add(mesh(geo.cil(r, r, 0.14, 20), mat(t.base, { rim: 0.3 }), 0, 0.21, 0));
+    for (const p of t.pezzi) {
+      const d = creaDecoro(p.tipo);
+      d.scale.setScalar(0.45);
+      d.position.set(p.x * r, 0.28, p.y * r);
+      g.add(d);
+    }
+    g.position.set(x, y, z);
+    this.scene.add(contorno(g));
   }
 
   // ---------- la tana dei piccoli sotto il grande albero ----------

@@ -18,6 +18,9 @@ const FRAG = `
 uniform vec3 uZenit; uniform vec3 uOrizzonte; uniform vec3 uSole; uniform vec3 uSoleCol;
 uniform float uNotte; uniform float uNuvole; uniform float uTempo; uniform float uNuvoleScure;
 uniform float uOrizY; uniform float uSpan;
+// le costellazioni disegnate da Giada con l'astronomo: segmenti (θ1, h1, θ2, h2) e stelle (θ, h)
+uniform vec4 uSeg[48]; uniform int uNSeg;
+uniform vec4 uStella[48]; uniform int uNStelle;
 varying vec3 vDir;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -73,6 +76,31 @@ void main() {
     col += vec3(1.0, 0.95, 0.85) * stella * uNotte * (1.0 - uNuvole);
   }
 
+  // le costellazioni di Giada: linee d'oro sottili e stelle più grandi (solo di notte)
+  if (uNotte > 0.05 && h > 0.0 && (uNSeg > 0 || uNStelle > 0)) {
+    float th = atan(az.y, az.x);
+    float luce = 0.0;
+    for (int i = 0; i < 48; i++) {
+      if (i >= uNSeg) break;
+      vec4 sg = uSeg[i];
+      vec2 a = vec2(mod(sg.x - th + 3.14159, 6.28318) - 3.14159, (sg.y - h) * uSpan);
+      vec2 b = vec2(mod(sg.z - th + 3.14159, 6.28318) - 3.14159, (sg.w - h) * uSpan);
+      vec2 ab = b - a;
+      float t = clamp(dot(-a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+      float dl = length(a + ab * t);
+      luce = max(luce, smoothstep(0.0028, 0.0008, dl) * 0.45);
+    }
+    for (int i = 0; i < 48; i++) {
+      if (i >= uNStelle) break;
+      vec4 st = uStella[i];
+      vec2 p = vec2(mod(st.x - th + 3.14159, 6.28318) - 3.14159, (st.y - h) * uSpan);
+      float dp = length(p);
+      float brilla = 0.8 + 0.2 * sin(uTempo * 2.0 + float(i) * 1.7);
+      luce = max(luce, smoothstep(0.0075, 0.002, dp) * brilla + smoothstep(0.02, 0.0, dp) * 0.25);
+    }
+    col += vec3(1.0, 0.86, 0.45) * luce * uNotte * (1.0 - uNuvole * 0.8);
+  }
+
   // nuvole: un piano sopra il villaggio, che scorre piano col vento
   if (h > 0.0) {
     float giro = uTempo * 0.004; // le nuvole girano piano intorno al villaggio
@@ -106,6 +134,10 @@ export class Cielo {
     uTempo: { value: 0 },
     uOrizY: { value: 0 },
     uSpan: { value: 0.3 },
+    uSeg: { value: Array.from({ length: 48 }, () => new THREE.Vector4()) },
+    uNSeg: { value: 0 },
+    uStella: { value: Array.from({ length: 48 }, () => new THREE.Vector4()) },
+    uNStelle: { value: 0 },
   };
   private v = new THREE.Vector3();
   private w = new THREE.Vector3();
@@ -160,6 +192,22 @@ export class Cielo {
     const dirAlto = this.w.set(0, 1, 0.5).unproject(cam).sub(cam.position).normalize().y;
     this.u.uOrizY.value = dirOr;
     this.u.uSpan.value = Math.max(0.05, dirAlto - dirOr);
+  }
+
+  /**
+   * Le costellazioni disegnate con l'astronomo (punti tra 0 e 1), una accanto all'altra a partire
+   * dalla direzione `theta0` (dove guarda la telecamera all'inizio), così la prima si vede subito.
+   */
+  costellazioni(lista: { punti: [number, number][]; linee: [number, number][] }[], theta0: number) {
+    let ns = 0, nl = 0;
+    lista.slice(-6).forEach((c, k) => {
+      const centro = theta0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.55;
+      const pos = c.punti.map(([u, v]) => [centro + (u - 0.5) * 0.36, 0.86 - v * 0.48] as const);
+      for (const [x, y] of pos) if (ns < 48) this.u.uStella.value[ns++].set(x, y, 0, 0);
+      for (const [a, b] of c.linee) if (nl < 48 && pos[a] && pos[b]) this.u.uSeg.value[nl++].set(pos[a][0], pos[a][1], pos[b][0], pos[b][1]);
+    });
+    this.u.uNStelle.value = ns;
+    this.u.uNSeg.value = nl;
   }
 
   passo(t: number) {

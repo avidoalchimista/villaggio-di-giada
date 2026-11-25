@@ -8,11 +8,12 @@
   import type { Animale } from '../lib/tipi';
   import { Interno, type StatoOspite } from '../scena/interno';
 
-  let { abitanti, proprietario = null, momento, onchiudi }: {
+  let { abitanti, proprietario = null, momento, onchiudi, onaiuta }: {
     abitanti: Animale[];
     proprietario?: Animale | null;
     momento: () => Momento;
     onchiudi: () => void;
+    onaiuta?: () => void; // «Dai una mano»: il minigioco della bottega
   } = $props();
 
   let canvas: HTMLCanvasElement;
@@ -40,7 +41,9 @@
   function costruisciStanza() {
     try {
       interno?.distruggi();
-      interno = new Interno(canvas, proprietario ? 'casa' : 'tana', abitanti, momento, proprietario ?? undefined);
+      const b = app.stato?.botteghe;
+      const ricordi = proprietario ? { vasi: b?.vasi[proprietario.id], torta: b?.torte[proprietario.id] } : {};
+      interno = new Interno(canvas, proprietario ? 'casa' : 'tana', abitanti, momento, proprietario ?? undefined, ricordi);
       interno.onTocco = tocca;
       interno.onCambio = () => { stato = interno!.stato(); quando = momento(); };
       stato = interno.stato();
@@ -161,12 +164,14 @@
           <p class="vuota">La tana è vuota: qui dormono i cuccioli appena nati, finché non diventano grandi e si costruiscono una casa loro.</p>
         {/each}
       </div>
+      {#if onaiuta}<button class="tondo aiuta" onclick={onaiuta}>🤝 Dai una mano in bottega</button>{/if}
       {#if abitanti.length}<p class="suggerimento">Tocca chi vuoi per sentire cosa dice · trascina per girare</p>{/if}
     {/if}
   </div>
 </div>
 
 <style>
+  .aiuta { display: block; margin: 8px auto 0; }
   .casa { position: fixed; inset: 0; max-width: 560px; margin: 0 auto; z-index: 50; background: #f3e6cf; overflow: hidden; animation: entra 0.35s ease-out both; }
   @keyframes entra { from { opacity: 0; transform: scale(1.08); } }
   .stanza { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }

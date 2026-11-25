@@ -17,6 +17,7 @@ import { fai as faiEscursione, type Giornata } from './escursioni';
 import { migliora, ritiraCassa } from './migliorie';
 import { cucina, funghiDi, lasciaNelBosco, mandaAFunghi, richiamaTutti, rientri, type Piatto, type Rientro } from './funghi';
 import { aggiungiRitrovamento, esponiFungo, museoDi, prendiRitrovamento, scegliRitrovamento, type Preso } from './museo';
+import { premiaPartita, salvaCostellazione, salvaFoto, salvaTorta, salvaVaso, type Costellazione, type FotoAlbum, type IdMinigioco, type Torta, type Vaso } from './minigiochi';
 import type { Analisi, Emozione, Evento, Forza, Punteggi, StatoGioco, VoceDiario } from './tipi';
 
 export type Schermata = 'caricamento' | 'intro' | 'villaggio' | 'diario' | 'animale' | 'storia' | 'statistiche' | 'impostazioni' | 'icona' | 'guida';
@@ -39,6 +40,8 @@ export const app = $state({
   festa: 0,
   // modalità prova: 1 = mostra la festa di compleanno di Giada adesso, 2 = già vista (restano gli addobbi)
   provaCompleanno: 0,
+  // modalità prova: apre subito il minigioco di una bottega (anche se nel villaggio non c'è quel mestiere)
+  provaMinigioco: null as string | null,
 });
 
 export interface RigaDialogo {
@@ -314,6 +317,32 @@ export async function raccogliQui(): Promise<number> {
   const n = raccogliCastagne(app.stato);
   if (n) await salvaStato();
   return n;
+}
+
+/** Fine di un minigioco di bottega: castagne (le prime partite del giorno) e la cosa fatta, che resta nel villaggio. */
+export async function minigiocoFatto(
+  id: IdMinigioco, animale: string, punti: number,
+  ricordo?: { vaso?: Vaso; torta?: Torta; stelle?: Costellazione; foto?: FotoAlbum; legna?: number; lettere?: number },
+) {
+  if (!app.stato) return null;
+  const r = premiaPartita(app.stato, id, punti, dataDiOggi());
+  const b = app.stato.botteghe!;
+  for (const r of [ricordo?.vaso, ricordo?.torta, ricordo?.stelle, ricordo?.foto]) if (r) r.data = dataDiOggi();
+  if (ricordo?.vaso) salvaVaso(app.stato, animale, ricordo.vaso);
+  if (ricordo?.torta) salvaTorta(app.stato, animale, ricordo.torta);
+  if (ricordo?.stelle) salvaCostellazione(app.stato, ricordo.stelle);
+  if (ricordo?.foto) salvaFoto(app.stato, ricordo.foto);
+  if (ricordo?.legna) b.legna += ricordo.legna;
+  if (ricordo?.lettere) b.lettere += ricordo.lettere;
+  await salvaStato();
+  return r;
+}
+
+/** Giada ha dato un nome alla costellazione: ora brilla nel cielo del villaggio. */
+export async function costellazioneQui(c: Costellazione) {
+  if (!app.stato) return;
+  salvaCostellazione(app.stato, { ...c, data: dataDiOggi() });
+  await salvaStato();
 }
 
 /** Giada ha preso un pesce al laghetto. */
