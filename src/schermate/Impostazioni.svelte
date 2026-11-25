@@ -1,6 +1,7 @@
 <script lang="ts">
   import Corvo from '../componenti/Corvo.svelte';
   import GuidaIcona from '../componenti/GuidaIcona.svelte';
+  import Logo from '../componenti/Logo.svelte';
   import { app, vai, avantiConDiario, avanzaGiorni, azzeraTutto, crescitaDiProva, esciDallaProva, provaSentiero, richiamaDaiFunghi, nuovoRitrovamento, provaFestaDiCompleanno, regalaCastagne, dataDiOggi, esportaCopia, impostaAudio, rinominaVillaggio, ripristina, segnaBackupFatto } from '../lib/app.svelte';
   import { scaricaFile } from '../lib/copia';
   import { MINIGIOCHI } from '../lib/minigiochi';
@@ -115,6 +116,7 @@
     {#if messaggio}<p class="avviso appare">{messaggio}</p>{/if}
   </div>
 
+  <div style="margin-top:24px"><Logo larghezza={120} /></div>
   <p class="versione">Il villaggio di Giada · versione 0.1</p>
 
   <!-- pannello prove: si accende solo aprendo il sito con ?prova (vedi LEGGIMI) -->

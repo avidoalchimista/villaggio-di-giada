@@ -1,6 +1,7 @@
 <script lang="ts">
   // Primo avvio: il corvo si presenta, questionario, primo uovo, nome del villaggio.
   import Corvo3D from '../componenti/Corvo3D.svelte';
+  import Logo from '../componenti/Logo.svelte';
   import frasi from '../dati/frasi.json';
   import questionario from '../dati/questionario.json';
   import { onMount } from 'svelte';
@@ -60,6 +61,8 @@
 </script>
 
 <div class="pagina intro">
+  <!-- la volpe del logo accoglie solo alla prima pagina, poi lascia spazio al corvo -->
+  {#if i === 0}<div class="appare"><Logo larghezza={230} /></div>{/if}
   <h1 class="titolo">Il villaggio di Giada</h1>
 
   <!-- il corvo resta lo stesso per tutta l'intro: cambia solo quello che dice -->
