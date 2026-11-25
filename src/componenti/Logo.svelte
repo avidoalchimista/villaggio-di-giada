@@ -4,13 +4,17 @@
 </script>
 
 <div class="logo" style="width:{larghezza}px">
-<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Una volpe addormentata tra le stelle" class="logo-volpe" viewBox="20 60 480 380">
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Una volpe addormentata tra le stelle, con due frecce nella schiena" class="logo-volpe" viewBox="20 40 480 400">
 
 <g transform=""><path d="M78 392 q-6 -26 4 -40 M92 394 q0 -22 14 -32 M66 390 q-14 -14 -16 -30" fill="none" stroke="#3f8f3c" stroke-width="6" stroke-linecap="round"/>
 <path d="M440 392 q4 -24 -4 -36 M452 390 q10 -18 22 -24 M428 396 q-6 -16 -16 -22" fill="none" stroke="#3f8f3c" stroke-width="6" stroke-linecap="round"/>
 <circle cx="58.0" cy="343.0" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="66.6" cy="349.2" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="63.3" cy="359.3" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="52.7" cy="359.3" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="49.4" cy="349.2" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="58" cy="352" r="5" fill="#f2c94c" stroke="#4a3424" stroke-width="2"/>
 <circle cx="472.0" cy="351.0" r="8" fill="#ffffff" stroke="#4a3424" stroke-width="2.5"/><circle cx="480.6" cy="357.2" r="8" fill="#ffffff" stroke="#4a3424" stroke-width="2.5"/><circle cx="477.3" cy="367.3" r="8" fill="#ffffff" stroke="#4a3424" stroke-width="2.5"/><circle cx="466.7" cy="367.3" r="8" fill="#ffffff" stroke="#4a3424" stroke-width="2.5"/><circle cx="463.4" cy="357.2" r="8" fill="#ffffff" stroke="#4a3424" stroke-width="2.5"/><circle cx="472" cy="360" r="5" fill="#f2c94c" stroke="#4a3424" stroke-width="2"/>
 <circle cx="448.0" cy="333.0" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="456.6" cy="339.2" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="453.3" cy="349.3" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="442.7" cy="349.3" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="439.4" cy="339.2" r="8" fill="#f6b6c8" stroke="#4a3424" stroke-width="2.5"/><circle cx="448" cy="342" r="5" fill="#f2c94c" stroke="#4a3424" stroke-width="2"/>
+<line x1="250" y1="190" x2="190" y2="95" stroke="#4a3424" stroke-width="6" stroke-linecap="round"/>
+<g transform="translate(190,95) rotate(-122.27564431457762)"><path d="M-4 0 L16 -11 L30 -11 L16 0 L30 11 L16 11 Z" fill="#7a4b8f" stroke="#4a3424" stroke-width="3.5" stroke-linejoin="round"/></g>
+<line x1="282" y1="186" x2="272" y2="88" stroke="#4a3424" stroke-width="6" stroke-linecap="round"/>
+<g transform="translate(272,88) rotate(-95.82634202955579)"><path d="M-4 0 L16 -11 L30 -11 L16 0 L30 11 L16 11 Z" fill="#7a4b8f" stroke="#4a3424" stroke-width="3.5" stroke-linejoin="round"/></g>
 <path d="M92 330 C76 240 134 168 230 160 L240 152 L246 162 C262 160 276 160 290 162 L300 154 L304 166 C360 174 402 204 420 248 C436 290 420 330 380 350 L130 362 C108 356 94 346 92 330 Z" fill="#e8793a" stroke="#4a3424" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M132 318 C140 252 214 226 282 250" fill="none" stroke="#c95f2a" stroke-width="7" stroke-linecap="round"/>
 <path d="M168 226 l8 -6 l6 5 l8 -5" fill="none" stroke="#c95f2a" stroke-width="4.5" stroke-linecap="round"/>
