@@ -34,6 +34,11 @@ import { BIOMA, biomiScoperti, type DefBioma } from '../lib/biomi';
 import { Taglio, type CosaTagliata } from './taglio';
 import { improntaDi, piuViciniCapsule, postoNelMondo, puntiCapsula, raggioDi, rettangoloAlSuolo, sovrapposte, spintaFuori, type Capsula, type Impronta } from './spazio';
 
+/** Dove sta una novità del giorno (vedi mostraNovita). */
+export type DoveNovita =
+  | { tipo: 'animale' | 'uovo' | 'casa' | 'edificio' | 'sentiero'; id: string }
+  | { tipo: 'corvo' | 'castoro' };
+
 export type Bersaglio =
   | { tipo: 'animale'; id: string }
   | { tipo: 'corvo' }
@@ -2374,6 +2379,7 @@ export class Scena {
       this.anelloSel.scale.setScalar(grande * (1 + Math.sin(t * 5) * 0.06));
     }
     this.aggiornaSchiusa(dt, t);
+    this.animaNovita(t);
     this.castoro.anima(t, dt, this.momento() === 'notte');
     this.acquario?.anima(t, dt);
     this.museo?.anima(t);
@@ -3753,6 +3759,62 @@ export class Scena {
     this.cine = { segui: () => bersaglio.getWorldPosition(pos).setY(0), dist, alt, guardaY, angolo: ang, animale: cosa.tipo === 'animale' ? cosa.id : undefined, oggetto: bersaglio };
     if (cosa.tipo === 'animale') (bersaglio as THREE.Group).rotation.y = ang;
     return true;
+  }
+
+  // ---------- le novità del giorno: una stella che brilla sopra ognuna, finché Giada non va a vederla ----------
+  private novita = new Map<string, { dove: DoveNovita; stella: THREE.Sprite; fase: number }>();
+
+  private oggettoNovita(d: DoveNovita): THREE.Object3D | null {
+    if (d.tipo === 'corvo') return this.corvo.gruppo;
+    if (d.tipo === 'castoro') return this.castoro.gruppo.visible ? this.castoro.animale : null;
+    if (d.tipo === 'animale') { const ab = this.abitanti.get(d.id); return ab && ab.m.gruppo.visible && !this.trattenuti.has(d.id) ? ab.m.gruppo : (this.uova.get(d.id) ?? null); }
+    if (d.tipo === 'uovo') return this.uova.get(d.id) ?? this.abitanti.get(d.id)?.m.gruppo ?? null;
+    if (d.tipo === 'casa') return this.botteghe.get(d.id) ?? null;
+    if (d.tipo === 'edificio') return this.edifici.get(d.id) ?? null;
+    return this.sentieri.portale((d as { id: string }).id) ?? null;
+  }
+
+  /** Le novità da far notare: ognuna ha la sua stellina che sale e scende sopra la cosa nuova. */
+  mostraNovita(lista: { chiave: string; dove: DoveNovita }[]) {
+    const tenute = new Set(lista.map((n) => n.chiave));
+    for (const [k, n] of this.novita) if (!tenute.has(k)) { this.scene.remove(n.stella); n.stella.material.map?.dispose(); n.stella.material.dispose(); this.novita.delete(k); }
+    lista.forEach((n, i) => {
+      if (this.novita.has(n.chiave)) return;
+      const stella = spriteTesto('★', '#ffe066', 96);
+      stella.scale.setScalar(0.8);
+      stella.renderOrder = 5;
+      this.scene.add(stella);
+      this.novita.set(n.chiave, { dove: n.dove, stella, fase: i * 1.3 });
+    });
+  }
+
+  private animaNovita(t: number) {
+    for (const n of this.novita.values()) {
+      const o = this.oggettoNovita(n.dove);
+      n.stella.visible = !!o && !this.cine && !this.aPiedi;
+      if (!o || !n.stella.visible) continue;
+      o.getWorldPosition(n.stella.position);
+      // sopra la testa (o il tetto): l'altezza vera della cosa, misurata una volta ogni tanto
+      if (!o.userData.altezzaNovita || Math.floor(t) % 3 === 0) {
+        const b = new THREE.Box3().setFromObject(o);
+        o.userData.altezzaNovita = Math.max(0.5, b.max.y - n.stella.position.y);
+      }
+      n.stella.position.y += (o.userData.altezzaNovita as number) + 0.45 + Math.abs(Math.sin(t * 2.2 + n.fase)) * 0.35;
+      const p = 1 + Math.sin(t * 4 + n.fase) * 0.12;
+      n.stella.scale.setScalar(0.8 * p);
+      n.stella.material.rotation = Math.sin(t * 1.5 + n.fase) * 0.25;
+      if (Math.random() < 0.04) this.stellina(n.stella.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, -0.2, (Math.random() - 0.5) * 0.6)));
+    }
+  }
+
+  /** La telecamera va a guardare la novità. */
+  vaiANovita(d: DoveNovita): boolean {
+    if (d.tipo === 'corvo') return this.inquadraCorvo();
+    if (d.tipo === 'castoro') return this.inquadraCastoro();
+    if (d.tipo === 'sentiero') return this.inquadraSentiero(d.id);
+    if (d.tipo === 'animale') return this.abitanti.has(d.id) && !this.trattenuti.has(d.id) ? this.inquadra({ tipo: 'animale', id: d.id }) : this.inquadra({ tipo: 'uovo', id: d.id });
+    if (d.tipo === 'uovo') return this.uova.has(d.id) ? this.inquadra({ tipo: 'uovo', id: d.id }) : this.inquadra({ tipo: 'animale', id: d.id });
+    return this.inquadra({ tipo: d.tipo as 'casa' | 'edificio', id: (d as { id: string }).id });
   }
 
   /** Il castoro in primo piano, quando parla. */

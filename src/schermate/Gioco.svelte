@@ -38,7 +38,7 @@
   } from '../lib/gioco';
   import { meteo as calcolaMeteo, NOME_METEO, type Meteo } from '../lib/meteo';
   import type { Animale, Evento } from '../lib/tipi';
-  import { Scena, type Bersaglio } from '../scena/scena';
+  import { Scena, type Bersaglio, type DoveNovita } from '../scena/scena';
 
   // il villaggio resta montato anche quando si guarda un'altra pagina (diario, storia...): lì è solo fermo e nascosto
   let { attivo = true }: { attivo?: boolean } = $props();
@@ -163,6 +163,67 @@
       faccia = id && scena?.parlaCon(id) ? id : null;
     });
   });
+  // ---------- le novità del giorno ----------
+  // Giada ne vedrà poche alla volta: ognuna ha la sua stellina nel villaggio e sta nell'elenco «Novità»
+  // finché non va a vederla (toccandola nell'elenco o toccando la cosa nuova).
+  type Novita = { chiave: string; icona: string; testo: string; dove: DoveNovita | null };
+  const ICONA_NOVITA: Partial<Record<Evento['tipo'], string>> = {
+    uovo: '🥚', schiusa: '🐣', crescita: '🌱', mestiere: '🧰', edificio: '🏛️', storia: '📜', abilita: '⭐', casa: '🏡', castoro: '🦫', sentiero: '🧭', costruzione: '🔨',
+  };
+  let viste = $state<string[]>([]);
+  let novitaAperta = $state(false);
+  leggiMeta<string[]>('novitaViste', []).then((v) => (viste = v));
+  function doveDi(e: Evento): DoveNovita | null {
+    if (e.tipo === 'storia') return { tipo: 'corvo' };
+    if (e.tipo === 'castoro') return { tipo: 'castoro' };
+    if (e.tipo === 'sentiero') return e.luogo ? { tipo: 'sentiero', id: e.luogo } : null;
+    // (alcune novità non dicono di chi sono: si riconosce dal nome con cui comincia la frase)
+    const t = e.testo.toLowerCase();
+    const a = e.animale ? s.animali.find((x) => x.id === e.animale) : s.animali.find((x) => x.fase !== 'uovo' && t.startsWith(nomeAnimale(x).toLowerCase()));
+    if (!a) return null;
+    if (e.tipo === 'edificio') { const ed = s.edifici.find((x) => x.gestore === a.id); return ed ? { tipo: 'edificio', id: ed.tipo } : { tipo: 'animale', id: a.id }; }
+    if (e.tipo === 'casa' || e.tipo === 'costruzione') return { tipo: 'casa', id: a.id };
+    if (e.tipo === 'uovo') return { tipo: 'uovo', id: a.id };
+    return { tipo: 'animale', id: a.id };
+  }
+  let novita = $derived.by((): Novita[] => {
+    const oggi = dataDiOggi();
+    const fuori = new Set(viste);
+    const l: Novita[] = [];
+    for (let i = s.eventi.length - 1; i >= 0 && l.length < 6; i--) {
+      const e = s.eventi[i];
+      if (giorniTra(e.data, oggi) > 1) break; // oggi e ieri
+      const icona = ICONA_NOVITA[e.tipo];
+      const chiave = `${e.data}|${e.tipo}|${e.testo}`;
+      if (!icona || fuori.has(chiave)) continue;
+      l.push({ chiave, icona, testo: e.testo, dove: doveDi(e) });
+    }
+    return l;
+  });
+  async function segnaVista(...chiavi: string[]) {
+    const oggi = dataDiOggi();
+    viste = [...viste.filter((k) => giorniTra(k.slice(0, 10), oggi) <= 3), ...chiavi];
+    await scriviMeta('novitaViste', $state.snapshot(viste));
+  }
+  const stessoPosto = (d: DoveNovita, b: Bersaglio) =>
+    (b.tipo === 'corvo' && d.tipo === 'corvo') || (b.tipo === 'castoro' && d.tipo === 'castoro')
+    || ((b.tipo === 'animale' || b.tipo === 'uovo') && (d.tipo === 'animale' || d.tipo === 'uovo') && d.id === b.id)
+    || (b.tipo === 'bottega' && d.tipo === 'casa' && d.id === b.id)
+    || (b.tipo === 'edificio' && d.tipo === 'edificio' && d.id === b.tipo_edificio)
+    || (b.tipo === 'sentiero' && d.tipo === 'sentiero' && d.id === b.id);
+  function apriNovita(n: Novita) {
+    novitaAperta = false;
+    dialogo = null;
+    if (n.dove && scena?.vaiANovita(n.dove)) inPrimoPiano = 'novita';
+    dialogo = { righe: [{ chi: `${n.icona} Novità`, voce: 'narratore', testo: n.testo }] };
+    segnaVista(n.chiave);
+  }
+  // le stelline nel villaggio (non durante gli spettacoli)
+  $effect(() => {
+    const l = sp || fs || casa || !attivo ? [] : novita.filter((n) => n.dove).map((n) => ({ chiave: n.chiave, dove: n.dove! }));
+    untrack(() => scena?.mostraNovita(l));
+  });
+
   // ---------- chi parla si vede da vicino (il corvo, il castoro, un animale) ----------
   let inPrimoPiano: string | null = null;
   function inquadraChiParla(r: RigaDialogo) {
@@ -497,7 +558,7 @@
     sp = null; fs = null; poi = null; dopoDialogo = null; avantiFesta = null;
     dialogo = null; chiediNome = null; insegnaA = null; menu = false; arreda = false; aiuolaDaAprire = null; casaNuova = null;
     casa = null; pesca = null; acquario = false; museo = false; funghi = false; luogo = null; gita = null; quadroAperto = null;
-    faccia = null; consiglioAperto = false; aPiedi = false; inPrimoPiano = null;
+    faccia = null; consiglioAperto = false; aPiedi = false; inPrimoPiano = null; novitaAperta = false;
     rientriDaDire = [];
     giaChiesto.clear();
     if (!scena) return;
@@ -630,6 +691,10 @@
 
   async function tocco(b: Bersaglio) {
     if (chiediNome || insegnaA || sp || fs || pesca || acquario || museo || funghi || luogo || gita) return;
+    // andare a vedere una cosa nuova la toglie dalle novità
+    const vista = novita.filter((n) => n.dove && stessoPosto(n.dove, b)).map((n) => n.chiave);
+    if (vista.length) segnaVista(...vista);
+    novitaAperta = false;
     const n = s.numeroVoci + Math.floor(Date.now() / 1000);
     if (b.tipo === 'quaderno') return vai('diario');
     if (b.tipo === 'laghetto') return vaiAPescare();
@@ -864,6 +929,11 @@
     <div class="destra">
       <div class="pillola data">{inFesta ? '🎂' : NOME_METEO[tempo].icona} {dataTesto}</div>
       <div class="pillola castagne">🌰 {s.ghiande ?? 0}</div>
+      {#if novita.length && !menu && !arreda}
+        <button class="pillola novita" class:aperta={novitaAperta} onclick={() => { dialogo = null; novitaAperta = !novitaAperta; }}>
+          <span class="stella">★</span> {novita.length === 1 ? '1 novità' : `${novita.length} novità`}
+        </button>
+      {/if}
     </div>
   </header>
   {/if}
@@ -931,6 +1001,19 @@
         {/snippet}
       </Dialogo>
       {/key}
+    {:else if novitaAperta && novita.length}
+      <div class="finestra-gioco">
+        <div class="testata">★ OGGI NEL VILLAGGIO</div>
+        <ul>
+          {#each novita as n (n.chiave)}
+            <li><button class="voce novita-voce" onclick={() => apriNovita(n)}><span class="icona-novita">{n.icona}</span><span class="testo-novita">{n.testo}</span><span class="vai">{n.dove ? 'Guarda ›' : 'Leggi ›'}</span></button></li>
+          {/each}
+        </ul>
+        <div class="riga-novita">
+          <button class="tondo grigio" onclick={() => (novitaAperta = false)}>Chiudi</button>
+          {#if novita.length > 1}<button class="tondo grigio" onclick={() => { segnaVista(...novita.map((n) => n.chiave)); novitaAperta = false; }}>Le ho viste</button>{/if}
+        </div>
+      </div>
     {:else if menu}
       <MenuCostruisci
         onchiudi={() => (menu = false)}
@@ -981,6 +1064,19 @@
   .sotto { position: absolute; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); }
   .destra { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .castagne { color: #7a4a1a; }
+  .novita {
+    pointer-events: auto; background: #fff4c2; border-color: #c8902a; color: #7a4a1a; text-shadow: none; padding: 5px 13px;
+    animation: cade 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both, chiama 2.2s ease-in-out 0.6s infinite;
+  }
+  .novita.aperta { animation: none; background: #ffe08a; }
+  .novita .stella { color: #e0a020; display: inline-block; animation: gira 3s linear infinite; }
+  @keyframes chiama { 0%, 70%, 100% { transform: none; } 78% { transform: scale(1.1) rotate(-3deg); } 86% { transform: scale(1.06) rotate(3deg); } }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  .novita-voce { align-items: center; gap: 10px; text-align: left; }
+  .icona-novita { font-size: 1.4rem; flex: none; }
+  .testo-novita { flex: 1; font-size: 0.92rem; line-height: 1.25; }
+  .vai { flex: none; color: #ffe08a; font-weight: 800; font-size: 0.85rem; }
+  .riga-novita { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
   .sesso { display: block; font-size: 0.85rem; color: var(--testo-tenue); }
   .azioni-basso { display: flex; gap: 8px; align-items: center; }
   .azioni-basso.affollate .bottone-costruisci { width: 52px; height: 52px; font-size: 1.35rem; }
