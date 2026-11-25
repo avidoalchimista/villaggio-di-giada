@@ -1,6 +1,6 @@
 // Pagina di prova (non nel gioco): griglia di animali per confrontare i modelli.
 import * as THREE from 'three';
-import { creaAnimale, creaCasaAnimale, posa } from './src/scena/modelli';
+import { creaAnimale, creaCasaAnimale, posa, rifinisci, espressione } from './src/scena/modelli';
 import { CURVA } from './src/scena/ps1';
 import { TRATTI } from './src/lib/gioco';
 import { SPECIE, VIRTU } from './src/lib/tipi';
@@ -18,6 +18,7 @@ sc.add(new THREE.HemisphereLight('#bfe0ff', '#c9a27a', 1.3));
 const sole = new THREE.DirectionalLight('#fff1d6', 2); sole.position.set(3, 5, 4); sc.add(sole);
 type Cella = { etichetta?: string; mestiere?: string; divisa?: boolean; id?: string; vestiti?: string[]; specie: any; fase: string; sesso: 'f' | 'm'; manto: number; tratto: string; forma?: number; occhi?: number; orecchie?: number; lato?: number };
 const celle: Cella[] = [];
+const tempi: number[] = [];
 const tr = (i: number) => TRATTI[i % TRATTI.length];
 if (modo === 'specie') {
   SPECIE.forEach((s, i) => {
@@ -60,7 +61,13 @@ celle.forEach((c, i) => {
   const row = modo === 'specie' ? i % 2 : Math.floor(i / cols);
   const a: any = { vestiti: c.vestiti ?? [], xp: 0, id: c.id ?? 'a' + i, nome: '', specie: c.specie, sesso: c.sesso, fase: c.fase, mestiere: c.mestiere ?? null,
     aspetto: { manto: c.manto, tratto: c.tratto, forma: c.forma ?? 0, occhi: c.occhi ?? 0.5, orecchie: c.orecchie ?? 0.5, taglia: 1, lato: c.lato ?? 1 } };
+  const t0 = performance.now();
   const m = creaAnimale(a, !!c.divisa);
+  tempi.push(performance.now() - t0);
+  if (q.get('viso')) espressione(m, (q.get('viso') === 'tutte' ? ['neutro', 'gioia', 'fiducia', 'paura', 'sorpresa', 'tristezza', 'disgusto', 'rabbia', 'attesa', 'sonno', 'impegno'][i % 11] : q.get('viso')) as any);
+  if (q.get('passo3')) { const ph = q.get('passo3') === 'serie' ? i * Math.PI / 3 : +q.get('passo3')!; m.zampe.forEach((z, k) => (z.rotation.x = Math.sin(ph + (m.bipede ? (k % 2 === 0 ? 0 : Math.PI) + (k < 2 ? Math.PI : 0) : (k === 0 || k === 3 ? 0 : Math.PI))) * 0.65)); }
+  if (q.get('chiusi')) for (const o of m.occhi) o.scale.y = 0.12;
+  for (let k = 0; k < 40; k++) rifinisci(m, 0.05, 1 + k * 0.05);
   if (m.accessorio) m.accessorio.visible = true;
   if (c.divisa) { m.zampe[0].rotation.x = -1.0; }
   // a quattro zampe come gli animali veri; in piedi (e=1) solo per lavorare (o con ?e=1)
@@ -100,7 +107,8 @@ if (modo === 'case') {
   cam.position.set(0, (7 + righe * 2.2) * lontano, ((righe - 1) * 6.2 + 11) * lontano);
   cam.lookAt(0, 0.6, (righe - 1) * 3.1);
   r.render(sc, cam);
-  (window as any).pronto = true;
+  console.log('TEMPO creazione ms', tempi.map((x) => Math.round(x)).join(' '));
+(window as any).pronto = true;
   throw new Error('fatto');
 }
 const box = new THREE.Box3().setFromObject(sc);
@@ -118,4 +126,5 @@ for (const e of etichette) {
   d.style.cssText = `position:absolute;left:${(v.x + 1) / 2 * W}px;top:${(1 - v.y) / 2 * H}px;transform:translate(-50%,0);font:700 22px sans-serif;color:#3b2616;background:#fff8e7;padding:2px 10px;border-radius:10px`;
   document.body.appendChild(d);
 }
+console.log('TEMPO creazione ms', tempi.map((x) => Math.round(x)).join(' '));
 (window as any).pronto = true;

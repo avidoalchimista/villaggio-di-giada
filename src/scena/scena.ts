@@ -14,7 +14,7 @@ import { altezzaTerreno, arredoVuoto, conAcqua, FILA, pezziFila, type TipoFila, 
 import type { Animale, StatoGioco, Virtu } from '../lib/tipi';
 import {
   aggiornaMestiere, creaAiuola, creaAlbero, creaAnimale, creaCasaAnimale, creaCartello, creaChiosco, creaCorvo, creaFalo, SIMBOLI_MESTIERE,
-  creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, ampiezzaPasso, creaCastagno, creaCastagna, creaCanna,
+  creaCespuglio, creaCiuffo, creaFungo, creaTronco, posa, ampiezzaPasso, rifinisci, espressione, parla, seduta, type Espressione, creaCastagno, creaCastagna, creaCanna,
   animaLaghetto, puntoLago, fuoriDalLago, SAGOMA_CASA, creaFiore, creaLaghetto, creaLanterna, creaMulino, creaNido, creaPanchina, creaPiazzaMusica, creaPino, creaPonticello, creaPozzo,
   creaQuaderno, creaSasso, creaStaccionata, creaTorretta, creaUovo, mat, type ModelloAnimale,
   creaCassetta, creaPianta, creaQuadretto, POSTI_CASSETTA, creaCartelloVia, creaRecinto, accendiFinestre,
@@ -1407,7 +1407,7 @@ export class Scena {
     const dt = 1 / 30;
     for (let k = 0; k < secondi * 30; k++) {
       this.tempoFinto += dt;
-      for (const ab of this.abitanti.values()) this.muovi(ab, dt, this.tempoFinto);
+      for (const ab of this.abitanti.values()) { this.muovi(ab, dt, this.tempoFinto); this.viva(ab, dt, this.tempoFinto); }
       this.fisica(dt);
       if (finche?.()) return true;
     }
@@ -2330,7 +2330,7 @@ export class Scena {
 
     if (Math.floor(t / 5) !== Math.floor((t - dt) / 5)) this.luceDelGiorno();
 
-    for (const ab of this.abitanti.values()) this.muovi(ab, dt, t);
+    for (const ab of this.abitanti.values()) { this.muovi(ab, dt, t); this.viva(ab, dt, t); }
     this.fisica(dt);
 
     for (const u of this.uova.values()) {
@@ -2490,6 +2490,37 @@ export class Scena {
     NEVE.valore = 0;
   };
 
+  /** La canna da pesca nella mano. */
+  private cannaInMano(ab: Abitante) {
+    if (!ab.canna) return;
+    ab.canna.position.set(0, 0.05, 0);
+    ab.m.mani[0].add(ab.canna);
+  }
+
+  /**
+   * Dopo averlo mosso: come si sente (si vede dal viso) e tutto quello che lo fa sembrare vivo
+   * (gomiti e ginocchia, coda e orecchie che seguono, respiro, sguardo: vedi rifinisci in animali3d.ts).
+   */
+  private viva(ab: Abitante, dt: number, t: number) {
+    const m = ab.m;
+    if (!m.gruppo.visible || this.pescata?.id === ab.dati.id) return;
+    let e: Espressione = 'neutro';
+    const inFaccia = this.faccia === ab.dati.id;
+    if (ab.dati.addormentato || ab.z.length) e = 'sonno';
+    else if (inFaccia) e = ab.salto > 0 ? 'gioia' : 'fiducia';
+    else if (this.festa?.raduno || ab.salto > 0) e = 'gioia';
+    else if (ab.incontro > 0) e = Math.sin(t * 0.9 + ab.passo) > 0.75 ? 'sorpresa' : 'gioia';
+    else if (ab.attivita?.id === 'lavoro') e = ab.attivita.giro ? 'fiducia' : 'impegno';
+    else if (ab.attivita?.id === 'riposino') e = 'sonno';
+    else if (ab.dati.umore < 30) e = 'tristezza';
+    else if (ab.attivita || ab.dati.umore > 65) e = 'fiducia';
+    espressione(m, e);
+    if (ab.incontro > 0 && Math.sin(t * 1.7 + ab.passo * 0.3) > 0) parla(m, 0.15);
+    rifinisci(m, dt, t);
+  }
+  /** L'animale con cui Giada sta parlando faccia a faccia (il suo viso si vede bene: sorride, parla). */
+  private faccia: string | null = null;
+
   private muovi(ab: Abitante, dt: number, t: number) {
     const g = ab.m.gruppo;
     // occhi che sbattono ogni tanto
@@ -2545,8 +2576,9 @@ export class Scena {
     // postazione di lavoro (con l'attrezzo in mano) e per andare in moto o in bici
     const alLavoro = ab.attivita?.id === 'lavoro' && fase !== 'cucciolo';
     const inSella = alLavoro && !!ab.attivita?.giro && !!defMestiere(ab.dati.mestiere)?.lavoro.mezzo;
-    const erettoVoluto = inSella || (alLavoro && !cammina && this.allaPostazione(ab)) ? 1 : 0;
-    ab.eretto += (erettoVoluto - ab.eretto) * Math.min(1, dt * 3);
+    // (da grandi stanno sempre in piedi; i cuccioli a quattro zampe)
+    const erettoVoluto = ab.m.bipede || inSella || (alLavoro && !cammina && this.allaPostazione(ab)) ? 1 : 0;
+    ab.eretto = ab.m.bipede ? 1 : ab.eretto + (erettoVoluto - ab.eretto) * Math.min(1, dt * 3);
     posa(ab.m, ab.eretto);
 
     // ---- festa di compleanno: tutti intorno alla tavola (tranne chi è in primo piano) ----
@@ -3186,7 +3218,7 @@ export class Scena {
         // il pescatore pesca seduto sulla riva, con la canna
         const lg = this.strutture.get('laghetto');
         if (lg) guardaVerso(lg.position.x, lg.position.z);
-        if (!ab.canna) { ab.canna = creaCanna(); ab.m.zampe[0].add(ab.canna); }
+        if (!ab.canna) { ab.canna = creaCanna(); this.cannaInMano(ab); }
         this.siede(ab, dt);
         d0.rotation.x = -0.9 + Math.sin(t * 1.5) * 0.08;
       } else {
@@ -3319,8 +3351,9 @@ export class Scena {
 
   /** Si siede sulle zampe dietro (come un cane), restando con le zampe davanti a terra o libere. */
   private siede(ab: Abitante, dt: number) {
-    ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, -0.04, dt * 4);
-    ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, 0, dt * 4)));
+    const sd = seduta(ab.m);
+    ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, sd.giu, dt * 4);
+    ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, sd.gambe, dt * 4)));
   }
 
   /** Scintille, trucioli, farina: quello che vola via dal banco mentre si lavora. */
@@ -3429,7 +3462,7 @@ export class Scena {
         guardaVerso(p[0], p[1]);
         if (!ab.canna) {
           ab.canna = creaCanna();
-          ab.m.zampe[0].add(ab.canna);
+          this.cannaInMano(ab);
         }
         this.siede(ab, dt);
         ab.m.zampe[0].rotation.x = -0.9 + Math.sin(t * 1.5) * 0.08;
@@ -3467,8 +3500,8 @@ export class Scena {
       }
       case 'seduto': {
         // seduto nel suo posticino: dondola la testa, ogni tanto un sorriso
-        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
-        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, seduta(ab.m).giu, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, seduta(ab.m).gambe, dt * 4)));
         ab.m.zampe.slice(0, 2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, -0.3, dt * 4)));
         ab.m.testa.rotation.z = Math.sin(t * 0.9 + g.position.x) * 0.12;
         if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(t * 1.5) * 0.25;
@@ -3480,8 +3513,8 @@ export class Scena {
       }
       case 'riposino': {
         // seduto a sonnecchiare: occhi socchiusi, testa che ciondola
-        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
-        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, seduta(ab.m).giu, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, seduta(ab.m).gambe, dt * 4)));
         ab.m.testa.rotation.x = 0.2 + Math.sin(t * 0.7) * 0.08;
         for (const o of ab.m.occhi) o.scale.y = 0.25;
         if (att.prossimo <= 0) { att.prossimo = 4 + Math.random() * 3; this.fumetto(ab, '…'); }
@@ -3489,8 +3522,8 @@ export class Scena {
       }
       case 'merenda': {
         // sgranocchia qualcosa: zampine alla bocca
-        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, ab.eretto > 0.5 ? -0.14 : -0.04, dt * 4);
-        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, ab.eretto > 0.5 ? -1.35 : 0, dt * 4)));
+        ab.m.corpo.position.y = THREE.MathUtils.lerp(ab.m.corpo.position.y, seduta(ab.m).giu, dt * 4);
+        ab.m.zampe.slice(2).forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, seduta(ab.m).gambe, dt * 4)));
         // sgranocchia qualcosa che tiene tra le zampe, col muso giù
         ab.m.testa.rotation.x = 0.45 + Math.abs(Math.sin(t * 8)) * 0.06;
         if (att.prossimo <= 0) { att.prossimo = 3 + Math.random() * 3; this.fumetto(ab, ['🌰', '🍓', '☺'][Math.floor(Math.random() * 3)]); }
@@ -3663,11 +3696,12 @@ export class Scena {
     g.position.addScaledVector(dir, Math.min(dist, 1.6 * dt));
     const verso = Math.atan2(dir.x, dir.z);
     g.rotation.y += Math.atan2(Math.sin(verso - g.rotation.y), Math.cos(verso - g.rotation.y)) * Math.min(1, dt * 6);
-    ab.eretto += (0 - ab.eretto) * Math.min(1, dt * 3);
+    ab.eretto = ab.m.bipede ? 1 : 0;
     posa(ab.m, ab.eretto);
     ab.passo += dt * 13 * (0.6 + 0.4 * ampiezzaPasso(ab.m));
-    ab.m.corpo.position.y = Math.abs(Math.sin(ab.passo)) * 0.1;
-    ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(ab.m)));
+    ab.m.corpo.position.y = (0.5 - 0.5 * Math.cos(ab.passo * 2)) * 0.07;
+    if (ab.m.bipede) ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i % 2 === 0 ? 0 : Math.PI) + (i < 2 ? Math.PI : 0)) * (i < 2 ? 0.7 : 0.8)));
+    else ab.m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(ab.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(ab.m)));
     if (ab.m.coda) ab.m.coda.rotation.y = Math.sin(ab.passo) * 0.4;
   }
 
@@ -3923,6 +3957,8 @@ export class Scena {
     c.angolo += 0.35; // un po' di tre quarti: si vede il muso e anche i vestiti
     ab.m.gruppo.rotation.y = c.angolo;
     ab.salto = 0.5;
+    this.faccia = id;
+    parla(ab.m, 1.4);
     return true;
   }
 
@@ -3932,6 +3968,7 @@ export class Scena {
     if (!ab) return;
     ab.salto = Math.max(ab.salto, 0.3);
     ab.pausa = 999;
+    parla(ab.m, 1.8);
   }
 
   /** Ingombro di un oggetto visto dall'alto (raggio) e quanto è alto: calcolato una volta sola. */
@@ -4003,6 +4040,7 @@ export class Scena {
     // dal sentiero (fuori dal bosco) si torna piano piano in mezzo al villaggio
     if (c.torna) this.centroVoluto.set(0, 0, 0);
     this.cine = null;
+    this.faccia = null;
     this.morbido = 1.8;
     for (const ab of this.abitanti.values()) if (ab.pausa > 100) ab.pausa = 1 + Math.random();
   }

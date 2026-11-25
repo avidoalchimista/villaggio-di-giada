@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { carattereDi, cosaFaInCasa, type Arredo, type AttivitaCasa, type Momento, type Posto } from '../lib/carattere';
 import { hash } from '../lib/caso';
 import type { Animale } from '../lib/tipi';
-import { aggiornaMestiere, ampiezzaPasso, creaAnimale, mat, posa, SIMBOLI_MESTIERE, type ModelloAnimale } from './modelli';
+import { aggiornaMestiere, ampiezzaPasso, creaAnimale, espressione, mat, posa, rifinisci, seduta, SIMBOLI_MESTIERE, type ModelloAnimale } from './modelli';
 import { contorno, CURVA, macchie, ombra, spriteTesto, texture } from './ps1';
 
 const geo = {
@@ -839,7 +839,11 @@ export class Interno {
     this.camera.position.set(Math.sin(base) * dist, dist * (asp < 0.9 ? 0.8 : 0.55), Math.cos(base) * dist);
     this.camera.lookAt(-0.35, 0.9, -0.1);
 
-    for (const o of this.ospiti) this.muovi(o, dt, t);
+    for (const o of this.ospiti) {
+      this.muovi(o, dt, t);
+      espressione(o.m, o.att.gesto === 'dorme' ? 'sonno' : o.salto > 0 ? 'gioia' : o.att.gesto === 'lavora' ? 'impegno' : 'fiducia');
+      rifinisci(o.m, dt, t);
+    }
 
     if (this.lancette) this.lancette.rotation.z = -t * 0.5;
     if (this.grammofono && this.ospiti.some((o) => o.att.posto === 'hobby' && o.att.gesto !== 'dorme')) {
@@ -917,8 +921,8 @@ export class Interno {
     const dist = dir.length();
     const cammina = dist > 0.06;
     // in casa camminano a quattro zampe e si alzano solo per fare le loro cose (leggere, cucinare, suonare...)
-    const erettoVoluto = o.dati.fase === 'cucciolo' || cammina || o.att.gesto === 'dorme' ? 0 : 1;
-    o.eretto += (erettoVoluto - o.eretto) * Math.min(1, dt * 3);
+    // (da grandi stanno in piedi; i cuccioli a quattro zampe)
+    o.eretto = m.bipede ? 1 : 0;
     posa(m, o.eretto);
 
     if (o.salto > 0) {
@@ -974,7 +978,7 @@ export class Interno {
       m.corpo.scale.set(1, 1, 1);
     }
     m.testa.rotation.set(0, 0, 0);
-    const seduto = () => (m.corpo.position.y = lerp(m.corpo.position.y, o.eretto > 0.5 ? -0.14 : -0.04));
+    const seduto = () => (m.corpo.position.y = lerp(m.corpo.position.y, seduta(m).giu));
     switch (o.att.gesto) {
       case 'dorme': {
         if (!o.z.length) this.zeta(o, true);

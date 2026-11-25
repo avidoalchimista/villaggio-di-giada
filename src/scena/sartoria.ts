@@ -6,14 +6,16 @@ import { geo, mat, mesh, varia } from './modelli';
 import { texture } from './ps1';
 
 export interface Attacchi {
-  testa: THREE.Group; // per i cappelli: già spostato sopra aculei e orecchie
-  testaVera: THREE.Group;
+  testa: THREE.Object3D; // per i cappelli: già spostato sopra aculei e orecchie
+  testaVera: THREE.Object3D;
   busto: THREE.Mesh;
   pancia: THREE.Mesh;
   corpo: THREE.Group;
   collo: (o: THREE.Object3D) => void;
   fiore: (petalo: string, centro: string) => THREE.Group;
   fiocco: (colore: string) => THREE.Group;
+  /** I capi che fasciano il corpo: se c'è, li cuce addosso alla forma vera dell'animale (se no restano una palla). */
+  guscio?: (g: THREE.SphereGeometry, m: THREE.Material) => void;
 }
 
 // ---------- stoffe ----------
@@ -104,6 +106,11 @@ export function mettiCapo(k: Capo, at: Attacchi) {
   const scuro = mat(varia(k.colore, 0, -0.15), { rim: 0.2 });
   const secondo = mat(k.colore2, { rim: 0.3 });
   const oro = mat('#f2c230', { rim: 0.4 });
+  /** Un capo a palla intorno al busto (maglie, giacche, pettorine). */
+  const fascia = (g: THREE.SphereGeometry, m: THREE.Material) => {
+    if (at.guscio) at.guscio(g, m);
+    else busto.add(mesh(g, m, 0, -0.01, 0));
+  };
   switch (k.forma) {
     // ======== testa ========
     case 'berretto': case 'puntuto': {
@@ -386,7 +393,7 @@ export function mettiCapo(k: Capo, at: Attacchi) {
       const lucida = ['giubbotto', 'cerata'].includes(k.forma);
       const m = lucida ? mat(k.colore, { rim: 0.6 }) : tinta;
       const largo = ['giacca', 'giubbotto', 'cerata', 'camice', 'giaccone'].includes(k.forma) ? 0.385 : 0.375;
-      busto.add(mesh(geo.palla(largo, 20), m, 0, -0.01, 0));
+      fascia(new THREE.SphereGeometry(largo, 24, 16), m);
       pancia.visible = false;
       if (k.forma === 'canottiera') {
         const st = mesh(new THREE.CircleGeometry(0.09, 5), secondo, 0, 0.03, 0.378);
@@ -431,22 +438,19 @@ export function mettiCapo(k: Capo, at: Attacchi) {
     }
     case 'gilet': {
       // aperto davanti: si vede la pancia
-      const gl = mesh(new THREE.SphereGeometry(0.356, 20, 14, Math.PI / 2 + 0.55, Math.PI * 2 - 1.1), doppia(k), 0, -0.01, 0);
-      busto.add(gl);
+      fascia(new THREE.SphereGeometry(0.366, 24, 16, Math.PI / 2 + 0.55, Math.PI * 2 - 1.1), doppia(k));
       for (const y of [0.08, -0.04, -0.16]) busto.add(piatto(mesh(geo.palla(0.025, 6), oro, 0.17, y, 0.3)));
       busto.add(mesh(geo.scatola(0.08, 0.05, 0.02), scuro, -0.2, -0.08, 0.28));
       break;
     }
     case 'salopette': case 'grembiule': {
       pancia.visible = false;
-      busto.add(mesh(geo.palla(0.352, 18), mat('#f4ecd8', { rim: 0.2 }), 0, -0.01, 0.0)); // la maglietta sotto
+      fascia(new THREE.SphereGeometry(0.36, 24, 16), mat('#f4ecd8', { rim: 0.2 })); // la maglietta sotto
       if (k.forma === 'salopette') {
         // la parte di sotto copre la pancia, la pettorina sale davanti, le bretelle passano sulle spalle
-        const sotto = mesh(new THREE.SphereGeometry(0.372, 20, 12, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.48), tinta, 0, -0.01, 0);
-        busto.add(sotto);
+        fascia(new THREE.SphereGeometry(0.376, 24, 10, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.48), tinta);
       }
-      const pett = mesh(new THREE.SphereGeometry(k.forma === 'grembiule' ? 0.378 : 0.374, 16, 12, Math.PI / 2 - 0.62, 1.24, k.forma === 'grembiule' ? 0.55 : 0.75, k.forma === 'grembiule' ? 1.95 : 1.1), doppia(k), 0, -0.01, 0);
-      busto.add(pett);
+      fascia(new THREE.SphereGeometry(k.forma === 'grembiule' ? 0.384 : 0.38, 16, 12, Math.PI / 2 - 0.62, 1.24, k.forma === 'grembiule' ? 0.55 : 0.75, k.forma === 'grembiule' ? 1.95 : 1.1), doppia(k));
       for (const s of [-1, 1]) {
         const b = mesh(new THREE.TorusGeometry(0.33, 0.02, 4, 20, Math.PI * 0.7), k.forma === 'grembiule' ? scuro : unita, s * 0.12, 0.04, 0);
         b.rotation.set(0, Math.PI / 2, Math.PI * 0.2);
@@ -513,7 +517,7 @@ export function mettiCapo(k: Capo, at: Attacchi) {
 
 // ---------- occhiali tondi (dottori, bibliotecari, sarte...) ----------
 
-export function mettiOcchiali(testa: THREE.Group, zTasso: boolean) {
+export function mettiOcchiali(testa: THREE.Object3D, zTasso: boolean) {
   const z = zTasso ? 0.5 : 0.45;
   const m = mat('#6a4a2a', { rim: 0.3 });
   for (const s of [-1, 1]) {

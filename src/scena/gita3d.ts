@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import type { Abitante as AbitanteLontano } from '../lib/escursioni';
 import type { Animale } from '../lib/tipi';
-import { ampiezzaPasso, creaAnimale, posa, type ModelloAnimale } from './modelli';
+import { ampiezzaPasso, creaAnimale, espressione, posa, rifinisci, type ModelloAnimale } from './modelli';
 import { LUNGHEZZA } from './sentieri3d';
 
 type Fase = 'andata' | 'incontro' | 'ritorno' | 'finita';
@@ -118,8 +118,9 @@ export class Gita {
       }
       this.metti();
       this.passo += dt * 11 * (0.6 + 0.4 * ampiezzaPasso(m));
-      m.corpo.position.y = Math.abs(Math.sin(this.passo)) * 0.1;
-      m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(this.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(m)));
+      m.corpo.position.y = (0.5 - 0.5 * Math.cos(this.passo * 2)) * 0.06;
+      if (m.bipede) m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(this.passo * 0.75 + (i % 2 === 0 ? 0 : Math.PI) + (i < 2 ? Math.PI : 0)) * (i < 2 ? 0.5 : 0.65)));
+      else m.zampe.forEach((z, i) => (z.rotation.x = Math.sin(this.passo + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.7 * ampiezzaPasso(m)));
     } else {
       // fermi a chiacchierare: si guardano, muovono la testa, ogni tanto un saltello di gioia
       m.zampe.forEach((z) => (z.rotation.x = THREE.MathUtils.lerp(z.rotation.x, 0, dt * 6)));
@@ -132,5 +133,6 @@ export class Gita {
     posa(this.locale, 0);
     if (m.coda) m.coda.rotation.y = Math.sin(t * 6) * 0.3;
     if (this.locale.coda) this.locale.coda.rotation.y = Math.sin(t * 4) * 0.3;
+    for (const x of [m, this.locale]) { espressione(x, this.fase === 'incontro' ? 'gioia' : 'fiducia'); rifinisci(x, dt, t); }
   }
 }
