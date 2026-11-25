@@ -72,6 +72,11 @@
     {/if}
   </header>
 
+  <!-- in prova il pannello è in fondo alla pagina: una scorciatoia in cima per arrivarci subito -->
+  {#if app.prova}
+    <button class="scorciatoia-prove" onclick={() => document.getElementById('pannello-prove')?.scrollIntoView({ behavior: 'smooth' })}>🛠️ Modalità sviluppatore ↓</button>
+  {/if}
+
   <div class="tesori">
     {#each tesori as t, i}
       <div class="tesoro appare" style:animation-delay="{i * 50}ms">
@@ -113,7 +118,7 @@
 
   <!-- pannello prove: si accende solo aprendo il sito con ?prova (vedi LEGGIMI) -->
   {#if app.prova}
-    <div class="finestra-gioco appare">
+    <div class="finestra-gioco appare" id="pannello-prove">
       <div class="testata">MODALITÀ SVILUPPATORE</div>
       <p>Data simulata: {dataDiOggi()} (spostata di {app.offsetGiorni} giorni)</p>
       <div class="riga" style="flex-wrap:wrap">
@@ -158,6 +163,7 @@
     position: absolute; top: 0; bottom: -10px; left: 18%; right: 18%; z-index: 0;
     background: linear-gradient(90deg, var(--legno-scuro) 0 14px, transparent 14px calc(100% - 14px), var(--legno-scuro) calc(100% - 14px));
   }
+  .scorciatoia-prove { display: block; width: 100%; margin: 14px 0 16px; background: #1f2a5a; color: #fff8e7; }
   .tavola {
     position: relative; z-index: 1; display: block; width: 100%; text-align: center; padding: 14px 16px 12px;
     background: repeating-linear-gradient(0deg, #9a6840 0 22px, #8a5a36 22px 24px); color: #fff8e7;
